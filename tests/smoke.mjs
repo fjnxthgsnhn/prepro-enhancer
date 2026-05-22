@@ -11,8 +11,11 @@ await page.goto(pathToFileURL(resolve("index.html")).href);
 await expectText("#projectName", "Sample Project");
 await expectText("#counts", "scene 1 / multicut 2 / cut 3");
 await expectText("#missingCount", "Missing 0");
-await expectCount(".data-table tbody tr", 6);
+await expectCount(".data-table tbody tr[data-id]", 6);
 await expectCount(".tree-node", 6);
+for (const removedButton of ["addSceneBtn", "addMulticutBtn", "addCutBtn", "groupCutsBtn", "groupMulticutsBtn"]) {
+  if (await page.locator(`#${removedButton}`).count()) throw new Error(`${removedButton} should be removed from the toolbar`);
+}
 const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
 for (const hidden of ["row_type", "id", "parent_id", "order", "cut", "status"]) {
   if (headers.includes(hidden)) throw new Error(`${hidden} should be hidden in Table View`);
@@ -43,9 +46,24 @@ await page.click("#playBtn");
 await page.click('[data-view="table"]');
 await page.click("#tableView", { position: { x: 12, y: 780 } });
 await page.click('tbody tr[data-id="sc001"] td[data-column="title"]');
-await page.waitForFunction(() => document.querySelectorAll(".data-table tr.selection-range").length === 6);
-await page.click('tbody tr[data-id="mc001"] td[data-column="title"]');
-await page.waitForFunction(() => document.querySelectorAll(".data-table tr.selection-range").length === 3);
+await page.waitForFunction(() => document.querySelector('tbody tr[data-id="sc001"]')?.classList.contains("selected"));
+await page.click('tbody tr[data-id="ct002"] td[data-column="title"]', { modifiers: ["Shift"] });
+await page.waitForFunction(() => {
+  const selected = [...document.querySelectorAll(".data-table tr.selected")].map((row) => row.dataset.id);
+  return selected.join(",") === "sc001,mc001,ct001,ct002" &&
+    document.querySelector('tbody tr[data-id="sc001"]')?.classList.contains("selection-start") &&
+    document.querySelector('tbody tr[data-id="ct002"]')?.classList.contains("selection-end");
+});
+await page.click("#tableView", { position: { x: 12, y: 780 } });
+await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
+await page.click('tbody tr[data-id="mc002"] td[data-column="title"]', { modifiers: ["Control"] });
+await page.waitForFunction(() => {
+  const selected = [...document.querySelectorAll(".data-table tr.selected")].map((row) => row.dataset.id);
+  return selected.includes("ct001") && selected.includes("mc002") && !selected.includes("ct002");
+});
+await page.waitForFunction(() => document.querySelectorAll(".add-row-btn").length === 3);
+await page.click('.add-row-btn.cut');
+await page.waitForFunction(() => document.querySelector('tbody tr[data-id="ct004"]')?.classList.contains("selected"));
 await page.click('tbody tr[data-id="ct002"] td[data-column="title"]');
 await page.waitForFunction(() => document.querySelector('tbody tr[data-id="ct002"]')?.classList.contains("selection-single"));
 await page.click("#tableView", { position: { x: 12, y: 780 } });
@@ -53,6 +71,10 @@ await page.waitForFunction(() => !document.querySelector(".data-table tr.selecte
 
 await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
 await page.waitForFunction(() => document.querySelector('tbody tr[data-id="ct001"]')?.classList.contains("selected"));
+const detailLabels = await page.$$eval("#detailPanel label", (nodes) => nodes.map((node) => node.textContent));
+for (const hiddenDetail of ["row_type", "id", "parent_id", "order"]) {
+  if (detailLabels.includes(hiddenDetail)) throw new Error(`${hiddenDetail} should be hidden in Detail panel`);
+}
 if ((await page.locator('td[data-column="title"] input').count()) !== 0) {
   throw new Error("First editable cell click should select the row without opening an input");
 }
@@ -66,6 +88,24 @@ await page.click('[data-toggle-panel="detail"]');
 await page.waitForFunction(() => document.querySelector('[data-panel="detail"]')?.classList.contains("collapsed"));
 await page.click('[data-toggle-panel="detail"]');
 await page.waitForFunction(() => !document.querySelector('[data-panel="detail"]')?.classList.contains("collapsed"));
+
+await page.click("#rightPanelToggle");
+await page.waitForFunction(() => document.querySelector(".app-shell")?.classList.contains("right-collapsed"));
+await page.click("#rightPanelToggle");
+await page.waitForFunction(() => !document.querySelector(".app-shell")?.classList.contains("right-collapsed") && [...document.querySelectorAll("#detailPanel label")].some((label) => label.textContent === "title"));
+
+await page.click("#tableView", { position: { x: 12, y: 780 } });
+await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
+await page.click('tbody tr[data-id="ct002"] td[data-column="title"]', { modifiers: ["Control"] });
+await page.click('tbody tr[data-id="ct002"]', { button: "right" });
+await expectText(".table-context-menu", "Create Multicut");
+await page.click(".table-context-menu button");
+await page.waitForFunction(() => document.querySelector('tbody tr[data-id="mc003"]')?.classList.contains("selected"));
+
+await page.click('tbody tr[data-id="mc001"] td[data-column="title"]');
+await page.click('tbody tr[data-id="mc002"] td[data-column="title"]', { modifiers: ["Control"] });
+await page.keyboard.press("Control+G");
+await page.waitForFunction(() => document.querySelector('tbody tr[data-id="sc002"]')?.classList.contains("selected"));
 
 await page.dragAndDrop('tbody tr[data-id="ct001"]', 'tbody tr[data-id="mc002"]');
 await page.waitForFunction(() => {

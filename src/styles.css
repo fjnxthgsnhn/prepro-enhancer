@@ -14,6 +14,7 @@
   --row-scene: rgba(215, 255, 87, 0.08);
   --row-multicut: rgba(111, 210, 255, 0.08);
   --row-cut: rgba(255, 255, 255, 0.03);
+  --right-panel-width: 360px;
   font-family: "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
 }
 
@@ -57,9 +58,14 @@ button.active {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px minmax(560px, 1fr) 360px;
+  grid-template-columns: 280px minmax(560px, 1fr) var(--right-panel-width);
   grid-template-rows: 58px calc(100vh - 86px) 28px;
   min-height: 100vh;
+  transition: grid-template-columns 180ms ease;
+}
+
+.app-shell.right-collapsed {
+  --right-panel-width: 42px;
 }
 
 .toolbar {
@@ -139,7 +145,46 @@ button.active {
 }
 
 .right-panel {
+  position: relative;
   border-left: 1px solid var(--line);
+  transition: width 180ms ease, background-color 180ms ease;
+}
+
+.right-panel-toggle {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: #20241e;
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.right-panel-content {
+  transition: opacity 140ms ease, transform 160ms ease;
+}
+
+.app-shell.right-collapsed .right-panel {
+  overflow: hidden;
+}
+
+.app-shell.right-collapsed .right-panel-toggle {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  min-height: 140px;
+  padding: 10px 0;
+}
+
+.app-shell.right-collapsed .right-panel-content {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(12px);
 }
 
 .panel-title {
@@ -321,6 +366,7 @@ button.active {
 }
 
 .data-table tr.selected {
+  background-color: rgba(215, 255, 87, 0.11);
   box-shadow:
     inset 3px 0 0 var(--accent),
     0 10px 22px rgba(0, 0, 0, 0.34);
@@ -358,6 +404,67 @@ button.active {
   box-shadow:
     inset 3px 0 0 var(--accent),
     0 12px 28px rgba(0, 0, 0, 0.4);
+}
+
+.data-table tr.add-row-controls td {
+  padding: 6px 10px;
+  background: rgba(24, 27, 23, 0.78);
+  border-top: 1px solid rgba(215, 255, 87, 0.2);
+  border-bottom: 1px solid rgba(215, 255, 87, 0.12);
+}
+
+.add-row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-left: 8px;
+}
+
+.add-row-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.add-row-btn.scene {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(215, 255, 87, 0.12);
+}
+
+.add-row-btn.multicut {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+  background: rgba(111, 210, 255, 0.12);
+}
+
+.add-row-btn.cut {
+  border-color: rgba(255, 255, 255, 0.5);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.table-context-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 160px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #151813;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.42);
+  animation: item-enter 140ms ease;
+}
+
+.table-context-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
 }
 
 .data-table tr[draggable="true"] {

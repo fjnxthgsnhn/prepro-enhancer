@@ -106,6 +106,7 @@ const state = {
   rows: [],
   selectedIds: new Set(),
   activeId: "",
+  selectionAnchorId: "",
   view: "table",
   search: "",
   dirty: false,
@@ -115,6 +116,7 @@ const state = {
   mediaBlobs: new Map(),
   collapsed: new Set(),
   panelCollapsed: new Set(),
+  rightPanelCollapsed: false,
   undo: [],
   redo: [],
   playing: false,
@@ -122,6 +124,7 @@ const state = {
   playStartedAt: 0,
   playOffset: 0,
   draggingId: "",
+  contextMenu: null,
 };
 
 const el = {
@@ -149,14 +152,11 @@ document.querySelector("#saveTsvBtn").addEventListener("click", exportTsv);
 document.querySelector("#exportLlmTsvBtn").addEventListener("click", exportLlmTsv);
 document.querySelector("#exportProjectBtn").addEventListener("click", exportProject);
 document.querySelector("#exportXmlBtn").addEventListener("click", exportPremiereXml);
-document.querySelector("#addSceneBtn").addEventListener("click", () => addRow("scene"));
-document.querySelector("#addMulticutBtn").addEventListener("click", () => addRow("multicut"));
-document.querySelector("#addCutBtn").addEventListener("click", () => addRow("cut"));
-document.querySelector("#groupCutsBtn").addEventListener("click", groupCuts);
-document.querySelector("#groupMulticutsBtn").addEventListener("click", groupMulticuts);
 document.querySelectorAll("[data-toggle-panel]").forEach((button) => {
   button.addEventListener("click", () => togglePanel(button.dataset.togglePanel));
 });
+
+document.querySelector("#rightPanelToggle").addEventListener("click", toggleRightPanel);
 
 document.querySelectorAll(".view-btn").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
@@ -197,6 +197,10 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     el.search.focus();
   }
+  if (event.ctrlKey && event.key.toLowerCase() === "g") {
+    event.preventDefault();
+    groupSelectionFromShortcut();
+  }
   if (event.ctrlKey && event.key.toLowerCase() === "z") {
     event.preventDefault();
     undo();
@@ -209,6 +213,11 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     setView(["table", "storyboard", "timeline"][Number(event.key) - 1]);
   }
+  if (event.key === "Escape") closeContextMenu();
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest?.(".table-context-menu")) closeContextMenu();
 });
 
 function loadTsv(text, name) {
@@ -224,6 +233,7 @@ function loadTsv(text, name) {
   state.selectedIds.clear();
   state.activeId = state.rows[0]?.id || "";
   if (state.activeId) state.selectedIds.add(state.activeId);
+  state.selectionAnchorId = state.activeId;
   state.dirty = false;
   state.undo = [];
   state.redo = [];
@@ -408,6 +418,7 @@ function renderTable() {
     el.table.innerHTML = `<div class="empty-state">No rows match the current search.</div>`;
     return;
   }
+  closeContextMenu();
   const table = document.createElement("table");
   table.className = "data-table";
   table.innerHTML = `<thead><tr>${DISPLAY_COLUMNS.map((column) => `<th>${column}</th>`).join("")}</tr></thead>`;
@@ -424,6 +435,7 @@ function renderTable() {
     tr.addEventListener("dragleave", clearDropClasses);
     tr.addEventListener("drop", (event) => handleDrop(event, row));
     tr.addEventListener("dragend", clearDragState);
+    tr.addEventListener("contextmenu", (event) => showGroupMenu(event, row));
     DISPLAY_COLUMNS.forEach((column) => {
       const td = document.createElement("td");
       td.dataset.column = column;
@@ -443,9 +455,31 @@ function renderTable() {
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
+    if (row.id === state.activeId) tbody.appendChild(addControlsRow());
   });
   table.appendChild(tbody);
   el.table.replaceChildren(table);
+}
+
+function addControlsRow() {
+  const tr = document.createElement("tr");
+  tr.className = "add-row-controls";
+  const td = document.createElement("td");
+  td.colSpan = DISPLAY_COLUMNS.length;
+  td.innerHTML = `
+    <div class="add-row-actions" aria-label="Add row below selection">
+      <button class="add-row-btn scene" type="button" data-add-type="scene" title="Add Scene">+</button>
+      <button class="add-row-btn multicut" type="button" data-add-type="multicut" title="Add Multicut">+</button>
+      <button class="add-row-btn cut" type="button" data-add-type="cut" title="Add Cut">+</button>
+    </div>`;
+  td.querySelectorAll("[data-add-type]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      addRowBelow(button.dataset.addType);
+    });
+  });
+  tr.appendChild(td);
+  return tr;
 }
 
 function editCell(td, id, column) {
@@ -567,7 +601,7 @@ function renderDetail() {
   }
   const form = document.createElement("div");
   form.className = "form-grid";
-  const fields = ["row_type", "id", "parent_id", "order", "title", "duration", "scene", "subject", "composition", "action", "camera", "dialogue", "image", "audio_file", "image_prompt", "video_prompt", "note"];
+  const fields = ["title", "duration", "scene", "subject", "composition", "action", "camera", "dialogue", "image", "audio_file", "image_prompt", "video_prompt", "note"];
   fields.forEach((field) => {
     const wrapper = document.createElement("div");
     wrapper.className = "field";
@@ -630,7 +664,14 @@ function togglePanel(panel) {
   renderPanels();
 }
 
+function toggleRightPanel() {
+  state.rightPanelCollapsed = !state.rightPanelCollapsed;
+  renderPanels();
+}
+
 function renderPanels() {
+  document.querySelector(".app-shell")?.classList.toggle("right-collapsed", state.rightPanelCollapsed);
+  document.querySelector("#rightPanelToggle")?.setAttribute("aria-expanded", String(!state.rightPanelCollapsed));
   document.querySelectorAll(".right-section").forEach((section) => {
     const collapsed = state.panelCollapsed.has(section.dataset.panel);
     section.classList.toggle("collapsed", collapsed);
@@ -639,14 +680,25 @@ function renderPanels() {
 }
 
 function selectRow(id, event = {}) {
-  if (event.ctrlKey || event.metaKey) {
+  const rows = filteredRows();
+  if (event.shiftKey && state.selectionAnchorId) {
+    const anchorIndex = rows.findIndex((row) => row.id === state.selectionAnchorId);
+    const targetIndex = rows.findIndex((row) => row.id === id);
+    if (anchorIndex >= 0 && targetIndex >= 0) {
+      const [start, end] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+      state.selectedIds = new Set(rows.slice(start, end + 1).map((row) => row.id));
+    } else {
+      state.selectedIds = new Set([id]);
+      state.selectionAnchorId = id;
+    }
+  } else if (event.ctrlKey || event.metaKey) {
     if (state.selectedIds.has(id)) state.selectedIds.delete(id);
     else state.selectedIds.add(id);
-  } else if (event.shiftKey) {
-    state.selectedIds.add(id);
+    if (!state.selectionAnchorId) state.selectionAnchorId = id;
   } else {
     state.selectedIds.clear();
     state.selectedIds.add(id);
+    state.selectionAnchorId = id;
   }
   state.activeId = id;
   render();
@@ -656,34 +708,23 @@ function clearSelection() {
   if (!state.activeId && !state.selectedIds.size) return;
   state.activeId = "";
   state.selectedIds.clear();
+  state.selectionAnchorId = "";
   render();
 }
 
 function tableSelectionClass(row) {
-  const active = getRow(state.activeId);
-  if (!active) return "";
-  const range = selectedHierarchyRange(active);
-  const index = range.findIndex((item) => item.id === row.id);
-  if (index < 0) return "";
+  if (!state.selectedIds.has(row.id)) return "";
+  const rows = filteredRows();
+  const index = rows.findIndex((item) => item.id === row.id);
+  const previousSelected = index > 0 && state.selectedIds.has(rows[index - 1].id);
+  const nextSelected = index >= 0 && index < rows.length - 1 && state.selectedIds.has(rows[index + 1].id);
   const classes = ["selection-range"];
-  if (row.id === active.id) classes.push("selection-active");
-  if (range.length === 1) classes.push("selection-single");
-  else if (index === 0) classes.push("selection-start");
-  else if (index === range.length - 1) classes.push("selection-end");
+  if (row.id === state.activeId) classes.push("selection-active");
+  if (!previousSelected && !nextSelected) classes.push("selection-single");
+  else if (!previousSelected) classes.push("selection-start");
+  else if (!nextSelected) classes.push("selection-end");
   else classes.push("selection-middle");
   return classes.join(" ");
-}
-
-function selectedHierarchyRange(active) {
-  if (active.row_type === "scene") {
-    const scene = buildTree().find((item) => item.row.id === active.id);
-    return scene ? [scene.row, ...scene.multicuts.flatMap((multicut) => [multicut.row, ...multicut.cuts])] : [active];
-  }
-  if (active.row_type === "multicut") {
-    const multicut = buildTree().flatMap((scene) => scene.multicuts).find((item) => item.row.id === active.id);
-    return multicut ? [multicut.row, ...multicut.cuts] : [active];
-  }
-  return [active];
 }
 
 function toggleCollapse(id) {
@@ -733,8 +774,86 @@ function addRow(type) {
   state.activeId = row.id;
   state.selectedIds.clear();
   state.selectedIds.add(row.id);
+  state.selectionAnchorId = row.id;
   markDirty();
   render();
+}
+
+function addRowBelow(type) {
+  const active = getRow(state.activeId);
+  if (!active) return;
+  pushHistory();
+  const row = blankRow(type, nextId(type));
+  let selectedRow = row;
+
+  if (type === "scene") {
+    insertSceneAfter(row, active);
+  } else if (type === "multicut") {
+    insertMulticutAfter(row, active);
+  } else if (type === "cut") {
+    selectedRow = insertCutAfter(row, active);
+  }
+
+  normalizeOrders();
+  state.activeId = selectedRow.id;
+  state.selectedIds = new Set([selectedRow.id]);
+  state.selectionAnchorId = selectedRow.id;
+  markDirty();
+  render();
+}
+
+function insertSceneAfter(row, active) {
+  const scene = active.row_type === "scene" ? active : getAncestor(active, "scene");
+  const scenes = state.rows.filter((item) => item.row_type === "scene").sort(sortByOrder);
+  const index = Math.max(0, scenes.findIndex((item) => item.id === scene?.id)) + 1;
+  state.rows.push(row);
+  insertIntoOrderedGroup(row, scenes, index);
+}
+
+function insertMulticutAfter(row, active) {
+  const scene = active.row_type === "scene" ? active : getAncestor(active, "scene");
+  if (!scene) return;
+  row.parent_id = scene.id;
+  const multicuts = state.rows.filter((item) => item.row_type === "multicut" && item.parent_id === scene.id).sort(sortByOrder);
+  let index = 0;
+  if (active.row_type === "multicut") index = multicuts.findIndex((item) => item.id === active.id) + 1;
+  if (active.row_type === "cut") {
+    const parent = getRow(active.parent_id);
+    index = multicuts.findIndex((item) => item.id === parent?.id) + 1;
+  }
+  state.rows.push(row);
+  insertIntoOrderedGroup(row, multicuts, Math.max(0, index));
+}
+
+function insertCutAfter(row, active) {
+  let multicut = active.row_type === "multicut" ? active : getAncestor(active, "multicut");
+  if (!multicut && active.row_type === "scene") {
+    multicut = state.rows
+      .filter((item) => item.row_type === "multicut" && item.parent_id === active.id)
+      .sort(sortByOrder)[0];
+    if (!multicut) {
+      multicut = blankRow("multicut", nextId("multicut"));
+      multicut.parent_id = active.id;
+      state.rows.push(multicut);
+      insertIntoOrderedGroup(multicut, [], 0);
+    }
+  }
+  if (!multicut) return row;
+  row.parent_id = multicut.id;
+  row.duration = "3s";
+  const cuts = state.rows.filter((item) => item.row_type === "cut" && item.parent_id === multicut.id).sort(sortByOrder);
+  const index = active.row_type === "cut" ? cuts.findIndex((item) => item.id === active.id) + 1 : cuts.length;
+  state.rows.push(row);
+  insertIntoOrderedGroup(row, cuts, Math.max(0, index));
+  return row;
+}
+
+function insertIntoOrderedGroup(row, group, index) {
+  const rows = group.filter((item) => item.id !== row.id);
+  rows.splice(Math.max(0, Math.min(index, rows.length)), 0, row);
+  rows.forEach((item, order) => {
+    item.order = String(order + 1);
+  });
 }
 
 function blankRow(type, id) {
@@ -745,11 +864,56 @@ function blankRow(type, id) {
   return row;
 }
 
+function selectedRowsOfType(type) {
+  return [...state.selectedIds].map(getRow).filter((row) => row?.row_type === type);
+}
+
+function showGroupMenu(event, row) {
+  const cutCount = selectedRowsOfType("cut").length;
+  const multicutCount = selectedRowsOfType("multicut").length;
+  const canGroupCuts = row.row_type === "cut" && state.selectedIds.has(row.id) && cutCount >= 2;
+  const canGroupMulticuts = row.row_type === "multicut" && state.selectedIds.has(row.id) && multicutCount >= 2;
+  if (!canGroupCuts && !canGroupMulticuts) return;
+  event.preventDefault();
+  event.stopPropagation();
+  closeContextMenu();
+  const menu = document.createElement("div");
+  menu.className = "table-context-menu";
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = canGroupCuts ? "Create Multicut" : "Create Scene";
+  button.addEventListener("click", (clickEvent) => {
+    clickEvent.stopPropagation();
+    closeContextMenu();
+    if (canGroupCuts) groupCuts();
+    else groupMulticuts();
+  });
+  menu.appendChild(button);
+  document.body.appendChild(menu);
+  state.contextMenu = menu;
+}
+
+function closeContextMenu() {
+  state.contextMenu?.remove();
+  state.contextMenu = null;
+}
+
+function groupSelectionFromShortcut() {
+  if (state.view !== "table") return;
+  if (selectedRowsOfType("cut").length >= 2) {
+    groupCuts();
+    return;
+  }
+  if (selectedRowsOfType("multicut").length >= 2) groupMulticuts();
+}
+
 function groupCuts() {
-  const cuts = [...state.selectedIds].map(getRow).filter((row) => row?.row_type === "cut");
+  const cuts = selectedRowsOfType("cut");
   if (cuts.length < 2) return alert("2つ以上のcutを選択してください。");
   const parent = getRow(cuts[0].parent_id);
-  if (!parent || cuts.some((cut) => cut.parent_id !== parent.id)) return alert("同じmulticut内のcutを選択してください。");
+  if (!parent) return;
   pushHistory();
   const mc = blankRow("multicut", nextId("multicut"));
   mc.parent_id = parent.parent_id;
@@ -763,12 +927,13 @@ function groupCuts() {
   normalizeOrders();
   state.activeId = mc.id;
   state.selectedIds = new Set([mc.id]);
+  state.selectionAnchorId = mc.id;
   markDirty();
   render();
 }
 
 function groupMulticuts() {
-  const multicuts = [...state.selectedIds].map(getRow).filter((row) => row?.row_type === "multicut");
+  const multicuts = selectedRowsOfType("multicut");
   if (multicuts.length < 2) return alert("2つ以上のmulticutを選択してください。");
   pushHistory();
   const scene = blankRow("scene", nextId("scene"));
@@ -782,6 +947,7 @@ function groupMulticuts() {
   normalizeOrders();
   state.activeId = scene.id;
   state.selectedIds = new Set([scene.id]);
+  state.selectionAnchorId = scene.id;
   markDirty();
   render();
 }
@@ -823,6 +989,7 @@ function handleDrop(event, target) {
   normalizeOrders();
   state.activeId = dragged.id;
   state.selectedIds = new Set([dragged.id]);
+  state.selectionAnchorId = dragged.id;
   markDirty();
   render();
 }
