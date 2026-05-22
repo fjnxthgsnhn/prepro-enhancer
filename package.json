@@ -1,0 +1,14 @@
+{
+  "name": "previz-enhancer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local cut board editor MVP for TSV based previs workflows.",
+  "scripts": {
+    "dev": "python -m http.server 4173",
+    "check": "node --check src/app.js",
+    "test:smoke": "node tests/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  }
+}

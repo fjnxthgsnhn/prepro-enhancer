@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Previz Enhancer</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="toolbar">
+        <div class="brand">
+          <span class="brand-mark">PE</span>
+          <div>
+            <strong>Previz Enhancer</strong>
+            <span id="projectName">Untitled Project</span>
+          </div>
+        </div>
+        <div class="tool-section">
+          <button id="openProjectBtn" title="Open Project">Open</button>
+          <button id="loadSampleBtn" title="Load Sample">Sample</button>
+          <button id="saveTsvBtn" title="Export TSV">Save TSV</button>
+          <button id="exportLlmTsvBtn" title="Export LLM TSV">LLM TSV</button>
+          <button id="exportProjectBtn" title="Export Project">Save .lctproj</button>
+          <button id="exportXmlBtn" title="Export Premiere XML">XML</button>
+        </div>
+        <div class="tool-section">
+          <button id="addSceneBtn" title="Add Scene">Scene</button>
+          <button id="addMulticutBtn" title="Add Multicut">Multicut</button>
+          <button id="addCutBtn" title="Add Cut">Cut</button>
+          <button id="groupCutsBtn" title="Create Multicut">Group Cuts</button>
+          <button id="groupMulticutsBtn" title="Create Scene">Group MC</button>
+        </div>
+        <div class="tool-section view-switch">
+          <button class="view-btn active" data-view="table">Table</button>
+          <button class="view-btn" data-view="storyboard">Storyboard</button>
+          <button class="view-btn" data-view="timeline">Timeline</button>
+        </div>
+        <label class="search-box">
+          <span>Search</span>
+          <input id="searchInput" type="search" autocomplete="off" />
+        </label>
+      </header>
+
+      <aside class="left-panel">
+        <div class="panel-title">Hierarchy</div>
+        <div id="hierarchyTree" class="hierarchy-tree"></div>
+      </aside>
+
+      <main class="main-area">
+        <section id="tableView" class="view-pane active"></section>
+        <section id="storyboardView" class="view-pane"></section>
+        <section id="timelineView" class="view-pane"></section>
+      </main>
+
+      <aside class="right-panel">
+        <section class="right-section" data-panel="detail">
+          <button class="panel-title panel-toggle" type="button" data-toggle-panel="detail">Detail</button>
+          <div id="detailPanel" class="detail-panel panel-body"></div>
+        </section>
+        <section class="right-section" data-panel="prompt">
+          <button class="panel-title panel-toggle" type="button" data-toggle-panel="prompt">Prompt Preview</button>
+          <div id="promptPanel" class="prompt-panel panel-body"></div>
+        </section>
+        <section class="right-section" data-panel="media">
+          <button class="panel-title panel-toggle" type="button" data-toggle-panel="media">Media Preview</button>
+          <div id="mediaPanel" class="media-panel panel-body"></div>
+        </section>
+        <section class="right-section" data-panel="validation">
+          <button class="panel-title panel-toggle" type="button" data-toggle-panel="validation">Validation</button>
+          <div id="validationPanel" class="validation-panel panel-body"></div>
+        </section>
+      </aside>
+
+      <footer class="status-bar">
+        <span id="projectPath">No file loaded</span>
+        <span id="counts">scene 0 / multicut 0 / cut 0</span>
+        <span id="missingCount">Missing 0</span>
+        <span id="saveState">Saved</span>
+        <span id="lastSaved">Never</span>
+      </footer>
+    </div>
+
+    <input id="projectInput" type="file" accept=".lctproj,.tsv,.txt" hidden />
+    <script src="./src/app.js"></script>
+  </body>
+</html>
