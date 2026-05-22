@@ -125,6 +125,7 @@ const state = {
   playOffset: 0,
   draggingId: "",
   contextMenu: null,
+  addOverlayAnchor: null,
 };
 
 const el = {
@@ -455,31 +456,55 @@ function renderTable() {
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
-    if (row.id === state.activeId) tbody.appendChild(addControlsRow());
   });
   table.appendChild(tbody);
   el.table.replaceChildren(table);
+  renderAddOverlay();
 }
 
-function addControlsRow() {
-  const tr = document.createElement("tr");
-  tr.className = "add-row-controls";
-  const td = document.createElement("td");
-  td.colSpan = DISPLAY_COLUMNS.length;
-  td.innerHTML = `
+function renderAddOverlay() {
+  const activeRow = el.table.querySelector(`tr[data-id="${CSS.escape(state.activeId)}"]`);
+  if (!activeRow) return;
+  const overlay = document.createElement("div");
+  overlay.className = "add-row-overlay";
+  overlay.innerHTML = `
     <div class="add-row-actions" aria-label="Add row below selection">
       <button class="add-row-btn scene" type="button" data-add-type="scene" title="Add Scene">+</button>
       <button class="add-row-btn multicut" type="button" data-add-type="multicut" title="Add Multicut">+</button>
       <button class="add-row-btn cut" type="button" data-add-type="cut" title="Add Cut">+</button>
     </div>`;
-  td.querySelectorAll("[data-add-type]").forEach((button) => {
+  const tableRect = el.table.getBoundingClientRect();
+  const rowRect = activeRow.getBoundingClientRect();
+  const overlayWidth = 124;
+  const overlayHeight = 42;
+  const margin = 10;
+  const anchorX = state.addOverlayAnchor?.x ?? Math.min(rowRect.right - overlayWidth - margin, tableRect.right - overlayWidth - margin);
+  const minX = tableRect.left + margin;
+  const maxX = tableRect.right - overlayWidth - margin;
+  const viewportLeft = clamp(anchorX - 12, minX, Math.max(minX, maxX));
+  const belowTop = rowRect.bottom - tableRect.top + el.table.scrollTop + 10;
+  const aboveTop = rowRect.top - tableRect.top + el.table.scrollTop - overlayHeight + 8;
+  const viewportBelow = rowRect.bottom + overlayHeight <= tableRect.bottom - margin;
+  const top = viewportBelow ? belowTop : Math.max(el.table.scrollTop + margin, aboveTop);
+  overlay.style.top = `${top}px`;
+  overlay.style.left = `${viewportLeft - tableRect.left + el.table.scrollLeft}px`;
+  overlay.addEventListener("click", (event) => event.stopPropagation());
+  overlay.querySelectorAll("[data-add-type]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       addRowBelow(button.dataset.addType);
     });
   });
-  tr.appendChild(td);
-  return tr;
+  el.table.appendChild(overlay);
+}
+
+function rememberAddOverlayAnchor(event) {
+  if (event?.clientX == null || !event.target?.closest?.("#tableView")) return;
+  state.addOverlayAnchor = { x: event.clientX, y: event.clientY };
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function editCell(td, id, column) {
@@ -680,6 +705,7 @@ function renderPanels() {
 }
 
 function selectRow(id, event = {}) {
+  rememberAddOverlayAnchor(event);
   const rows = filteredRows();
   if (event.shiftKey && state.selectionAnchorId) {
     const anchorIndex = rows.findIndex((row) => row.id === state.selectionAnchorId);
@@ -709,6 +735,7 @@ function clearSelection() {
   state.activeId = "";
   state.selectedIds.clear();
   state.selectionAnchorId = "";
+  state.addOverlayAnchor = null;
   render();
 }
 

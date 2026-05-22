@@ -306,6 +306,10 @@ button.active {
   font-size: 13px;
 }
 
+#tableView {
+  position: relative;
+}
+
 .data-table th {
   position: sticky;
   top: 0;
@@ -406,18 +410,24 @@ button.active {
     0 12px 28px rgba(0, 0, 0, 0.4);
 }
 
-.data-table tr.add-row-controls td {
-  padding: 6px 10px;
-  background: rgba(24, 27, 23, 0.78);
-  border-top: 1px solid rgba(215, 255, 87, 0.2);
-  border-bottom: 1px solid rgba(215, 255, 87, 0.12);
+.add-row-overlay {
+  position: absolute;
+  z-index: 8;
+  width: max-content;
+  padding: 5px 8px;
+  border: 1px solid rgba(215, 255, 87, 0.22);
+  border-radius: 999px;
+  background: rgba(17, 19, 16, 0.92);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(8px);
+  animation: item-enter 140ms ease;
+  pointer-events: none;
 }
 
 .add-row-actions {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding-left: 8px;
 }
 
 .add-row-btn {
@@ -429,6 +439,7 @@ button.active {
   border-radius: 50%;
   font-weight: 800;
   line-height: 1;
+  pointer-events: auto;
 }
 
 .add-row-btn.scene {

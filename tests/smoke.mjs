@@ -61,9 +61,35 @@ await page.waitForFunction(() => {
   const selected = [...document.querySelectorAll(".data-table tr.selected")].map((row) => row.dataset.id);
   return selected.includes("ct001") && selected.includes("mc002") && !selected.includes("ct002");
 });
+const rowCountBeforeAddOverlay = await page.locator(".data-table tbody tr[data-id]").count();
 await page.waitForFunction(() => document.querySelectorAll(".add-row-btn").length === 3);
+await page.waitForFunction(() => {
+  const table = document.querySelector("#tableView");
+  const overlay = document.querySelector(".add-row-overlay");
+  if (!table || !overlay) return false;
+  const tableRect = table.getBoundingClientRect();
+  const overlayRect = overlay.getBoundingClientRect();
+  return overlayRect.left >= tableRect.left && overlayRect.right <= tableRect.right;
+});
+await page.evaluate(() => {
+  document.querySelector("#tableView").scrollLeft = 900;
+});
+await page.click('tbody tr[data-id="mc002"] td[data-column="note"]', { modifiers: ["Control"] });
+await page.waitForFunction(() => {
+  const table = document.querySelector("#tableView");
+  const overlay = document.querySelector(".add-row-overlay");
+  if (!table || !overlay) return false;
+  const tableRect = table.getBoundingClientRect();
+  const overlayRect = overlay.getBoundingClientRect();
+  return overlayRect.left >= tableRect.left && overlayRect.right <= tableRect.right;
+});
+if (await page.locator(".add-row-controls").count()) throw new Error("Add buttons should render as an overlay, not a table row");
+if ((await page.locator(".data-table tbody tr[data-id]").count()) !== rowCountBeforeAddOverlay) {
+  throw new Error("Showing Add buttons should not change the data row count");
+}
 await page.click('.add-row-btn.cut');
 await page.waitForFunction(() => document.querySelector('tbody tr[data-id="ct004"]')?.classList.contains("selected"));
+await expectText("#saveState", "Unsaved");
 await page.click('tbody tr[data-id="ct002"] td[data-column="title"]');
 await page.waitForFunction(() => document.querySelector('tbody tr[data-id="ct002"]')?.classList.contains("selection-single"));
 await page.click("#tableView", { position: { x: 12, y: 780 } });
