@@ -5,51 +5,48 @@ const COLUMNS = [
   "order",
   "title",
   "duration",
-  "status",
-  "image",
-  "audio_file",
-  "image_prompt",
-  "video_prompt",
   "scene",
   "subject",
   "composition",
   "action",
   "camera",
   "dialogue",
+  "image",
+  "audio_file",
+  "image_prompt",
+  "video_prompt",
   "note",
 ];
 
 const EDITABLE_COLUMNS = new Set([
   "title",
   "duration",
-  "status",
-  "image",
-  "audio_file",
-  "image_prompt",
-  "video_prompt",
   "scene",
   "subject",
   "composition",
   "action",
   "camera",
   "dialogue",
+  "image",
+  "audio_file",
+  "image_prompt",
+  "video_prompt",
   "note",
 ]);
 
 const DISPLAY_COLUMNS = [
   "title",
   "duration",
-  "status",
-  "image",
-  "audio_file",
-  "image_prompt",
-  "video_prompt",
   "scene",
   "subject",
   "composition",
   "action",
   "camera",
   "dialogue",
+  "image",
+  "audio_file",
+  "image_prompt",
+  "video_prompt",
   "note",
 ];
 
@@ -58,19 +55,18 @@ const LLM_TSV_COLUMNS = [
   "id",
   "parent_id",
   "order",
-  "image",
-  "audio_file",
   "title",
   "duration",
-  "status",
-  "image_prompt",
-  "video_prompt",
   "scene",
   "subject",
   "composition",
   "action",
   "camera",
   "dialogue",
+  "image",
+  "audio_file",
+  "image_prompt",
+  "video_prompt",
   "note",
 ];
 
@@ -97,13 +93,13 @@ const DEFAULT_MANIFEST = {
   },
 };
 
-const SAMPLE_TSV = `row_type\tid\tparent_id\torder\ttitle\tduration\tstatus\timage\taudio_file\timage_prompt\tvideo_prompt\tscene\tsubject\tcomposition\taction\tcamera\tdialogue\tnote
-scene\tsc001\t\t1\t研究室の異変\t\treview\t\t\t白い研究室、薄明かり、緊張感のある映画的な画作り\t研究室全体をゆっくり見せる導入シーン\t研究室\t\t全体\t異変の前兆\tスローな移動\t\tシーン全体の方向性
-multicut\tmc001\tsc001\t1\t顕微鏡シークエンス\t\tdraft\t\t\t顕微鏡、研究員の手元、浅い被写界深度\t顕微鏡を覗く動作から表情変化までを数カットで見せる\t研究室\t山本\t寄り中心\t観察する\tドリーイン\t\t導入マルチカット
-cut\tct001\tmc001\t1\t顕微鏡の寄り\t3s\tdraft\tmedia/images/cut001.jpg\tmedia/audio/cut001.wav\t顕微鏡レンズの超クローズアップ、白い研究室照明、浅い被写界深度\t顕微鏡レンズへゆっくりドリーイン、微細な反射が揺れる\t研究室\t顕微鏡\t超寄り\tレンズが光る\tゆっくりドリーイン\t低い機械音\t導入カット
-cut\tct002\tmc001\t2\t山本の目元\t3s\treview\tmedia/images/cut002.jpg\t\t研究員の目元アップ、真剣な表情、白い壁面\t山本が顕微鏡を覗き込み、わずかに眉を寄せる\t研究室\t山本\t目元アップ\t違和感に気づく\t微細なプッシュイン\t息を呑む音\t表情重要
-multicut\tmc002\tsc001\t2\t警告ランプ\t\tdraft\t\t\t赤い警告ランプ、反射するガラス、硬質な影\t警告ランプの点滅と室内の反応\t研究室\t警告灯\t切り返し\t警報が始まる\t固定とパン\t警告音\t
-cut\tct003\tmc002\t1\t警告灯の点滅\t2s\tfix\tmedia/images/cut003.jpg\tmedia/audio/cut003.wav\t赤い警告灯のクローズアップ、暗い反射、強いコントラスト\t警告灯が点滅し、画面に赤い反射が走る\t研究室\t警告灯\tクローズアップ\t点滅する\t固定\t警告音\t`;
+const SAMPLE_TSV = `row_type\tid\tparent_id\torder\ttitle\tduration\tscene\tsubject\tcomposition\taction\tcamera\tdialogue\timage\taudio_file\timage_prompt\tvideo_prompt\tnote
+scene\tsc001\t\t1\t研究室の異変\t\t研究室\t\t全体\t異変の前兆\tスローな移動\t\t\t\t白い研究室、薄明かり、緊張感のある映画的な画作り\t研究室全体をゆっくり見せる導入シーン\tシーン全体の方向性
+multicut\tmc001\tsc001\t1\t顕微鏡シークエンス\t\t研究室\t山本\t寄り中心\t観察する\tドリーイン\t\t\t\t顕微鏡、研究員の手元、浅い被写界深度\t顕微鏡を覗く動作から表情変化までを数カットで見せる\t導入マルチカット
+cut\tct001\tmc001\t1\t顕微鏡の寄り\t3s\t研究室\t顕微鏡\t超寄り\tレンズが光る\tゆっくりドリーイン\t低い機械音\tmedia/images/cut001.jpg\tmedia/audio/cut001.wav\t顕微鏡レンズの超クローズアップ、白い研究室照明、浅い被写界深度\t顕微鏡レンズへゆっくりドリーイン、微細な反射が揺れる\t導入カット
+cut\tct002\tmc001\t2\t山本の目元\t3s\t研究室\t山本\t目元アップ\t違和感に気づく\t微細なプッシュイン\t息を呑む音\tmedia/images/cut002.jpg\t\t研究員の目元アップ、真剣な表情、白い壁面\t山本が顕微鏡を覗き込み、わずかに眉を寄せる\t表情重要
+multicut\tmc002\tsc001\t2\t警告ランプ\t\t研究室\t警告灯\t切り返し\t警報が始まる\t固定とパン\t警告音\t\t\t赤い警告ランプ、反射するガラス、硬質な影\t警告ランプの点滅と室内の反応\t
+cut\tct003\tmc002\t1\t警告灯の点滅\t2s\t研究室\t警告灯\tクローズアップ\t点滅する\t固定\t警告音\tmedia/images/cut003.jpg\tmedia/audio/cut003.wav\t赤い警告灯のクローズアップ、暗い反射、強いコントラスト\t警告灯が点滅し、画面に赤い反射が走る\t`;
 
 const state = {
   manifest: structuredClone(DEFAULT_MANIFEST),
@@ -496,7 +492,7 @@ function cutCard(cut) {
     <div class="thumb">${media ? `<img src="${media}" alt="">` : `<span>${cut.image ? "Missing image" : "No image"}</span>`}</div>
     <div class="card-body">
       <div class="card-title">${escapeHtml(rowLabel(cut))}</div>
-      <div class="card-meta"><span>${escapeHtml(cut.duration || "default")}</span><span>${escapeHtml(cut.status || "draft")}</span></div>
+      <div class="card-meta"><span>${escapeHtml(cut.duration || "default")}</span><span>${escapeHtml(cut.id)}</span></div>
     </div>`;
   return card;
 }
@@ -554,7 +550,7 @@ function renderDetail() {
   }
   const form = document.createElement("div");
   form.className = "form-grid";
-  const fields = ["row_type", "id", "parent_id", "order", "title", "duration", "status", "image", "audio_file", "scene", "subject", "composition", "action", "camera", "dialogue", "note", "image_prompt", "video_prompt"];
+  const fields = ["row_type", "id", "parent_id", "order", "title", "duration", "scene", "subject", "composition", "action", "camera", "dialogue", "image", "audio_file", "image_prompt", "video_prompt", "note"];
   fields.forEach((field) => {
     const wrapper = document.createElement("div");
     wrapper.className = "field";
@@ -695,7 +691,6 @@ function blankRow(type, id) {
   row.row_type = type;
   row.id = id;
   row.title = type === "cut" ? "New Cut" : type === "multicut" ? "New Multicut" : "New Scene";
-  row.status = "draft";
   return row;
 }
 

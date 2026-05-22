@@ -13,11 +13,16 @@ await expectText("#missingCount", "Missing 0");
 await expectCount(".data-table tbody tr", 6);
 await expectCount(".tree-node", 6);
 const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
-for (const hidden of ["row_type", "id", "parent_id", "order", "cut"]) {
+for (const hidden of ["row_type", "id", "parent_id", "order", "cut", "status"]) {
   if (headers.includes(hidden)) throw new Error(`${hidden} should be hidden in Table View`);
 }
 for (const visible of ["composition", "action", "camera", "dialogue"]) {
   if (!headers.includes(visible)) throw new Error(`${visible} should be visible in Table View`);
+}
+const expectedTail = ["dialogue", "image", "audio_file", "image_prompt", "video_prompt", "note"];
+const tailStart = headers.indexOf("dialogue");
+if (tailStart < 0 || expectedTail.some((name, index) => headers[tailStart + index] !== name)) {
+  throw new Error(`media columns should be adjacent to dialogue on the right: ${headers.join(",")}`);
 }
 
 await page.click('[data-view="storyboard"]');
