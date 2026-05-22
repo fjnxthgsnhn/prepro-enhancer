@@ -1,6 +1,7 @@
 import { chromium } from "playwright";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
@@ -24,6 +25,8 @@ const tailStart = headers.indexOf("dialogue");
 if (tailStart < 0 || expectedTail.some((name, index) => headers[tailStart + index] !== name)) {
   throw new Error(`media columns should be adjacent to dialogue on the right: ${headers.join(",")}`);
 }
+const cssText = await readFile(resolve("src/styles.css"), "utf8");
+if (!cssText.includes("prefers-reduced-motion")) throw new Error("CSS should include reduced motion handling");
 
 await page.click('[data-view="storyboard"]');
 await expectCount(".cut-card", 3);
@@ -38,6 +41,21 @@ await expectText("#playBtn", "Stop");
 await page.click("#playBtn");
 
 await page.click('[data-view="table"]');
+await page.click("#tableView", { position: { x: 12, y: 780 } });
+await page.click('tbody tr[data-id="sc001"] td[data-column="title"]');
+await page.waitForFunction(() => document.querySelectorAll(".data-table tr.selection-range").length === 6);
+await page.click('tbody tr[data-id="mc001"] td[data-column="title"]');
+await page.waitForFunction(() => document.querySelectorAll(".data-table tr.selection-range").length === 3);
+await page.click('tbody tr[data-id="ct002"] td[data-column="title"]');
+await page.waitForFunction(() => document.querySelector('tbody tr[data-id="ct002"]')?.classList.contains("selection-single"));
+await page.click("#tableView", { position: { x: 12, y: 780 } });
+await page.waitForFunction(() => !document.querySelector(".data-table tr.selected") && document.querySelector("#detailPanel")?.textContent?.includes("Select a row"));
+
+await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
+await page.waitForFunction(() => document.querySelector('tbody tr[data-id="ct001"]')?.classList.contains("selected"));
+if ((await page.locator('td[data-column="title"] input').count()) !== 0) {
+  throw new Error("First editable cell click should select the row without opening an input");
+}
 await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
 await page.locator('td[data-column="title"] input').fill("Edited Smoke Cut");
 await page.keyboard.press("Enter");

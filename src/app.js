@@ -162,6 +162,12 @@ document.querySelectorAll(".view-btn").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
 });
 
+[el.table, el.storyboard, el.timeline].forEach((pane) => {
+  pane.addEventListener("click", (event) => {
+    if (event.target === pane) clearSelection();
+  });
+});
+
 el.input.addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
@@ -408,7 +414,7 @@ function renderTable() {
   const tbody = document.createElement("tbody");
   rows.forEach((row) => {
     const tr = document.createElement("tr");
-    tr.className = `${row.row_type}${state.selectedIds.has(row.id) ? " selected" : ""}`;
+    tr.className = [row.row_type, state.selectedIds.has(row.id) ? "selected" : "", tableSelectionClass(row)].filter(Boolean).join(" ");
     tr.draggable = true;
     tr.dataset.id = row.id;
     tr.dataset.type = row.row_type;
@@ -426,6 +432,11 @@ function renderTable() {
         td.classList.add("editable");
         td.addEventListener("click", (event) => {
           event.stopPropagation();
+          const wasSelected = state.selectedIds.has(row.id);
+          if (event.ctrlKey || event.metaKey || event.shiftKey || !wasSelected) {
+            selectRow(row.id, event);
+            return;
+          }
           editCell(td, row.id, column);
         });
       }
@@ -464,6 +475,9 @@ function renderStoryboard() {
   const tree = buildTree();
   const root = document.createElement("div");
   root.className = "storyboard";
+  root.addEventListener("click", (event) => {
+    if (event.target === root) clearSelection();
+  });
   tree.forEach((scene) => {
     const sceneEl = document.createElement("section");
     sceneEl.className = "scene-section";
@@ -503,6 +517,9 @@ function renderTimeline() {
   const playPercent = total ? Math.min(100, (currentPlaybackTime() / total) * 100) : 0;
   const root = document.createElement("div");
   root.className = "timeline";
+  root.addEventListener("click", (event) => {
+    if (event.target === root) clearSelection();
+  });
   root.innerHTML = `
     <div class="timeline-controls">
       <button id="playBtn">${state.playing ? "Stop" : "Play"}</button>
@@ -633,6 +650,40 @@ function selectRow(id, event = {}) {
   }
   state.activeId = id;
   render();
+}
+
+function clearSelection() {
+  if (!state.activeId && !state.selectedIds.size) return;
+  state.activeId = "";
+  state.selectedIds.clear();
+  render();
+}
+
+function tableSelectionClass(row) {
+  const active = getRow(state.activeId);
+  if (!active) return "";
+  const range = selectedHierarchyRange(active);
+  const index = range.findIndex((item) => item.id === row.id);
+  if (index < 0) return "";
+  const classes = ["selection-range"];
+  if (row.id === active.id) classes.push("selection-active");
+  if (range.length === 1) classes.push("selection-single");
+  else if (index === 0) classes.push("selection-start");
+  else if (index === range.length - 1) classes.push("selection-end");
+  else classes.push("selection-middle");
+  return classes.join(" ");
+}
+
+function selectedHierarchyRange(active) {
+  if (active.row_type === "scene") {
+    const scene = buildTree().find((item) => item.row.id === active.id);
+    return scene ? [scene.row, ...scene.multicuts.flatMap((multicut) => [multicut.row, ...multicut.cuts])] : [active];
+  }
+  if (active.row_type === "multicut") {
+    const multicut = buildTree().flatMap((scene) => scene.multicuts).find((item) => item.row.id === active.id);
+    return multicut ? [multicut.row, ...multicut.cuts] : [active];
+  }
+  return [active];
 }
 
 function toggleCollapse(id) {

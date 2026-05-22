@@ -191,6 +191,7 @@ button.active {
 
 .view-pane.active {
   display: block;
+  animation: view-enter 180ms ease-out both;
 }
 
 .status-bar {
@@ -299,6 +300,18 @@ button.active {
   box-shadow: inset 3px 0 0 rgba(255, 255, 255, 0.18);
 }
 
+.data-table tbody tr {
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.data-table tbody tr:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
 .data-table tr.scene td {
   border-top: 8px solid rgba(17, 19, 16, 0.95);
 }
@@ -308,8 +321,43 @@ button.active {
 }
 
 .data-table tr.selected {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    0 10px 22px rgba(0, 0, 0, 0.34);
+}
+
+.data-table tr.selection-range {
+  background-color: rgba(215, 255, 87, 0.08);
+}
+
+.data-table tr.selection-range td:first-child {
+  border-left: 2px solid var(--accent);
+}
+
+.data-table tr.selection-range td:last-child {
+  border-right: 2px solid var(--accent);
+}
+
+.data-table tr.selection-start td,
+.data-table tr.selection-single td {
+  border-top: 2px solid var(--accent);
+}
+
+.data-table tr.selection-end td,
+.data-table tr.selection-single td {
+  border-bottom: 2px solid var(--accent);
+}
+
+.data-table tr.selection-middle {
+  box-shadow:
+    inset 3px 0 0 rgba(215, 255, 87, 0.42),
+    0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.data-table tr.selection-active {
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    0 12px 28px rgba(0, 0, 0, 0.4);
 }
 
 .data-table tr[draggable="true"] {
@@ -458,10 +506,23 @@ button.active {
   background: var(--panel);
   overflow: hidden;
   cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+  animation: item-enter 180ms ease-out both;
 }
 
 .cut-card.selected {
   border-color: var(--accent);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
+  transform: translateY(-2px);
+}
+
+.cut-card:hover {
+  border-color: var(--accent-2);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.26);
+  transform: translateY(-1px);
 }
 
 .thumb {
@@ -531,11 +592,23 @@ button.active {
   border-right: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(111, 210, 255, 0.14), rgba(215, 255, 87, 0.04));
   cursor: pointer;
+  transition:
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    background-color 160ms ease;
+  animation: item-enter 180ms ease-out both;
 }
 
 .clip.selected {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+  transform: translateY(-2px);
+}
+
+.clip:hover {
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
+  transform: translateY(-1px);
 }
 
 .clip strong,
@@ -587,4 +660,37 @@ button.active {
 .empty-state {
   padding: 28px;
   color: var(--muted);
+}
+
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
 }
