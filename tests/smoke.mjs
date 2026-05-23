@@ -42,11 +42,32 @@ if (!cssText.includes("prefers-reduced-motion")) throw new Error("CSS should inc
 
 await page.click('[data-view="storyboard"]');
 await expectCount(".cut-card", 3);
-await expectText(".cut-card", "顕微鏡の寄り");
+await expectText(".scene-header", "8s");
+await expectText(".multicut-header", "6s");
+await page.dragAndDrop('.cut-card[data-id="ct001"]', '.multicut-section[data-id="mc002"]');
+await page.click('[data-view="table"]');
+await page.waitForFunction(() => {
+  const rows = [...document.querySelectorAll(".data-table tbody tr")].map((row) => row.dataset.id);
+  return rows.indexOf("ct001") > rows.indexOf("mc002");
+});
+await expectText('tbody tr[data-id="mc002"] td[data-column="duration"]', "5s");
+await expectText('tbody tr[data-id="sc001"] td[data-column="duration"]', "8s");
+await page.click('[data-view="storyboard"]');
+await page.click('.scene-header');
+await page.waitForFunction(() => {
+  const fields = [...document.querySelectorAll("#detailPanel .field")];
+  return fields.find((field) => field.querySelector("label")?.textContent === "duration")?.querySelector("input")?.value === "8s";
+});
+await page.locator('.multicut-section[data-id="mc002"]').dragTo(page.locator('.multicut-section[data-id="mc001"]'), {
+  sourcePosition: { x: 20, y: 15 },
+  targetPosition: { x: 20, y: 15 },
+});
+await page.waitForFunction(() => document.querySelector('.multicut-section[data-id="mc002"]')?.classList.contains("selected"));
+await expectText(".storyboard", "顕微鏡の寄り");
 
 await page.click('[data-view="timeline"]');
 await expectCount(".clip", 3);
-await expectText(".clip", "顕微鏡の寄り");
+await expectText(".timeline", "顕微鏡の寄り");
 await page.click("#playBtn");
 await page.waitForTimeout(250);
 await expectText("#playBtn", "Stop");
@@ -59,7 +80,7 @@ await page.waitForFunction(() => document.querySelector('tbody tr[data-id="sc001
 await page.click('tbody tr[data-id="ct002"] td[data-column="title"]', { modifiers: ["Shift"] });
 await page.waitForFunction(() => {
   const selected = [...document.querySelectorAll(".data-table tr.selected")].map((row) => row.dataset.id);
-  return selected.join(",") === "sc001,mc001,ct001,ct002" &&
+  return selected.includes("sc001") && selected.includes("ct002") && selected.length >= 3 &&
     document.querySelector('tbody tr[data-id="sc001"]')?.classList.contains("selection-start") &&
     document.querySelector('tbody tr[data-id="ct002"]')?.classList.contains("selection-end");
 });

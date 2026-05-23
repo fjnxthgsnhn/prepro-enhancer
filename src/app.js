@@ -516,8 +516,8 @@ function renderTable() {
     DISPLAY_COLUMNS.forEach((column) => {
       const td = document.createElement("td");
       td.dataset.column = column;
-      td.textContent = String(row[column] || "");
-      if (EDITABLE_COLUMNS.has(column)) {
+      td.textContent = column === "duration" ? displayDuration(row) : String(row[column] || "");
+      if (EDITABLE_COLUMNS.has(column) && !(column === "duration" && row.row_type !== "cut")) {
         td.classList.add("editable");
         td.addEventListener("click", (event) => {
           event.stopPropagation();
@@ -615,12 +615,22 @@ function renderStoryboard() {
   });
   tree.forEach((scene) => {
     const sceneEl = document.createElement("section");
-    sceneEl.className = "scene-section";
-    sceneEl.innerHTML = `<div class="scene-header"><h2>${escapeHtml(scene.row.title || scene.row.id)}</h2><span>${scene.multicuts.length} multicuts</span></div>`;
+    sceneEl.className = `scene-section${state.activeId === scene.row.id ? " selected" : ""}`;
+    attachStoryboardDrag(sceneEl, scene.row);
+    sceneEl.innerHTML = `<div class="scene-header"><h2>${escapeHtml(scene.row.title || scene.row.id)}</h2><span>${scene.multicuts.length} multicuts / ${displayDuration(scene.row)}</span></div>`;
+    sceneEl.querySelector(".scene-header").addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectRow(scene.row.id, event);
+    });
     scene.multicuts.forEach((multicut) => {
       const mc = document.createElement("section");
-      mc.className = "multicut-section";
-      mc.innerHTML = `<div class="multicut-header"><h3>${escapeHtml(multicut.row.title || multicut.row.id)}</h3><span>${multicut.cuts.length} cuts</span></div>`;
+      mc.className = `multicut-section${state.activeId === multicut.row.id ? " selected" : ""}`;
+      attachStoryboardDrag(mc, multicut.row);
+      mc.innerHTML = `<div class="multicut-header"><h3>${escapeHtml(multicut.row.title || multicut.row.id)}</h3><span>${multicut.cuts.length} cuts / ${displayDuration(multicut.row)}</span></div>`;
+      mc.querySelector(".multicut-header").addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectRow(multicut.row.id, event);
+      });
       const grid = document.createElement("div");
       grid.className = "card-grid";
       multicut.cuts.forEach((cut) => grid.appendChild(cutCard(cut)));
@@ -632,16 +642,43 @@ function renderStoryboard() {
   el.storyboard.replaceChildren(root);
 }
 
+function attachStoryboardDrag(element, row) {
+  element.draggable = true;
+  element.dataset.id = row.id;
+  element.dataset.type = row.row_type;
+  element.addEventListener("dragstart", (event) => {
+    event.stopPropagation();
+    handleDragStart(event, row);
+  });
+  element.addEventListener("dragover", (event) => {
+    event.stopPropagation();
+    handleDragOver(event, row);
+  });
+  element.addEventListener("dragleave", (event) => {
+    event.stopPropagation();
+    clearDropClasses();
+  });
+  element.addEventListener("drop", (event) => {
+    event.stopPropagation();
+    handleDrop(event, row);
+  });
+  element.addEventListener("dragend", (event) => {
+    event.stopPropagation();
+    clearDragState();
+  });
+}
+
 function cutCard(cut) {
   const card = document.createElement("article");
   card.className = `cut-card${state.activeId === cut.id ? " selected" : ""}`;
+  attachStoryboardDrag(card, cut);
   card.addEventListener("click", (event) => selectRow(cut.id, event));
   const media = displayMediaUrl(cut.image);
   card.innerHTML = `
-    <div class="thumb">${media ? `<img src="${media}" alt="">` : `<span>${cut.image ? "Missing image" : "No image"}</span>`}</div>
+      <div class="thumb">${media ? `<img src="${media}" alt="">` : `<span>${cut.image ? "Missing image" : "No image"}</span>`}</div>
     <div class="card-body">
       <div class="card-title">${escapeHtml(rowLabel(cut))}</div>
-      <div class="card-meta"><span>${escapeHtml(cut.duration || "default")}</span><span>${escapeHtml(cut.id)}</span></div>
+      <div class="card-meta"><span>${escapeHtml(displayDuration(cut))}</span><span>${escapeHtml(cut.id)}</span></div>
     </div>`;
   return card;
 }
@@ -662,7 +699,7 @@ function renderTimeline() {
     </div>
     <div class="marker-row">${state.rows
       .filter((row) => row.row_type !== "cut")
-      .map((row) => `<span class="marker">${escapeHtml(row.row_type)} ${escapeHtml(row.title || row.id)}</span>`)
+      .map((row) => `<span class="marker">${escapeHtml(row.row_type)} ${escapeHtml(row.title || row.id)} ${displayDuration(row)}</span>`)
       .join("")}</div>
     <div class="timeline-stage">
       <div class="playhead" style="width:${playPercent}%"></div>
@@ -674,7 +711,7 @@ function renderTimeline() {
     const clip = document.createElement("div");
     clip.className = `clip${state.activeId === cut.id ? " selected" : ""}`;
     clip.style.width = `${Math.max(92, seconds * 54)}px`;
-    clip.innerHTML = `<strong>${escapeHtml(rowLabel(cut))}</strong><span>${escapeHtml(cut.id)}</span><span>${seconds}s</span>`;
+    clip.innerHTML = `<strong>${escapeHtml(rowLabel(cut))}</strong><span>${escapeHtml(cut.id)}</span><span>${displayDuration(cut)}</span>`;
     clip.addEventListener("click", (event) => selectRow(cut.id, event));
     track.appendChild(clip);
   });
@@ -706,12 +743,13 @@ function renderDetail() {
   fields.forEach((field) => {
     const wrapper = document.createElement("div");
     wrapper.className = "field";
-    const readOnly = !EDITABLE_COLUMNS.has(field) && !["parent_id", "order"].includes(field);
+    const autoDuration = field === "duration" && row.row_type !== "cut";
+    const readOnly = autoDuration || (!EDITABLE_COLUMNS.has(field) && !["parent_id", "order"].includes(field));
     const tag = ["image_prompt", "video_prompt", "note"].includes(field) ? "textarea" : "input";
     wrapper.innerHTML = `<label>${field}</label><${tag} ${readOnly ? "readonly" : ""}>${tag === "textarea" ? escapeHtml(row[field] || "") : ""}</${tag}>`;
     const input = wrapper.querySelector(tag);
-    if (tag === "input") input.value = row[field] || "";
-    input.addEventListener("change", () => updateRow(row.id, { [field]: input.value }));
+    if (tag === "input") input.value = autoDuration ? displayDuration(row) : row[field] || "";
+    if (!autoDuration) input.addEventListener("change", () => updateRow(row.id, { [field]: input.value }));
     form.appendChild(wrapper);
   });
   el.detail.replaceChildren(form);
@@ -1213,6 +1251,31 @@ function durationSeconds(value) {
   if (!text) return 3;
   const match = text.match(/^(\d+(?:\.\d+)?)\s*s?$/i);
   return match ? Number(match[1]) : 3;
+}
+
+function computedDuration(row) {
+  if (!row) return 0;
+  if (row.row_type === "cut") return durationSeconds(row.duration);
+  if (row.row_type === "multicut") {
+    return state.rows
+      .filter((cut) => cut.row_type === "cut" && cut.parent_id === row.id)
+      .reduce((sum, cut) => sum + computedDuration(cut), 0);
+  }
+  if (row.row_type === "scene") {
+    return state.rows
+      .filter((multicut) => multicut.row_type === "multicut" && multicut.parent_id === row.id)
+      .reduce((sum, multicut) => sum + computedDuration(multicut), 0);
+  }
+  return 0;
+}
+
+function displayDuration(row) {
+  return formatDuration(computedDuration(row));
+}
+
+function formatDuration(seconds) {
+  const rounded = Math.round((Number(seconds) || 0) * 10) / 10;
+  return `${Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)}s`;
 }
 
 function mediaUrl(path) {

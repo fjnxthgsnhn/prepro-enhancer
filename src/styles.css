@@ -654,6 +654,10 @@ button.active {
 .scene-section {
   margin-bottom: 22px;
   border-top: 2px solid var(--accent);
+  transition:
+    border-color 160ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
 }
 
 .scene-header,
@@ -662,6 +666,7 @@ button.active {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 0;
+  cursor: grab;
 }
 
 .scene-header h2,
@@ -673,6 +678,35 @@ button.active {
 .multicut-section {
   padding: 8px 0 14px;
   border-top: 1px solid var(--line);
+  transition:
+    border-color 160ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.scene-section.selected,
+.multicut-section.selected {
+  border-color: var(--accent);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.scene-section.drop-before,
+.multicut-section.drop-before,
+.cut-card.drop-before {
+  border-top: 3px solid var(--accent);
+}
+
+.scene-section.drop-after,
+.multicut-section.drop-after,
+.cut-card.drop-after {
+  border-bottom: 3px solid var(--accent);
+}
+
+.scene-section.drop-into,
+.multicut-section.drop-into,
+.cut-card.drop-into {
+  outline: 2px dashed var(--accent-2);
+  outline-offset: 4px;
 }
 
 .card-grid {
