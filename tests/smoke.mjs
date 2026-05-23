@@ -2,6 +2,7 @@ import { chromium } from "playwright";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readFile } from "node:fs/promises";
+import { Buffer } from "node:buffer";
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
@@ -22,6 +23,19 @@ for (const menuItem of ["NewProject", "OpenProject", "Save", "Save as", "Export"
 }
 await page.keyboard.press("Escape");
 await page.waitForFunction(() => document.querySelector("#fileMenu")?.hidden);
+const [newProjectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("new")]);
+if (!newProjectDownload.suggestedFilename().endsWith(".lctproj")) throw new Error("NewProject should download an lctproj in web fallback");
+const newProjectBytes = await readFile(await newProjectDownload.path());
+const newProjectEntries = readZipEntries(newProjectBytes);
+const newCutlist = newProjectEntries.get("cutlist.tsv") || "";
+if (newCutlist.trim() !== expectedHeaders().join("\t")) throw new Error(`NewProject cutlist should contain only headers: ${newCutlist}`);
+await expectText("#counts", "scene 0 / multicut 0 / cut 0");
+await expectCount(".data-table tbody tr[data-id]", 0);
+await expectCount(".tree-node", 0);
+await expectText("#saveState", "Saved");
+await expectText("#detailPanel", "Select a row");
+await page.reload();
+await expectText("#projectName", "Sample Project");
 for (const removedButton of ["addSceneBtn", "addMulticutBtn", "addCutBtn", "groupCutsBtn", "groupMulticutsBtn"]) {
   if (await page.locator(`#${removedButton}`).count()) throw new Error(`${removedButton} should be removed from the toolbar`);
 }
@@ -314,6 +328,47 @@ async function expectText(selector, text) {
     ({ selector, text }) => document.querySelector(selector)?.textContent?.includes(text),
     { selector, text },
   );
+}
+
+function expectedHeaders() {
+  return [
+    "row_type",
+    "id",
+    "parent_id",
+    "order",
+    "title",
+    "duration",
+    "scene",
+    "subject",
+    "composition",
+    "action",
+    "camera",
+    "dialogue",
+    "image",
+    "audio_file",
+    "image_prompt",
+    "video_prompt",
+    "note",
+  ];
+}
+
+function readZipEntries(bytes) {
+  const entries = new Map();
+  let offset = 0;
+  while (offset < bytes.length - 4) {
+    if (bytes.readUInt32LE(offset) !== 0x04034b50) break;
+    const method = bytes.readUInt16LE(offset + 8);
+    const compressedSize = bytes.readUInt32LE(offset + 18);
+    const fileNameLength = bytes.readUInt16LE(offset + 26);
+    const extraLength = bytes.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const dataStart = nameStart + fileNameLength + extraLength;
+    const name = bytes.subarray(nameStart, nameStart + fileNameLength).toString("utf8");
+    const data = bytes.subarray(dataStart, dataStart + compressedSize);
+    if (method === 0) entries.set(name, data.toString("utf8"));
+    offset = dataStart + compressedSize;
+  }
+  return entries;
 }
 
 async function expectCount(selector, count) {

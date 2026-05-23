@@ -269,22 +269,23 @@ async function handleFileAction(action) {
   if (action === "exportXml") return exportPremiereXml();
 }
 
-function newProject() {
-  stopPlayback(0);
-  revokeMediaUrls();
-  state.manifest = structuredClone(DEFAULT_MANIFEST);
-  state.rows = [];
-  state.selectedIds.clear();
-  state.activeId = "";
-  state.selectionAnchorId = "";
-  state.projectFileName = "";
-  state.projectPath = "";
-  state.mediaUrls = new Map();
-  state.mediaBlobs = new Map();
-  state.undo = [];
-  state.redo = [];
+async function newProject() {
+  const manifest = structuredClone(DEFAULT_MANIFEST);
+  manifest.projectName = "Untitled Project";
+  const rows = [];
+  const defaultName = `${safeName(manifest.projectName)}.lctproj`;
+  const bytes = await projectArchiveBytes({ manifest, rows, mediaBlobs: new Map(), collapsed: [], activeId: "", view: "table" });
+  if (tauriInvoke) {
+    const saved = await tauriInvoke("save_project_as", { defaultName, bytes: [...bytes] });
+    if (!saved) return;
+    const opened = await tauriInvoke("read_project_file", { path: saved.path });
+    await loadProjectFromBytes(new Uint8Array(opened.bytes || []), opened.file_name || saved.file_name || defaultName, opened.path || saved.path || "");
+  } else {
+    downloadBlob(defaultName, new Blob([bytes], { type: "application/zip" }));
+    await loadProjectFromBytes(bytes, defaultName, "");
+  }
   state.dirty = false;
-  state.lastSaved = "";
+  state.lastSaved = new Date().toLocaleTimeString();
   render();
 }
 
@@ -392,6 +393,10 @@ function decodeCell(value) {
 
 function serializeTsv(rows = state.rows) {
   return [COLUMNS.join("\t"), ...rows.map((row) => COLUMNS.map((column) => encodeCell(row[column])).join("\t"))].join("\n");
+}
+
+function emptyProjectTsv() {
+  return COLUMNS.join("\t");
 }
 
 function serializeLlmTsv(rows = state.rows) {
@@ -1813,28 +1818,35 @@ async function exportFile(defaultName, content, kind) {
   render();
 }
 
-async function projectArchiveBytes() {
+async function projectArchiveBytes(options = {}) {
   const now = new Date();
   const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+  const sourceManifest = options.manifest || state.manifest;
+  const sourceRows = options.rows || state.rows;
+  const sourceMediaBlobs = options.mediaBlobs || state.mediaBlobs;
+  const collapsed = options.collapsed || [...state.collapsed];
+  const activeId = options.activeId ?? state.activeId;
+  const view = options.view || state.view;
+  const cutlist = sourceRows.length ? serializeTsv(sourceRows) : emptyProjectTsv();
   const manifest = {
-    ...state.manifest,
-    projectName: state.manifest.projectName || "Previz Project",
+    ...sourceManifest,
+    projectName: sourceManifest.projectName || "Untitled Project",
     mainCutlist: "cutlist.tsv",
     timeline: "timeline.json",
     settings: "settings.json",
   };
   const files = new Map([
     ["manifest.json", JSON.stringify(manifest, null, 2)],
-    ["cutlist.tsv", serializeTsv()],
-    ["timeline.json", JSON.stringify({ collapsed: [...state.collapsed], activeId: state.activeId }, null, 2)],
-    ["settings.json", JSON.stringify({ view: state.view }, null, 2)],
-    ["media_index.json", JSON.stringify({ media: state.rows.filter((row) => row.row_type === "cut").map((row) => ({ id: row.id, image: row.image, audio_file: row.audio_file })) }, null, 2)],
+    ["cutlist.tsv", cutlist],
+    ["timeline.json", JSON.stringify({ collapsed, activeId }, null, 2)],
+    ["settings.json", JSON.stringify({ view }, null, 2)],
+    ["media_index.json", JSON.stringify({ media: sourceRows.filter((row) => row.row_type === "cut").map((row) => ({ id: row.id, image: row.image, audio_file: row.audio_file })) }, null, 2)],
     [`.backups/${stamp}/manifest.json`, JSON.stringify(manifest, null, 2)],
-    [`.backups/${stamp}/cutlist.tsv`, serializeTsv()],
-    [`.backups/${stamp}/timeline.json`, JSON.stringify({ collapsed: [...state.collapsed], activeId: state.activeId }, null, 2)],
-    [`.backups/${stamp}/settings.json`, JSON.stringify({ view: state.view }, null, 2)],
+    [`.backups/${stamp}/cutlist.tsv`, cutlist],
+    [`.backups/${stamp}/timeline.json`, JSON.stringify({ collapsed, activeId }, null, 2)],
+    [`.backups/${stamp}/settings.json`, JSON.stringify({ view }, null, 2)],
   ]);
-  for (const [path, mediaBlob] of state.mediaBlobs.entries()) {
+  for (const [path, mediaBlob] of sourceMediaBlobs.entries()) {
     files.set(path, new Uint8Array(await mediaBlob.arrayBuffer()));
   }
   return createZip(files);

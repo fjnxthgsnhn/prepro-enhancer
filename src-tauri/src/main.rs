@@ -51,6 +51,17 @@ fn save_project_as(default_name: String, bytes: Vec<u8>) -> Result<Option<SavedF
 }
 
 #[tauri::command]
+fn read_project_file(path: String) -> Result<OpenedFile, String> {
+    let path = PathBuf::from(path);
+    let bytes = fs::read(&path).map_err(|error| error.to_string())?;
+    Ok(OpenedFile {
+        file_name: file_name(&path),
+        path: path.to_string_lossy().to_string(),
+        bytes,
+    })
+}
+
+#[tauri::command]
 fn export_file(default_name: String, content: String, kind: String) -> Result<Option<SavedFile>, String> {
     let extensions: &[&str] = match kind.as_str() {
         "xml" => &["xml"],
@@ -86,6 +97,7 @@ fn main() {
             open_project,
             save_project,
             save_project_as,
+            read_project_file,
             export_file
         ])
         .run(tauri::generate_context!())
