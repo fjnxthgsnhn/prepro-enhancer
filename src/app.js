@@ -121,12 +121,14 @@ const state = {
   undo: [],
   redo: [],
   playing: false,
-  timer: null,
+  raf: 0,
   playStartedAt: 0,
   playOffset: 0,
   draggingId: "",
   contextMenu: null,
   addOverlayAnchor: null,
+  timelinePreviewCutId: "",
+  timelineScrubbing: false,
 };
 
 const tauriInvoke = window.__TAURI__?.core?.invoke || null;
@@ -210,6 +212,10 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     groupSelectionFromShortcut();
   }
+  if (event.code === "Space" && !isTextEntryTarget(event.target)) {
+    event.preventDefault();
+    togglePlayback();
+  }
   if (event.ctrlKey && event.key.toLowerCase() === "z") {
     event.preventDefault();
     undo();
@@ -259,6 +265,7 @@ async function handleFileAction(action) {
 }
 
 function newProject() {
+  stopPlayback(0);
   revokeMediaUrls();
   state.manifest = structuredClone(DEFAULT_MANIFEST);
   state.rows = [];
@@ -296,6 +303,7 @@ async function openProject() {
 }
 
 function loadTsv(text, name) {
+  stopPlayback(0);
   state.manifest = {
     ...structuredClone(DEFAULT_MANIFEST),
     projectName: name || "TSV Project",
@@ -317,6 +325,7 @@ function loadTsv(text, name) {
 }
 
 async function loadProjectFromBytes(bytes, fileName, path = "") {
+  stopPlayback(0);
   revokeMediaUrls();
   const entries = await readZipEntries(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
   const manifestText = decodeZipText(entries.get("manifest.json"));
@@ -684,39 +693,82 @@ function cutCard(cut) {
 }
 
 function renderTimeline() {
-  const cuts = state.rows.filter((row) => row.row_type === "cut").sort(sortByGlobalTimeline);
-  const total = cuts.reduce((sum, cut) => sum + durationSeconds(cut.duration), 0);
-  const playPercent = total ? Math.min(100, (currentPlaybackTime() / total) * 100) : 0;
+  const model = timelineModel();
+  const total = model.total;
+  const playTime = Math.min(currentPlaybackTime(), total);
+  const active = activeCutAt(playTime, model.cuts);
   const root = document.createElement("div");
   root.className = "timeline";
   root.addEventListener("click", (event) => {
     if (event.target === root) clearSelection();
   });
   root.innerHTML = `
+    ${timelinePreviewHtml(active?.cut, active?.offset || 0)}
     <div class="timeline-controls">
       <button id="playBtn">${state.playing ? "Stop" : "Play"}</button>
-      <span>${formatTime(currentPlaybackTime())} / ${formatTime(total)}</span>
+      <input id="timelineSeek" class="timeline-seek" type="range" min="0" max="${total || 0}" step="0.05" value="${playTime}" aria-label="Timeline seek" />
+      <span id="timelineTime">${formatTime(playTime)} / ${formatTime(total)}</span>
     </div>
-    <div class="marker-row">${state.rows
-      .filter((row) => row.row_type !== "cut")
-      .map((row) => `<span class="marker">${escapeHtml(row.row_type)} ${escapeHtml(row.title || row.id)} ${displayDuration(row)}</span>`)
-      .join("")}</div>
     <div class="timeline-stage">
-      <div class="playhead" style="width:${playPercent}%"></div>
-      <div class="track"></div>
+      <div class="playhead"><div class="playhead-handle" aria-label="Scrub timeline"></div></div>
+      <div class="nested-track" style="width:${model.width}px">
+        <div class="timeline-lane scene-lane"></div>
+        <div class="timeline-lane multicut-lane"></div>
+        <div class="timeline-lane cut-lane"></div>
+      </div>
     </div>`;
-  const track = root.querySelector(".track");
-  cuts.forEach((cut) => {
-    const seconds = durationSeconds(cut.duration);
-    const clip = document.createElement("div");
-    clip.className = `clip${state.activeId === cut.id ? " selected" : ""}`;
-    clip.style.width = `${Math.max(92, seconds * 54)}px`;
-    clip.innerHTML = `<strong>${escapeHtml(rowLabel(cut))}</strong><span>${escapeHtml(cut.id)}</span><span>${displayDuration(cut)}</span>`;
-    clip.addEventListener("click", (event) => selectRow(cut.id, event));
-    track.appendChild(clip);
-  });
+  renderTimelineLane(root.querySelector(".scene-lane"), model.scenes, "scene");
+  renderTimelineLane(root.querySelector(".multicut-lane"), model.multicuts, "multicut");
+  renderTimelineLane(root.querySelector(".cut-lane"), model.cuts, "cut");
   root.querySelector("#playBtn").addEventListener("click", togglePlayback);
+  root.querySelector("#timelineSeek").addEventListener("input", (event) => {
+    setPlaybackOffset(Number(event.target.value) || 0);
+  });
+  attachTimelineScrub(root.querySelector(".timeline-stage"));
   el.timeline.replaceChildren(root);
+  updateTimelinePlaybackUi({ forcePreview: true, model, active });
+}
+
+function timelinePreviewHtml(cut, offset) {
+  if (!cut) return `<div class="timeline-preview"><div class="timeline-text-preview"><strong>No cut</strong></div></div>`;
+  const image = displayMediaUrl(cut.image);
+  const audio = displayMediaUrl(cut.audio_file);
+  const textRows = ["title", "scene", "subject", "composition", "action", "camera", "dialogue"]
+    .map((field) => [field, field === "title" ? rowLabel(cut) : cut[field]])
+    .filter(([, value]) => value)
+    .map(([field, value]) => `<div><span>${escapeHtml(field)}</span><strong>${escapeHtml(value)}</strong></div>`);
+  if (!textRows.length) textRows.push(`<div><span>title</span><strong>${escapeHtml(cut.id)}</strong></div>`);
+  return `
+    <div class="timeline-preview" data-cut-id="${escapeHtml(cut.id)}" data-cut-offset="${offset}">
+      ${image ? `<img src="${image}" alt="">` : `<div class="timeline-text-preview">${textRows.join("")}</div>`}
+      ${audio ? `<audio id="timelineAudio" src="${audio}" preload="auto"></audio>` : ""}
+    </div>`;
+}
+
+function renderTimelineLane(lane, items, type) {
+  items.forEach((item) => {
+    const clip = document.createElement("div");
+    clip.className = `clip timeline-clip ${type}${state.activeId === item.row.id ? " selected" : ""}`;
+    clip.draggable = true;
+    clip.dataset.id = item.row.id;
+    clip.dataset.type = type;
+    clip.style.left = `${item.start}px`;
+    clip.style.width = `${item.width}px`;
+    clip.innerHTML = `<strong>${escapeHtml(rowLabel(item.row))}</strong><span>${escapeHtml(displayDuration(item.row))}</span>`;
+    clip.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectRow(item.row.id, event);
+    });
+    clip.addEventListener("dragstart", (event) => {
+      clip.classList.add("dragging");
+      handleDragStart(event, item.row);
+    });
+    clip.addEventListener("dragover", (event) => handleDragOver(event, item.row));
+    clip.addEventListener("dragleave", clearDropClasses);
+    clip.addEventListener("drop", (event) => handleDrop(event, item.row));
+    clip.addEventListener("dragend", clearDragState);
+    lane.appendChild(clip);
+  });
 }
 
 function sortByGlobalTimeline(a, b) {
@@ -729,6 +781,112 @@ function sortByGlobalTimeline(a, b) {
     Number(parentA?.order || 0) - Number(parentB?.order || 0) ||
     Number(a.order || 0) - Number(b.order || 0)
   );
+}
+
+function timelineModel() {
+  const unit = 72;
+  const minWidth = 112;
+  let cursor = 0;
+  const scenes = [];
+  const multicuts = [];
+  const cuts = [];
+  buildTree().forEach((scene) => {
+    const sceneStart = cursor;
+    scene.multicuts.forEach((multicut) => {
+      const multicutStart = cursor;
+      multicut.cuts.forEach((cut) => {
+        const width = Math.max(minWidth, durationSeconds(cut.duration) * unit);
+        cuts.push({ row: cut, start: cursor, width, seconds: durationSeconds(cut.duration) });
+        cursor += width;
+      });
+      const multicutWidth = Math.max(minWidth, cursor - multicutStart);
+      multicuts.push({ row: multicut.row, start: multicutStart, width: multicutWidth });
+      if (cursor === multicutStart) cursor += multicutWidth;
+    });
+    const sceneWidth = Math.max(minWidth, cursor - sceneStart);
+    scenes.push({ row: scene.row, start: sceneStart, width: sceneWidth });
+    if (cursor === sceneStart) cursor += sceneWidth;
+  });
+  const total = cuts.reduce((sum, item) => sum + item.seconds, 0);
+  return { scenes, multicuts, cuts, width: Math.max(cursor, 640), total };
+}
+
+function activeCutAt(time, cutItems = timelineModel().cuts) {
+  let elapsed = 0;
+  for (const item of cutItems) {
+    const end = elapsed + item.seconds;
+    if (time < end || item === cutItems[cutItems.length - 1]) return { cut: item.row, offset: Math.max(0, time - elapsed), start: elapsed, end };
+    elapsed = end;
+  }
+  return null;
+}
+
+function updateTimelinePlaybackUi({ forcePreview = false, model = timelineModel(), active = null } = {}) {
+  const root = el.timeline.querySelector(".timeline");
+  if (!root) return;
+  const total = model.total;
+  const playTime = clamp(currentPlaybackTime(), 0, total);
+  const activeCut = active || activeCutAt(playTime, model.cuts);
+  const seek = root.querySelector("#timelineSeek");
+  const time = root.querySelector("#timelineTime");
+  const stage = root.querySelector(".timeline-stage");
+  const track = root.querySelector(".nested-track");
+  const playhead = root.querySelector(".playhead");
+  if (seek) {
+    seek.max = String(total || 0);
+    seek.value = String(playTime);
+  }
+  if (time) time.textContent = `${formatTime(playTime)} / ${formatTime(total)}`;
+  if (stage && track && playhead) {
+    const x = total ? (playTime / total) * track.offsetWidth : 0;
+    playhead.style.left = `${track.offsetLeft + x - stage.scrollLeft}px`;
+  }
+  const preview = root.querySelector(".timeline-preview");
+  const cut = activeCut?.cut || null;
+  const offset = activeCut?.offset || 0;
+  if (preview && (forcePreview || preview.dataset.cutId !== (cut?.id || ""))) {
+    preview.outerHTML = timelinePreviewHtml(cut, offset);
+  }
+  syncTimelineAudio(cut, offset);
+}
+
+function attachTimelineScrub(stage) {
+  if (!stage) return;
+  const start = (event) => {
+    if (event.target.closest(".timeline-clip") && !event.target.closest(".playhead")) return;
+    event.preventDefault();
+    state.timelineScrubbing = true;
+    stage.classList.add("scrubbing");
+    stage.setPointerCapture?.(event.pointerId);
+    scrubTimelineAt(event);
+  };
+  const move = (event) => {
+    if (!state.timelineScrubbing) return;
+    event.preventDefault();
+    scrubTimelineAt(event);
+  };
+  const end = (event) => {
+    if (!state.timelineScrubbing) return;
+    state.timelineScrubbing = false;
+    stage.classList.remove("scrubbing");
+    stage.releasePointerCapture?.(event.pointerId);
+  };
+  stage.addEventListener("pointerdown", start);
+  stage.addEventListener("pointermove", move);
+  stage.addEventListener("pointerup", end);
+  stage.addEventListener("pointercancel", end);
+  stage.addEventListener("scroll", () => updateTimelinePlaybackUi());
+}
+
+function scrubTimelineAt(event) {
+  const stage = event.currentTarget;
+  const track = stage.querySelector(".nested-track");
+  if (!track) return;
+  const total = timelineModel().total;
+  const x = clamp(event.clientX - track.getBoundingClientRect().left, 0, track.offsetWidth);
+  state.playOffset = total ? (x / track.offsetWidth) * total : 0;
+  if (state.playing) state.playStartedAt = performance.now();
+  updateTimelinePlaybackUi();
 }
 
 function renderDetail() {
@@ -1163,8 +1321,14 @@ function handleMediaDrop(event, target) {
   const audio = files.find(isAudioFile);
   if (!image && !audio) return;
   const patch = {};
-  if (image) patch.image = image.name;
-  if (audio) patch.audio_file = audio.name;
+  if (image) {
+    patch.image = image.name;
+    setSessionMediaUrl(image.name, image);
+  }
+  if (audio) {
+    patch.audio_file = audio.name;
+    setSessionMediaUrl(audio.name, audio);
+  }
   pushHistory();
   Object.assign(target, patch);
   state.activeId = target.id;
@@ -1172,6 +1336,12 @@ function handleMediaDrop(event, target) {
   state.selectionAnchorId = target.id;
   markDirty();
   render();
+}
+
+function setSessionMediaUrl(path, file) {
+  const previous = state.mediaUrls.get(path);
+  if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
+  state.mediaUrls.set(path, URL.createObjectURL(file));
 }
 
 function isImageFile(file) {
@@ -1183,14 +1353,17 @@ function isAudioFile(file) {
 }
 
 function dropMode(event, dragged, target) {
-  if (dragged.row_type === "scene" && target.row_type === "scene") return event.offsetY < event.currentTarget.clientHeight / 2 ? "before" : "after";
+  const beforeAfter = event.currentTarget?.classList?.contains("timeline-clip")
+    ? event.offsetX < event.currentTarget.clientWidth / 2
+    : event.offsetY < event.currentTarget.clientHeight / 2;
+  if (dragged.row_type === "scene" && target.row_type === "scene") return beforeAfter ? "before" : "after";
   if (dragged.row_type === "multicut") {
     if (target.row_type === "scene") return "into";
-    if (target.row_type === "multicut") return event.offsetY < event.currentTarget.clientHeight / 2 ? "before" : "after";
+    if (target.row_type === "multicut") return beforeAfter ? "before" : "after";
   }
   if (dragged.row_type === "cut") {
     if (target.row_type === "multicut") return "into";
-    if (target.row_type === "cut") return event.offsetY < event.currentTarget.clientHeight / 2 ? "before" : "after";
+    if (target.row_type === "cut") return beforeAfter ? "before" : "after";
   }
   return "";
 }
@@ -1223,6 +1396,7 @@ function clearDropClasses() {
 
 function clearDragState() {
   state.draggingId = "";
+  document.querySelectorAll(".dragging").forEach((item) => item.classList.remove("dragging"));
   clearDropClasses();
 }
 
@@ -1538,24 +1712,64 @@ function currentPlaybackTime() {
 
 function togglePlayback() {
   if (state.playing) {
-    state.playOffset = currentPlaybackTime();
-    state.playing = false;
-    clearInterval(state.timer);
+    stopPlayback(currentPlaybackTime());
   } else {
-    const total = state.rows.filter((row) => row.row_type === "cut").reduce((sum, cut) => sum + durationSeconds(cut.duration), 0);
+    const total = timelineModel().total;
     if (state.playOffset >= total) state.playOffset = 0;
     state.playing = true;
     state.playStartedAt = performance.now();
-    state.timer = setInterval(() => {
-      if (currentPlaybackTime() >= total) {
-        state.playing = false;
-        state.playOffset = 0;
-        clearInterval(state.timer);
-      }
-      renderTimeline();
-    }, 100);
+    schedulePlaybackFrame();
   }
   renderTimeline();
+}
+
+function schedulePlaybackFrame() {
+  cancelAnimationFrame(state.raf);
+  const tick = () => {
+    if (!state.playing) return;
+    const total = timelineModel().total;
+    if (currentPlaybackTime() >= total) {
+      stopPlayback(0);
+      updateTimelinePlaybackUi();
+      return;
+    }
+    updateTimelinePlaybackUi();
+    state.raf = requestAnimationFrame(tick);
+  };
+  state.raf = requestAnimationFrame(tick);
+}
+
+function stopPlayback(offset = state.playOffset) {
+  state.playOffset = Math.max(0, offset);
+  state.playing = false;
+  cancelAnimationFrame(state.raf);
+  document.querySelector("#timelineAudio")?.pause();
+}
+
+function setPlaybackOffset(offset) {
+  const total = timelineModel().total;
+  state.playOffset = clamp(offset, 0, total);
+  if (state.playing) state.playStartedAt = performance.now();
+  updateTimelinePlaybackUi();
+}
+
+function syncTimelineAudio(cut, offset) {
+  const audio = document.querySelector("#timelineAudio");
+  if (!audio || !cut || !state.playing) {
+    if (audio) audio.pause();
+    state.timelinePreviewCutId = cut?.id || "";
+    return;
+  }
+  if (state.timelinePreviewCutId !== cut.id || Math.abs(audio.currentTime - offset) > 0.35) {
+    audio.currentTime = Math.max(0, offset);
+  }
+  state.timelinePreviewCutId = cut.id;
+  audio.play().catch(() => {});
+}
+
+function isTextEntryTarget(target) {
+  const tag = target?.tagName?.toLowerCase();
+  return ["input", "textarea", "select"].includes(tag) || target?.isContentEditable;
 }
 
 function createZip(files) {

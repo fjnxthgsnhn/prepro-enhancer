@@ -782,6 +782,49 @@ button.active {
   padding: 18px;
 }
 
+.timeline-preview {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  width: min(920px, 100%);
+  max-height: min(46vh, 520px);
+  margin: 0 auto 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+
+.timeline-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.timeline-preview audio {
+  display: none;
+}
+
+.timeline-text-preview {
+  display: grid;
+  gap: 8px;
+  width: min(760px, 88%);
+  color: var(--text);
+}
+
+.timeline-text-preview div {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 14px;
+  align-items: baseline;
+}
+
+.timeline-text-preview span {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
 .timeline-controls {
   display: flex;
   align-items: center;
@@ -789,27 +832,75 @@ button.active {
   margin-bottom: 16px;
 }
 
+.timeline-seek {
+  flex: 1 1 auto;
+  accent-color: var(--accent);
+}
+
 .timeline-stage {
+  position: relative;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   padding: 14px;
+  overflow-x: auto;
 }
 
 .playhead {
-  height: 2px;
-  background: var(--accent);
-  width: 0%;
-  margin-bottom: 10px;
-  transition: width 0.1s linear;
+  position: absolute;
+  top: 4px;
+  bottom: 10px;
+  width: 20px;
+  z-index: 5;
+  cursor: ew-resize;
+  pointer-events: none;
+  transform: translateX(-10px);
+  transition: left 0.1s linear;
 }
 
-.track {
-  display: flex;
-  min-height: 94px;
+.playhead::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 0;
+  left: 9px;
+  width: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(215, 255, 87, 0.45);
+}
+
+.playhead-handle {
+  position: absolute;
+  top: 0;
+  left: 1px;
+  width: 18px;
+  height: 14px;
+  background: var(--accent);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  pointer-events: auto;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+}
+
+.timeline-stage.scrubbing .playhead {
+  transition: none;
+}
+
+.nested-track {
+  position: relative;
+  display: grid;
+  grid-template-rows: 32px 32px 64px;
+  min-width: 100%;
   border: 1px solid var(--line);
-  overflow-x: auto;
   background: #0f110e;
+}
+
+.timeline-lane {
+  position: relative;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.timeline-lane:last-child {
+  border-bottom: 0;
 }
 
 .clip {
@@ -853,19 +944,92 @@ button.active {
   margin-top: 6px;
 }
 
-.marker-row {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
+.timeline-clip {
+  position: absolute;
+  inset-block: 0;
+  min-width: 0;
+  border-right: 1px solid rgba(0, 0, 0, 0.28);
+  border-bottom: 0;
+  border-radius: 0;
+  will-change: transform, opacity;
+  transition:
+    box-shadow 170ms ease,
+    transform 170ms ease,
+    filter 170ms ease,
+    opacity 170ms ease;
 }
 
-.marker {
-  border: 1px solid var(--line);
-  color: var(--muted);
-  padding: 3px 7px;
-  border-radius: 999px;
-  font-size: 11px;
+.timeline-clip.scene {
+  background: rgba(215, 255, 87, 0.68);
+  color: #111310;
+}
+
+.timeline-clip.multicut {
+  background: rgba(79, 217, 224, 0.82);
+  color: #101816;
+}
+
+.timeline-clip.cut {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.09));
+  color: var(--text);
+}
+
+.timeline-clip strong,
+.timeline-clip span {
+  padding-inline: 8px;
+}
+
+.timeline-clip span {
+  color: currentColor;
+  opacity: 0.72;
+  margin-top: 2px;
+}
+
+.timeline-clip.dragging {
+  opacity: 0.46;
+  filter: saturate(1.25);
+  transform: scale(0.985);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+}
+
+.timeline-clip.drop-before,
+.timeline-clip.drop-after,
+.timeline-clip.drop-into {
+  z-index: 4;
+  box-shadow: 0 14px 30px rgba(215, 255, 87, 0.22);
+}
+
+.timeline-clip.drop-before {
+  transform: translateX(8px);
+}
+
+.timeline-clip.drop-after {
+  transform: translateX(-8px);
+}
+
+.timeline-clip.drop-into {
+  transform: translateY(-2px) scale(1.015);
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.timeline-clip.drop-before::before,
+.timeline-clip.drop-after::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 12px rgba(215, 255, 87, 0.6);
+}
+
+.timeline-clip.drop-before::before {
+  left: 0;
+}
+
+.timeline-clip.drop-after::after {
+  right: 0;
 }
 
 .issues {

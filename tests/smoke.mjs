@@ -66,12 +66,48 @@ await page.waitForFunction(() => document.querySelector('.multicut-section[data-
 await expectText(".storyboard", "顕微鏡の寄り");
 
 await page.click('[data-view="timeline"]');
-await expectCount(".clip", 3);
+await expectCount(".timeline-preview", 1);
+await expectCount(".timeline-seek", 1);
+await expectCount(".timeline-clip.scene", 1);
+await expectCount(".timeline-clip.multicut", 2);
+await expectCount(".timeline-clip.cut", 3);
 await expectText(".timeline", "顕微鏡の寄り");
+await page.waitForFunction(() => {
+  const preview = document.querySelector(".timeline-preview");
+  return preview && Math.abs(preview.getBoundingClientRect().width / preview.getBoundingClientRect().height - 16 / 9) < 0.03;
+});
 await page.click("#playBtn");
 await page.waitForTimeout(250);
 await expectText("#playBtn", "Stop");
-await page.click("#playBtn");
+await expectCount(".timeline-clip.scene", 1);
+await expectCount(".timeline-clip.multicut", 2);
+await expectCount(".timeline-clip.cut", 3);
+await page.keyboard.press("Space");
+await expectText("#playBtn", "Play");
+await page.locator(".timeline-seek").fill("4");
+await page.waitForFunction(() => Number(document.querySelector(".timeline-seek")?.value || 0) >= 4);
+await expectCount(".playhead-handle", 1);
+await page.locator(".playhead-handle").dragTo(page.locator(".timeline-stage"), {
+  sourcePosition: { x: 6, y: 6 },
+  targetPosition: { x: 320, y: 50 },
+});
+await page.waitForFunction(() => Number(document.querySelector(".timeline-seek")?.value || 0) > 0.5);
+await page.click('[data-view="table"]');
+await clearTableCell("ct001", "image");
+await clearTableCell("ct002", "image");
+await clearTableCell("ct003", "image");
+await page.click('[data-view="timeline"]');
+await page.locator(".timeline-seek").fill("1");
+await page.waitForFunction(() => {
+  const preview = document.querySelector(".timeline-preview");
+  const text = document.querySelector(".timeline-text-preview");
+  return preview && text && !preview.querySelector("img") && text.textContent.includes("title");
+});
+await page.locator('.timeline-clip.cut[data-id="ct001"]').dragTo(page.locator('.timeline-clip.multicut[data-id="mc001"]'), {
+  sourcePosition: { x: 20, y: 20 },
+  targetPosition: { x: 20, y: 20 },
+});
+await page.waitForFunction(() => document.querySelector('.timeline-clip.cut[data-id="ct001"]')?.classList.contains("selected"));
 
 await page.click('[data-view="table"]');
 await page.click("#tableView", { position: { x: 12, y: 780 } });
@@ -218,6 +254,18 @@ async function dropFiles(selector, files) {
     target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
     target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
   }, files);
+}
+
+async function clearTableCell(rowId, column) {
+  const selector = `tbody tr[data-id="${rowId}"] td[data-column="${column}"]`;
+  await page.click(selector);
+  await page.click(selector);
+  await page.locator(`${selector} input`).fill("");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(
+    ({ selector }) => document.querySelector(selector)?.textContent?.trim() === "",
+    { selector },
+  );
 }
 
 async function expectText(selector, text) {
