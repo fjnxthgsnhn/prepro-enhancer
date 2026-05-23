@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
+import { deflateRawSync } from "node:zlib";
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
@@ -31,6 +32,19 @@ const newCutlist = newProjectEntries.get("cutlist.tsv") || "";
 if (newCutlist.trim() !== expectedHeaders().join("\t")) throw new Error(`NewProject cutlist should contain only headers: ${newCutlist}`);
 await expectText("#counts", "scene 0 / multicut 0 / cut 0");
 await expectCount(".data-table tbody tr[data-id]", 0);
+await expectTableHeaders();
+await expectCount(".empty-table-row", 1);
+await page.click('.empty-table-row .add-row-btn.scene');
+await expectText("#counts", "scene 1 / multicut 0 / cut 0");
+await expectCount(".data-table tbody tr[data-id]", 1);
+await clickFileAction("new");
+await expectText("#counts", "scene 0 / multicut 0 / cut 0");
+await expectTableHeaders();
+await page.click('.empty-table-row .add-row-btn.cut');
+await expectText("#counts", "scene 1 / multicut 1 / cut 1");
+await expectCount(".data-table tbody tr[data-id]", 3);
+await clickFileAction("new");
+await expectText("#counts", "scene 0 / multicut 0 / cut 0");
 await expectCount(".tree-node", 0);
 await expectText("#saveState", "Saved");
 await expectText("#detailPanel", "Select a row");
@@ -55,6 +69,47 @@ const wrappedProject = makeStoredZip(
 );
 await loadProjectFile("wrapped-project.lctproj", wrappedProject);
 await expectText("#projectName", "Wrapped Project");
+await expectText("#counts", "scene 1 / multicut 0 / cut 0");
+await page.reload();
+await expectText("#projectName", "Sample Project");
+const quotedProject = makeStoredZip(
+  new Map([
+    ["manifest.json", JSON.stringify({ projectName: "Quoted TSV Project", mainCutlist: "cutlist.tsv" })],
+    ["cutlist.tsv", `${expectedHeaders().join("\t")}\nscene\tsc930\t\t1\tQuoted Scene\t\t\t\t\t\t\t\t\t\t\t\t\nmulticut\tmc930\tsc930\t1\tQuoted MC\t\t\t\t\t\t\t\t\t\t\t\ncut\tct930\tmc930\t1\t\"Quoted\tCut\"\t2s\t\t\t\t\t\t\t\t\t\t\t\"line1\nline2\"`],
+  ]),
+);
+await loadProjectFile("quoted-project.lctproj", quotedProject);
+await expectText("#projectName", "Quoted TSV Project");
+await expectText("#counts", "scene 1 / multicut 1 / cut 1");
+await expectText('tbody tr[data-id="ct930"] td[data-column="title"]', "Quoted\tCut");
+await expectText('tbody tr[data-id="ct930"] td[data-column="note"]', "line2");
+await page.reload();
+await expectText("#projectName", "Sample Project");
+const sjisTsv = Buffer.concat([
+  Buffer.from(`${expectedHeaders().join("\t")}\nscene\tsc940\t\t1\t`, "ascii"),
+  Buffer.from([0x82, 0xa0]),
+  Buffer.from("\t\t\t\t\t\t\t\t\t\t\t\t", "ascii"),
+]);
+const sjisProject = makeStoredZip(
+  new Map([
+    ["manifest.json", JSON.stringify({ projectName: "SJIS TSV Project", mainCutlist: "cutlist.tsv" })],
+    ["cutlist.tsv", sjisTsv],
+  ]),
+);
+await loadProjectFile("sjis-project.lctproj", sjisProject);
+await expectText("#projectName", "SJIS TSV Project");
+await expectText('tbody tr[data-id="sc940"] td[data-column="title"]', "あ");
+await page.reload();
+await expectText("#projectName", "Sample Project");
+const deflateProject = makeZip(
+  new Map([
+    ["manifest.json", JSON.stringify({ projectName: "Deflate Project", mainCutlist: "cutlist.tsv" })],
+    ["cutlist.tsv", `${expectedHeaders().join("\t")}\nscene\tsc950\t\t1\tDeflate Scene\t\t\t\t\t\t\t\t\t\t\t\t`],
+  ]),
+  8,
+);
+await loadProjectFile("deflate-project.lctproj", deflateProject);
+await expectText("#projectName", "Deflate Project");
 await expectText("#counts", "scene 1 / multicut 0 / cut 0");
 await page.reload();
 await expectText("#projectName", "Sample Project");
@@ -137,6 +192,8 @@ if (tailStart < 0 || expectedTail.some((name, index) => headers[tailStart + inde
 }
 const cssText = await readFile(resolve("src/styles.css"), "utf8");
 if (!cssText.includes("prefers-reduced-motion")) throw new Error("CSS should include reduced motion handling");
+const appText = await readFile(resolve("src/app.js"), "utf8");
+if ((appText.match(/async function loadProjectFromBytes/g) || []).length !== 1) throw new Error("Only one loadProjectFromBytes implementation should remain");
 
 await page.click('[data-view="storyboard"]');
 await expectCount(".cut-card", 3);
@@ -436,6 +493,12 @@ function expectedHeaders() {
   ];
 }
 
+async function expectTableHeaders() {
+  const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
+  const expected = expectedHeaders().filter((name) => !["row_type", "id", "parent_id", "order"].includes(name));
+  if (headers.join("\t") !== expected.join("\t")) throw new Error(`Table headers mismatch: ${headers.join(",")}`);
+}
+
 function readZipEntries(bytes) {
   const entries = new Map();
   const endOffset = findEocd(bytes);
@@ -469,18 +532,23 @@ function findEocd(bytes) {
 }
 
 function makeStoredZip(files) {
+  return makeZip(files, 0);
+}
+
+function makeZip(files, method) {
   const chunks = [];
   const central = [];
   let offset = 0;
   files.forEach((content, name) => {
     const fileName = Buffer.from(name);
-    const data = Buffer.from(content);
+    const raw = Buffer.from(content);
+    const data = method === 8 ? deflateRawSync(raw) : raw;
     const local = Buffer.alloc(30 + fileName.length + data.length);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(method, 8);
     local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(data.length, 22);
+    local.writeUInt32LE(raw.length, 22);
     local.writeUInt16LE(fileName.length, 26);
     fileName.copy(local, 30);
     data.copy(local, 30 + fileName.length);
@@ -489,8 +557,9 @@ function makeStoredZip(files) {
     entry.writeUInt32LE(0x02014b50, 0);
     entry.writeUInt16LE(20, 4);
     entry.writeUInt16LE(20, 6);
+    entry.writeUInt16LE(method, 10);
     entry.writeUInt32LE(data.length, 20);
-    entry.writeUInt32LE(data.length, 24);
+    entry.writeUInt32LE(raw.length, 24);
     entry.writeUInt16LE(fileName.length, 28);
     entry.writeUInt32LE(offset, 42);
     fileName.copy(entry, 46);

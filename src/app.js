@@ -205,7 +205,7 @@ el.input.addEventListener("change", async (event) => {
   if (isProjectFile(file.name, "")) {
     await loadProjectFromBytes(new Uint8Array(await file.arrayBuffer()), file.name, "");
   } else {
-    loadTsv(await file.text(), file.name.replace(/\.[^.]+$/, ""));
+    loadTsvBytes(new Uint8Array(await file.arrayBuffer()), file.name.replace(/\.[^.]+$/, ""));
   }
   el.input.value = "";
 });
@@ -342,9 +342,18 @@ async function openProject() {
   if (isProjectFile(fileName, path)) {
     await loadProjectFromBytes(bytes, fileName, path);
   } else {
-    loadTsv(new TextDecoder().decode(bytes), fileName.replace(/\.[^.]+$/, ""));
+    loadTsvBytes(bytes, fileName.replace(/\.[^.]+$/, ""));
     state.projectPath = path;
     render();
+  }
+}
+
+function loadTsvBytes(bytes, name) {
+  const decoded = decodeTsvBytes(bytes);
+  try {
+    loadTsv(decoded.text, name);
+  } catch (error) {
+    alert(error.message || String(error));
   }
 }
 
@@ -371,73 +380,24 @@ function loadTsv(text, name) {
   render();
 }
 
-/*
-async function loadProjectFromBytes(bytes, fileName, path = "") {
-  const entries = await readZipEntries(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-  console.info("lctproj entries", [...entries.keys()]);
-  const manifestEntry = findZipEntry(entries, "manifest.json");
-  const manifestText = decodeZipText(manifestEntry);
-  if (!manifestText) {
-    alert("manifest.json が見つかりません。");
-    return;
-  }
-  let manifest;
-  let rows;
-  try {
-    manifest = { ...structuredClone(DEFAULT_MANIFEST), ...JSON.parse(manifestText) };
-    console.info("lctproj mainCutlist", manifest.mainCutlist || "cutlist.tsv");
-    const cutlistEntry = findZipEntry(entries, manifest.mainCutlist || "cutlist.tsv");
-    if (!cutlistEntry) throw new Error(`${manifest.mainCutlist || "cutlist.tsv"} が見つかりません。`);
-    const cutlistText = decodeZipText(cutlistEntry);
-    console.info("lctproj tsv headers", splitTsvLine(cutlistText.replace(/^\uFEFF/, "").split(/\r\n|\n|\r/)[0] || ""));
-    rows = parseTsv(cutlistText);
-  } catch (error) {
-    alert(error.message || "cutlist.tsv を読み込めません。");
-    return;
-  }
-  stopPlayback(0);
-  revokeMediaUrls();
-  state.manifest = manifest;
-  state.rows = rows;
-  state.mediaUrls = new Map();
-  state.mediaBlobs = new Map();
-  entries.forEach((entry, name) => {
-    if (!name.startsWith("media/")) return;
-    const blob = new Blob([entry.data], { type: mimeFromPath(name) });
-    state.mediaBlobs.set(name, blob);
-    state.mediaUrls.set(name, URL.createObjectURL(blob));
-  });
-  state.projectFileName = fileName;
-  state.projectPath = path;
-  state.selectedIds.clear();
-  state.activeId = state.rows[0]?.id || "";
-  if (state.activeId) state.selectedIds.add(state.activeId);
-  state.dirty = false;
-  state.undo = [];
-  state.redo = [];
-  render();
-}
 
-*/
 async function loadProjectFromBytes(bytes, fileName, path = "") {
   let manifest;
   let rows;
   let entries;
   try {
     entries = await readZipEntries(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-    console.info("lctproj entries", [...entries.keys()]);
-    const manifestEntry = findZipEntry(entries, "manifest.json");
+    const manifestMatch = findZipEntry(entries, "manifest.json");
+    const manifestEntry = manifestMatch?.entry;
     const manifestText = decodeZipText(manifestEntry);
     if (!manifestText) throw new Error("manifest.json was not found.");
     manifest = { ...structuredClone(DEFAULT_MANIFEST), ...JSON.parse(manifestText) };
-    console.info("lctproj mainCutlist", manifest.mainCutlist || "cutlist.tsv");
-    const cutlistEntry = findZipEntry(entries, manifest.mainCutlist || "cutlist.tsv");
+    const cutlistMatch = findZipEntry(entries, manifest.mainCutlist || "cutlist.tsv");
+    const cutlistEntry = cutlistMatch?.entry;
     if (!cutlistEntry) throw new Error(`${manifest.mainCutlist || "cutlist.tsv"} was not found.`);
-    const cutlistText = decodeZipText(cutlistEntry);
-    console.info("lctproj tsv headers", splitTsvLine(cutlistText.replace(/^\uFEFF/, "").split(/\r\n|\n|\r/)[0] || ""));
-    rows = loadRowsFromTsv(cutlistText);
+    const decoded = decodeTsvBytes(cutlistEntry.data);
+    rows = loadRowsFromTsv(decoded.text);
   } catch (error) {
-    console.error("Failed to load .lctproj", error);
     alert(error.message || "cutlist.tsv could not be loaded.");
     return;
   }
@@ -470,11 +430,11 @@ function findZipEntry(entries, path) {
   const target = normalizeZipPath(path);
   const candidates = [...entries.entries()].filter(([name]) => isProjectZipEntry(name));
   const exact = candidates.find(([name]) => name === target);
-  if (exact) return exact[1];
+  if (exact) return { name: exact[0], entry: exact[1] };
   const wrapped = candidates.find(([name]) => stripZipRoot(name) === target);
-  if (wrapped) return wrapped[1];
+  if (wrapped) return { name: wrapped[0], entry: wrapped[1] };
   const suffix = candidates.find(([name]) => name.endsWith(`/${target}`));
-  if (suffix) return suffix[1];
+  if (suffix) return { name: suffix[0], entry: suffix[1] };
   return null;
 }
 
@@ -498,20 +458,20 @@ function normalizeZipPath(path) {
 }
 
 function loadRowsFromTsv(text) {
-  const { rows, warnings } = normalizeImportedRows(parseTsv(text));
+  const parsed = parseTsv(text);
+  const { rows, warnings } = normalizeImportedRows(parsed.rows);
   state.importWarnings = warnings;
   return rows;
 }
 
 function parseTsv(text) {
-  const lines = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(Boolean);
-  if (!lines.length) return [];
-  const headers = splitTsvLine(lines[0]).map(normalizeTsvHeader);
+  const records = parseDelimitedText(text.replace(/^\uFEFF/, ""), "\t").filter((record) => record.some((cell) => String(cell).trim()));
+  if (!records.length) return { headers: [], rowCount: 0, rows: [] };
+  const headers = records[0].map(normalizeTsvHeader);
   for (const column of ["row_type", "id"]) {
     if (!headers.includes(column)) throw new Error(`cutlist.tsv is missing required column ${column}.`);
   }
-  return lines.slice(1).map((line, index) => {
-    const values = splitTsvLine(line);
+  const rows = records.slice(1).map((values, index) => {
     const row = {};
     COLUMNS.forEach((column) => {
       const headerIndex = headerIndexForColumn(headers, column);
@@ -523,6 +483,7 @@ function parseTsv(text) {
     row.order = String(row.order || index + 1).trim();
     return row;
   });
+  return { headers, rowCount: records.length - 1, rows };
 }
 
 function normalizeTsvHeader(header) {
@@ -643,8 +604,55 @@ function normalizeRowOrders(rows) {
   groups.forEach((items) => items.sort(sortByOrder).forEach((row, index) => (row.order = String(index + 1))));
 }
 
+function parseDelimitedText(text, delimiter = "\t") {
+  const records = [];
+  let record = [];
+  let cell = "";
+  let inQuote = false;
+  let quoteClosed = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (inQuote) {
+      if (char === '"' && text[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else if (char === '"') {
+        inQuote = false;
+        quoteClosed = true;
+      } else {
+        cell += char;
+      }
+      continue;
+    }
+    if (char === '"' && cell === "" && !quoteClosed) {
+      inQuote = true;
+    } else if (char === delimiter) {
+      record.push(cell);
+      cell = "";
+      quoteClosed = false;
+    } else if (char === "\n" || char === "\r") {
+      if (char === "\r" && text[index + 1] === "\n") index += 1;
+      record.push(cell);
+      records.push(record);
+      record = [];
+      cell = "";
+      quoteClosed = false;
+    } else {
+      if (quoteClosed && char.trim()) throw new Error(`Invalid TSV quote near character ${index}.`);
+      if (quoteClosed && !char.trim()) continue;
+      cell += char;
+    }
+  }
+  if (inQuote) throw new Error("Invalid TSV: unterminated quoted field.");
+  if (cell || record.length) {
+    record.push(cell);
+    records.push(record);
+  }
+  return records;
+}
+
 function splitTsvLine(line) {
-  return line.split("\t");
+  return parseDelimitedText(line, "\t")[0] || [];
 }
 
 function encodeCell(value) {
@@ -774,16 +782,30 @@ function treeNode(row, level) {
 
 function renderTable() {
   const rows = filteredRows();
-  if (!rows.length) {
-    el.table.innerHTML = `<div class="empty-state">No rows match the current search.</div>`;
-    return;
-  }
   closeContextMenu();
   const table = document.createElement("table");
   table.className = "data-table";
   table.innerHTML = `<thead><tr>${DISPLAY_COLUMNS.map((column) => `<th>${column}</th>`).join("")}</tr></thead>`;
   const tbody = document.createElement("tbody");
-  rows.forEach((row) => {
+  if (!rows.length) {
+    const canInitialAdd = !state.search && state.rows.length === 0;
+    const tr = document.createElement("tr");
+    tr.className = "empty-table-row";
+    const td = document.createElement("td");
+    td.colSpan = DISPLAY_COLUMNS.length;
+    td.innerHTML = `
+      <div class="empty-table-state">
+        <span>${state.search ? "No rows match the current search." : "No rows. Add a row to start."}</span>
+        ${canInitialAdd ? `<div class="empty-add-actions">
+          <button class="add-row-btn scene" type="button" data-initial-add-type="scene" title="Add Scene">+</button>
+          <button class="add-row-btn multicut" type="button" data-initial-add-type="multicut" title="Add Multicut">+</button>
+          <button class="add-row-btn cut" type="button" data-initial-add-type="cut" title="Add Cut">+</button>
+        </div>` : ""}
+      </div>`;
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  } else {
+    rows.forEach((row) => {
     const tr = document.createElement("tr");
     tr.className = [row.row_type, state.selectedIds.has(row.id) ? "selected" : "", tableSelectionClass(row)].filter(Boolean).join(" ");
     tr.draggable = true;
@@ -816,8 +838,15 @@ function renderTable() {
     });
     tbody.appendChild(tr);
   });
+  }
   table.appendChild(tbody);
   el.table.replaceChildren(table);
+  el.table.querySelectorAll("[data-initial-add-type]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      addInitialRow(button.dataset.initialAddType);
+    });
+  });
   renderAddOverlay();
 }
 
@@ -1425,6 +1454,37 @@ function addRow(type) {
   state.selectedIds.clear();
   state.selectedIds.add(row.id);
   state.selectionAnchorId = row.id;
+  markDirty();
+  render();
+}
+
+function addInitialRow(type) {
+  pushHistory();
+  let selectedRow = null;
+  const scene = blankRow("scene", nextId("scene"));
+  scene.order = "1";
+  if (type === "scene") {
+    state.rows.push(scene);
+    selectedRow = scene;
+  } else {
+    const multicut = blankRow("multicut", nextId("multicut"));
+    multicut.parent_id = scene.id;
+    multicut.order = "1";
+    state.rows.push(scene, multicut);
+    selectedRow = multicut;
+    if (type === "cut") {
+      const cut = blankRow("cut", nextId("cut"));
+      cut.parent_id = multicut.id;
+      cut.order = "1";
+      cut.duration = "3s";
+      state.rows.push(cut);
+      selectedRow = cut;
+    }
+  }
+  normalizeOrders();
+  state.activeId = selectedRow.id;
+  state.selectedIds = new Set([selectedRow.id]);
+  state.selectionAnchorId = selectedRow.id;
   markDirty();
   render();
 }
@@ -2340,7 +2400,13 @@ async function readZipEntries(buffer) {
       const dataStart = localOffset + 30 + localNameLength + localExtraLength;
       if (dataStart + compressedSize > bytes.length) throw new Error("ZIP entry data is out of bounds.");
       const data = bytes.slice(dataStart, dataStart + compressedSize);
-      entries.set(name, { data: await unzipData(data, method) });
+      const inflated = await unzipData(data, method);
+      entries.set(name, {
+        data: inflated,
+        method,
+        compressedSize,
+        uncompressedSize: inflated.byteLength,
+      });
     }
     offset = nameStart + fileNameLength + extraLength + commentLength;
   }
@@ -2368,6 +2434,20 @@ async function unzipData(data, method) {
 
 function decodeZipText(entry) {
   return entry ? new TextDecoder().decode(entry.data) : "";
+}
+
+function decodeTsvBytes(bytes) {
+  try {
+    return {
+      text: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      encoding: "utf-8",
+    };
+  } catch {
+    return {
+      text: new TextDecoder("shift_jis").decode(bytes),
+      encoding: "shift_jis",
+    };
+  }
 }
 
 function seedSampleMedia() {
