@@ -139,6 +139,22 @@ await page.locator('td[data-column="title"] input').fill("Edited Smoke Cut");
 await page.keyboard.press("Enter");
 await expectText('tbody tr[data-id="ct001"] td[data-column="title"]', "Edited Smoke Cut");
 await expectText("#saveState", "Unsaved");
+await dropFiles('tbody tr[data-id="ct001"]', [{ name: "table-drop.png", type: "image/png" }]);
+await expectText('tbody tr[data-id="ct001"] td[data-column="image"]', "table-drop.png");
+await dropFiles('tbody tr[data-id="ct001"]', [{ name: "table-drop.wav", type: "audio/wav" }]);
+await expectText('tbody tr[data-id="ct001"] td[data-column="audio_file"]', "table-drop.wav");
+await page.click('[data-view="storyboard"]');
+await dropFiles('.scene-section[data-id="sc001"]', [{ name: "ignored-scene.png", type: "image/png" }]);
+await dropFiles('.cut-card[data-id="ct002"]', [
+  { name: "story-drop.jpg", type: "image/jpeg" },
+  { name: "story-drop.mp3", type: "audio/mpeg" },
+]);
+await page.click('[data-view="table"]');
+await expectText('tbody tr[data-id="ct002"] td[data-column="image"]', "story-drop.jpg");
+await expectText('tbody tr[data-id="ct002"] td[data-column="audio_file"]', "story-drop.mp3");
+if ((await page.locator('tbody tr[data-id="sc001"] td[data-column="image"]').textContent()).includes("ignored-scene.png")) {
+  throw new Error("scene file drop should be ignored");
+}
 
 await page.click('[data-toggle-panel="detail"]');
 await page.waitForFunction(() => document.querySelector('[data-panel="detail"]')?.classList.contains("collapsed"));
@@ -191,6 +207,17 @@ async function clickFileAction(action) {
   await page.click("#fileMenuBtn");
   if (action.startsWith("export")) await page.hover(".submenu");
   await page.click(`[data-file-action="${action}"]`);
+}
+
+async function dropFiles(selector, files) {
+  await page.locator(selector).evaluate((target, files) => {
+    const dataTransfer = new DataTransfer();
+    files.forEach((file) => {
+      dataTransfer.items.add(new File(["drop-test"], file.name, { type: file.type }));
+    });
+    target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
+    target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+  }, files);
 }
 
 async function expectText(selector, text) {

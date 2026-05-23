@@ -558,6 +558,12 @@ button.active {
   outline-offset: -4px;
 }
 
+.data-table tr.media-drop-target td {
+  outline: 2px dashed var(--ok);
+  outline-offset: -4px;
+  background: rgba(126, 220, 138, 0.1);
+}
+
 .data-table td.editable {
   cursor: text;
 }
@@ -707,6 +713,13 @@ button.active {
 .cut-card.drop-into {
   outline: 2px dashed var(--accent-2);
   outline-offset: 4px;
+}
+
+.cut-card.media-drop-target {
+  border-color: var(--ok);
+  outline: 2px dashed var(--ok);
+  outline-offset: 4px;
+  box-shadow: 0 12px 28px rgba(126, 220, 138, 0.18);
 }
 
 .card-grid {

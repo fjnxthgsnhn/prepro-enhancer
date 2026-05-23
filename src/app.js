@@ -1112,6 +1112,12 @@ function handleDragStart(event, row) {
 }
 
 function handleDragOver(event, target) {
+  if (hasFilePayload(event.dataTransfer)) {
+    clearDropClasses();
+    event.preventDefault();
+    if (target.row_type === "cut") event.currentTarget.classList.add("media-drop-target");
+    return;
+  }
   const dragged = getRow(event.dataTransfer?.getData("text/plain") || state.draggingId);
   if (!dragged || dragged.id === target.id) return;
   const mode = dropMode(event, dragged, target);
@@ -1122,6 +1128,11 @@ function handleDragOver(event, target) {
 }
 
 function handleDrop(event, target) {
+  if (hasFilePayload(event.dataTransfer)) {
+    event.preventDefault();
+    handleMediaDrop(event, target);
+    return;
+  }
   const dragged = getRow(event.dataTransfer?.getData("text/plain") || state.draggingId);
   const mode = dragged ? dropMode(event, dragged, target) : "";
   clearDropClasses();
@@ -1135,6 +1146,40 @@ function handleDrop(event, target) {
   state.selectionAnchorId = dragged.id;
   markDirty();
   render();
+}
+
+function hasFilePayload(dataTransfer) {
+  if (!dataTransfer) return false;
+  if (dataTransfer.files?.length) return true;
+  if (Array.from(dataTransfer.items || []).some((item) => item.kind === "file")) return true;
+  return Array.from(dataTransfer.types || []).includes("Files");
+}
+
+function handleMediaDrop(event, target) {
+  clearDropClasses();
+  if (target.row_type !== "cut") return;
+  const files = [...(event.dataTransfer?.files || [])];
+  const image = files.find(isImageFile);
+  const audio = files.find(isAudioFile);
+  if (!image && !audio) return;
+  const patch = {};
+  if (image) patch.image = image.name;
+  if (audio) patch.audio_file = audio.name;
+  pushHistory();
+  Object.assign(target, patch);
+  state.activeId = target.id;
+  state.selectedIds = new Set([target.id]);
+  state.selectionAnchorId = target.id;
+  markDirty();
+  render();
+}
+
+function isImageFile(file) {
+  return file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name);
+}
+
+function isAudioFile(file) {
+  return file.type.startsWith("audio/") || /\.(wav|mp3|m4a|aac|ogg|flac)$/i.test(file.name);
 }
 
 function dropMode(event, dragged, target) {
@@ -1171,8 +1216,8 @@ function siblingsOf(row) {
 }
 
 function clearDropClasses() {
-  document.querySelectorAll(".drop-before, .drop-after, .drop-into").forEach((row) => {
-    row.classList.remove("drop-before", "drop-after", "drop-into");
+  document.querySelectorAll(".drop-before, .drop-after, .drop-into, .media-drop-target").forEach((row) => {
+    row.classList.remove("drop-before", "drop-after", "drop-into", "media-drop-target");
   });
 }
 
