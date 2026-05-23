@@ -70,6 +70,24 @@ const LLM_TSV_COLUMNS = [
   "note",
 ];
 
+const HEADER_ALIASES = {
+  rowtype: "row_type",
+  row_type: "row_type",
+  row: "row_type",
+  type: "row_type",
+  parentid: "parent_id",
+  parent_id: "parent_id",
+  parent: "parent_id",
+  audio: "dialogue",
+  dialog: "dialogue",
+  audiofile: "audio_file",
+  audio_file: "audio_file",
+  imageprompt: "image_prompt",
+  image_prompt: "image_prompt",
+  videoprompt: "video_prompt",
+  video_prompt: "video_prompt",
+};
+
 const DEFAULT_MANIFEST = {
   format: "LocalCutBoardProject",
   formatVersion: "1.0.0",
@@ -115,6 +133,7 @@ const state = {
   projectPath: "",
   mediaUrls: new Map(),
   mediaBlobs: new Map(),
+  importWarnings: [],
   collapsed: new Set(),
   panelCollapsed: new Set(),
   rightPanelCollapsed: false,
@@ -183,7 +202,7 @@ document.querySelectorAll(".view-btn").forEach((button) => {
 el.input.addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
-  if (file.name.endsWith(".lctproj")) {
+  if (isProjectFile(file.name, "")) {
     await loadProjectFromBytes(new Uint8Array(await file.arrayBuffer()), file.name, "");
   } else {
     loadTsv(await file.text(), file.name.replace(/\.[^.]+$/, ""));
@@ -269,6 +288,25 @@ async function handleFileAction(action) {
   if (action === "exportXml") return exportPremiereXml();
 }
 
+function normalizeTauriFile(file) {
+  return {
+    ...file,
+    fileName: file?.file_name || file?.fileName || "",
+    path: file?.path || "",
+    bytes: file?.bytes || [],
+  };
+}
+
+function isProjectFile(fileName = "", path = "") {
+  const text = `${fileName} ${path}`.toLowerCase();
+  return text.includes(".lctproj");
+}
+
+function clearSearch() {
+  state.search = "";
+  if (el.search) el.search.value = "";
+}
+
 async function newProject() {
   const manifest = structuredClone(DEFAULT_MANIFEST);
   manifest.projectName = "Untitled Project";
@@ -278,8 +316,9 @@ async function newProject() {
   if (tauriInvoke) {
     const saved = await tauriInvoke("save_project_as", { defaultName, bytes: [...bytes] });
     if (!saved) return;
-    const opened = await tauriInvoke("read_project_file", { path: saved.path });
-    await loadProjectFromBytes(new Uint8Array(opened.bytes || []), opened.file_name || saved.file_name || defaultName, opened.path || saved.path || "");
+    const savedFile = normalizeTauriFile(saved);
+    const opened = normalizeTauriFile(await tauriInvoke("read_project_file", { path: savedFile.path }));
+    await loadProjectFromBytes(new Uint8Array(opened.bytes || []), opened.fileName || savedFile.fileName || defaultName, opened.path || savedFile.path || "");
   } else {
     downloadBlob(defaultName, new Blob([bytes], { type: "application/zip" }));
     await loadProjectFromBytes(bytes, defaultName, "");
@@ -296,10 +335,11 @@ async function openProject() {
   }
   const opened = await tauriInvoke("open_project");
   if (!opened) return;
-  const fileName = opened.file_name || "";
-  const path = opened.path || "";
+  const openedFile = normalizeTauriFile(opened);
+  const fileName = openedFile.fileName || "";
+  const path = openedFile.path || "";
   const bytes = new Uint8Array(opened.bytes || []);
-  if (fileName.endsWith(".lctproj")) {
+  if (isProjectFile(fileName, path)) {
     await loadProjectFromBytes(bytes, fileName, path);
   } else {
     loadTsv(new TextDecoder().decode(bytes), fileName.replace(/\.[^.]+$/, ""));
@@ -314,7 +354,7 @@ function loadTsv(text, name) {
     ...structuredClone(DEFAULT_MANIFEST),
     projectName: name || "TSV Project",
   };
-  state.rows = parseTsv(text);
+  state.rows = loadRowsFromTsv(text);
   state.mediaUrls = new Map();
   state.mediaBlobs = new Map();
   if (text === SAMPLE_TSV) seedSampleMedia();
@@ -324,24 +364,41 @@ function loadTsv(text, name) {
   state.activeId = state.rows[0]?.id || "";
   if (state.activeId) state.selectedIds.add(state.activeId);
   state.selectionAnchorId = state.activeId;
+  clearSearch();
   state.dirty = false;
   state.undo = [];
   state.redo = [];
   render();
 }
 
+/*
 async function loadProjectFromBytes(bytes, fileName, path = "") {
-  stopPlayback(0);
-  revokeMediaUrls();
   const entries = await readZipEntries(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-  const manifestText = decodeZipText(entries.get("manifest.json"));
-  const cutlistText = decodeZipText(entries.get("cutlist.tsv"));
-  if (!manifestText || !cutlistText) {
-    alert("manifest.json または cutlist.tsv が見つかりません。");
+  console.info("lctproj entries", [...entries.keys()]);
+  const manifestEntry = findZipEntry(entries, "manifest.json");
+  const manifestText = decodeZipText(manifestEntry);
+  if (!manifestText) {
+    alert("manifest.json が見つかりません。");
     return;
   }
-  state.manifest = { ...structuredClone(DEFAULT_MANIFEST), ...JSON.parse(manifestText) };
-  state.rows = parseTsv(cutlistText);
+  let manifest;
+  let rows;
+  try {
+    manifest = { ...structuredClone(DEFAULT_MANIFEST), ...JSON.parse(manifestText) };
+    console.info("lctproj mainCutlist", manifest.mainCutlist || "cutlist.tsv");
+    const cutlistEntry = findZipEntry(entries, manifest.mainCutlist || "cutlist.tsv");
+    if (!cutlistEntry) throw new Error(`${manifest.mainCutlist || "cutlist.tsv"} が見つかりません。`);
+    const cutlistText = decodeZipText(cutlistEntry);
+    console.info("lctproj tsv headers", splitTsvLine(cutlistText.replace(/^\uFEFF/, "").split(/\r\n|\n|\r/)[0] || ""));
+    rows = parseTsv(cutlistText);
+  } catch (error) {
+    alert(error.message || "cutlist.tsv を読み込めません。");
+    return;
+  }
+  stopPlayback(0);
+  revokeMediaUrls();
+  state.manifest = manifest;
+  state.rows = rows;
   state.mediaUrls = new Map();
   state.mediaBlobs = new Map();
   entries.forEach((entry, name) => {
@@ -361,22 +418,229 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
   render();
 }
 
+*/
+async function loadProjectFromBytes(bytes, fileName, path = "") {
+  let manifest;
+  let rows;
+  let entries;
+  try {
+    entries = await readZipEntries(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    console.info("lctproj entries", [...entries.keys()]);
+    const manifestEntry = findZipEntry(entries, "manifest.json");
+    const manifestText = decodeZipText(manifestEntry);
+    if (!manifestText) throw new Error("manifest.json was not found.");
+    manifest = { ...structuredClone(DEFAULT_MANIFEST), ...JSON.parse(manifestText) };
+    console.info("lctproj mainCutlist", manifest.mainCutlist || "cutlist.tsv");
+    const cutlistEntry = findZipEntry(entries, manifest.mainCutlist || "cutlist.tsv");
+    if (!cutlistEntry) throw new Error(`${manifest.mainCutlist || "cutlist.tsv"} was not found.`);
+    const cutlistText = decodeZipText(cutlistEntry);
+    console.info("lctproj tsv headers", splitTsvLine(cutlistText.replace(/^\uFEFF/, "").split(/\r\n|\n|\r/)[0] || ""));
+    rows = loadRowsFromTsv(cutlistText);
+  } catch (error) {
+    console.error("Failed to load .lctproj", error);
+    alert(error.message || "cutlist.tsv could not be loaded.");
+    return;
+  }
+  stopPlayback(0);
+  revokeMediaUrls();
+  state.manifest = manifest;
+  state.rows = rows;
+  state.mediaUrls = new Map();
+  state.mediaBlobs = new Map();
+  entries.forEach((entry, name) => {
+    if (!name.startsWith("media/")) return;
+    const blob = new Blob([entry.data], { type: mimeFromPath(name) });
+    state.mediaBlobs.set(name, blob);
+    state.mediaUrls.set(name, URL.createObjectURL(blob));
+  });
+  state.projectFileName = fileName;
+  state.projectPath = path;
+  state.selectedIds.clear();
+  state.activeId = state.rows[0]?.id || "";
+  if (state.activeId) state.selectedIds.add(state.activeId);
+  state.selectionAnchorId = state.activeId;
+  clearSearch();
+  state.dirty = false;
+  state.undo = [];
+  state.redo = [];
+  render();
+}
+
+function findZipEntry(entries, path) {
+  const target = normalizeZipPath(path);
+  const candidates = [...entries.entries()].filter(([name]) => isProjectZipEntry(name));
+  const exact = candidates.find(([name]) => name === target);
+  if (exact) return exact[1];
+  const wrapped = candidates.find(([name]) => stripZipRoot(name) === target);
+  if (wrapped) return wrapped[1];
+  const suffix = candidates.find(([name]) => name.endsWith(`/${target}`));
+  if (suffix) return suffix[1];
+  return null;
+}
+
+function isProjectZipEntry(path) {
+  return !path.split("/").some((part) => part === "__MACOSX" || part.startsWith(".") || part === ".backups");
+}
+
+function stripZipRoot(path) {
+  const parts = path.split("/");
+  return parts.length > 1 ? parts.slice(1).join("/") : path;
+}
+
+function normalizeZipPath(path) {
+  const parts = String(path || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .split("/")
+    .filter((part) => part && part !== ".");
+  if (parts.includes("..")) throw new Error(`Unsafe ZIP path: ${path}`);
+  return parts.join("/");
+}
+
+function loadRowsFromTsv(text) {
+  const { rows, warnings } = normalizeImportedRows(parseTsv(text));
+  state.importWarnings = warnings;
+  return rows;
+}
+
 function parseTsv(text) {
   const lines = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(Boolean);
   if (!lines.length) return [];
-  const headers = splitTsvLine(lines[0]);
+  const headers = splitTsvLine(lines[0]).map(normalizeTsvHeader);
+  for (const column of ["row_type", "id"]) {
+    if (!headers.includes(column)) throw new Error(`cutlist.tsv is missing required column ${column}.`);
+  }
   return lines.slice(1).map((line, index) => {
     const values = splitTsvLine(line);
     const row = {};
     COLUMNS.forEach((column) => {
-      const headerIndex = headers.indexOf(column);
+      const headerIndex = headerIndexForColumn(headers, column);
       row[column] = headerIndex >= 0 ? decodeCell(values[headerIndex] || "") : "";
     });
-    row.row_type = row.row_type || "cut";
-    row.id = row.id || nextId(row.row_type);
-    row.order = row.order || String(index + 1);
+    row.row_type = normalizeRowType(row.row_type || "cut");
+    row.id = String(row.id || nextId(row.row_type)).trim();
+    row.parent_id = String(row.parent_id || "").trim();
+    row.order = String(row.order || index + 1).trim();
     return row;
   });
+}
+
+function normalizeTsvHeader(header) {
+  const normalized = String(header || "")
+    .trim()
+    .replace(/^\uFEFF/, "")
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return HEADER_ALIASES[normalized] || normalized;
+}
+
+function headerIndexForColumn(headers, column) {
+  const index = headers.indexOf(column);
+  if (index >= 0) return index;
+  return -1;
+}
+
+function normalizeRowType(value) {
+  const type = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (type === "scene" || type === "scense") return "scene";
+  if (type === "multicut" || type === "multi_cut" || type === "mc") return "multicut";
+  if (type === "cut" || type === "ct") return "cut";
+  return type || "cut";
+}
+
+function normalizeImportedRows(rows) {
+  const normalized = rows.map((row) => ({ ...row }));
+  const warnings = [];
+  const ids = new Set(normalized.map((row) => row.id).filter(Boolean));
+  const get = (id) => normalized.find((row) => row.id === id);
+  let importedScene = null;
+  let importedMulticut = null;
+
+  const uniqueId = (prefix, preferred) => {
+    if (!ids.has(preferred)) {
+      ids.add(preferred);
+      return preferred;
+    }
+    let index = 1;
+    while (ids.has(`${preferred}_${index}`)) index += 1;
+    const id = `${preferred}_${index}`;
+    ids.add(id);
+    return id;
+  };
+
+  const ensureImportedScene = () => {
+    if (importedScene) return importedScene;
+    importedScene = {
+      ...emptyRow("scene"),
+      id: uniqueId("sc", "sc_imported"),
+      title: "Imported Scene",
+      order: String(nextOrder(normalized.filter((row) => row.row_type === "scene"))),
+    };
+    normalized.push(importedScene);
+    warnings.push("Imported Scene was created for rows with missing or invalid scene parents.");
+    return importedScene;
+  };
+
+  const ensureImportedMulticut = () => {
+    if (importedMulticut) return importedMulticut;
+    const scene = ensureImportedScene();
+    importedMulticut = {
+      ...emptyRow("multicut"),
+      id: uniqueId("mc", "mc_imported"),
+      parent_id: scene.id,
+      title: "Imported Multicut",
+      order: String(nextOrder(normalized.filter((row) => row.row_type === "multicut" && row.parent_id === scene.id))),
+    };
+    normalized.push(importedMulticut);
+    warnings.push("Imported Multicut was created for cuts with missing or invalid multicut parents.");
+    return importedMulticut;
+  };
+
+  normalized.forEach((row) => {
+    row.row_type = normalizeRowType(row.row_type);
+    row.id = String(row.id || uniqueId("row", "row_imported")).trim();
+    row.parent_id = String(row.parent_id || "").trim();
+    row.order = String(row.order || "1").trim();
+    if (row.row_type === "scene" && row.parent_id) {
+      row.parent_id = "";
+      warnings.push(`${row.id}: scene parent_id was cleared.`);
+    }
+  });
+
+  normalized.forEach((row) => {
+    if (row.row_type !== "multicut") return;
+    const parent = get(row.parent_id);
+    if (!parent || parent.row_type !== "scene") {
+      row.parent_id = ensureImportedScene().id;
+      warnings.push(`${row.id}: multicut was moved under Imported Scene.`);
+    }
+  });
+
+  normalized.forEach((row) => {
+    if (row.row_type !== "cut") return;
+    const parent = get(row.parent_id);
+    if (!parent || parent.row_type !== "multicut") {
+      row.parent_id = ensureImportedMulticut().id;
+      warnings.push(`${row.id}: cut was moved under Imported Multicut.`);
+    }
+  });
+
+  normalizeRowOrders(normalized);
+  return { rows: normalized, warnings };
+}
+
+function emptyRow(type) {
+  return Object.fromEntries(COLUMNS.map((column) => [column, column === "row_type" ? type : ""]));
+}
+
+function normalizeRowOrders(rows) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const key = `${row.row_type}:${row.parent_id || "root"}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+  groups.forEach((items) => items.sort(sortByOrder).forEach((row, index) => (row.order = String(index + 1))));
 }
 
 function splitTsvLine(line) {
@@ -1439,13 +1703,7 @@ function groupMulticuts() {
 }
 
 function normalizeOrders() {
-  const groups = new Map();
-  state.rows.forEach((row) => {
-    const key = `${row.row_type}:${row.parent_id || "root"}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
-  });
-  groups.forEach((rows) => rows.sort(sortByOrder).forEach((row, index) => (row.order = String(index + 1))));
+  normalizeRowOrders(state.rows);
 }
 
 function handleDragStart(event, row) {
@@ -1622,7 +1880,7 @@ function animateTimelineFlip(previous, movedId) {
 }
 
 function validate() {
-  const issues = [];
+  const issues = state.importWarnings.map((message) => warn(message));
   const ids = new Set();
   state.rows.forEach((row, index) => {
     COLUMNS.slice(0, 4).forEach((column) => {
@@ -1801,8 +2059,9 @@ async function saveProjectAs() {
     bytes: [...bytes],
   });
   if (!saved) return;
-  state.projectPath = saved.path || state.projectPath;
-  state.projectFileName = saved.file_name || state.projectFileName;
+  const savedFile = normalizeTauriFile(saved);
+  state.projectPath = savedFile.path || state.projectPath;
+  state.projectFileName = savedFile.fileName || state.projectFileName;
   state.dirty = false;
   state.lastSaved = new Date().toLocaleTimeString();
   render();
@@ -2050,26 +2309,61 @@ async function readZipEntries(buffer) {
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
   const entries = new Map();
-  let offset = 0;
-  while (offset < bytes.length - 30) {
-    if (view.getUint32(offset, true) !== 0x04034b50) break;
-    const method = view.getUint16(offset + 8, true);
-    const compressedSize = view.getUint32(offset + 18, true);
-    const fileNameLength = view.getUint16(offset + 26, true);
-    const extraLength = view.getUint16(offset + 28, true);
-    const nameStart = offset + 30;
-    const dataStart = nameStart + fileNameLength + extraLength;
-    const name = new TextDecoder().decode(bytes.slice(nameStart, nameStart + fileNameLength));
-    const data = bytes.slice(dataStart, dataStart + compressedSize);
-    if (method === 0) {
-      entries.set(name, { data });
-    } else if (method === 8 && "DecompressionStream" in window) {
-      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-      entries.set(name, { data: new Uint8Array(await new Response(stream).arrayBuffer()) });
+  const endOffset = findEndOfCentralDirectory(view);
+  if (endOffset < 0) throw new Error("ZIP central directory was not found.");
+  const diskNumber = view.getUint16(endOffset + 4, true);
+  const centralDisk = view.getUint16(endOffset + 6, true);
+  if (diskNumber || centralDisk) throw new Error("Multi-disk ZIP files are not supported.");
+  const entryCount = view.getUint16(endOffset + 10, true);
+  if (entryCount === 0xffff) throw new Error("Zip64 projects are not supported.");
+  const centralSize = view.getUint32(endOffset + 12, true);
+  let offset = view.getUint32(endOffset + 16, true);
+  if (centralSize === 0xffffffff || offset === 0xffffffff) throw new Error("Zip64 projects are not supported.");
+  if (offset + centralSize > bytes.length) throw new Error("ZIP central directory is out of bounds.");
+  for (let index = 0; index < entryCount; index += 1) {
+    if (offset + 46 > bytes.length || view.getUint32(offset, true) !== 0x02014b50) throw new Error("ZIP central directory is broken.");
+    const flags = view.getUint16(offset + 8, true);
+    const method = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const fileNameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const localOffset = view.getUint32(offset + 42, true);
+    if (compressedSize === 0xffffffff || localOffset === 0xffffffff) throw new Error("Zip64 projects are not supported.");
+    if (flags & 1) throw new Error("Encrypted ZIP entries are not supported.");
+    const nameStart = offset + 46;
+    const name = normalizeZipPath(new TextDecoder().decode(bytes.slice(nameStart, nameStart + fileNameLength)));
+    if (!name.endsWith("/")) {
+      if (localOffset + 30 > bytes.length || view.getUint32(localOffset, true) !== 0x04034b50) throw new Error("ZIP local file header is broken.");
+      const localNameLength = view.getUint16(localOffset + 26, true);
+      const localExtraLength = view.getUint16(localOffset + 28, true);
+      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+      if (dataStart + compressedSize > bytes.length) throw new Error("ZIP entry data is out of bounds.");
+      const data = bytes.slice(dataStart, dataStart + compressedSize);
+      entries.set(name, { data: await unzipData(data, method) });
     }
-    offset = dataStart + compressedSize;
+    offset = nameStart + fileNameLength + extraLength + commentLength;
   }
   return entries;
+}
+
+function findEndOfCentralDirectory(view) {
+  const minOffset = Math.max(0, view.byteLength - 22 - 0xffff);
+  for (let offset = view.byteLength - 22; offset >= minOffset; offset -= 1) {
+    if (view.getUint32(offset, true) !== 0x06054b50) continue;
+    const commentLength = view.getUint16(offset + 20, true);
+    if (offset + 22 + commentLength === view.byteLength) return offset;
+  }
+  return -1;
+}
+
+async function unzipData(data, method) {
+  if (method === 0) return data;
+  if (method === 8 && "DecompressionStream" in window) {
+    const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  throw new Error(`ZIP compression method ${method} is not supported.`);
 }
 
 function decodeZipText(entry) {

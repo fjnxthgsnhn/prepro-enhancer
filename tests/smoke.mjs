@@ -36,6 +36,90 @@ await expectText("#saveState", "Saved");
 await expectText("#detailPanel", "Select a row");
 await page.reload();
 await expectText("#projectName", "Sample Project");
+const nestedProject = makeStoredZip(
+  new Map([
+    ["manifest.json", JSON.stringify({ projectName: "Nested TSV Project", mainCutlist: "data/cutlist.tsv" })],
+    ["data/cutlist.tsv", `${expectedHeaders().join("\t")}\nscene\tsc900\t\t1\tNested Scene\t\t\t\t\t\t\t\t\t\t\t\t`],
+  ]),
+);
+await loadProjectFile("nested-maincutlist.lctproj", nestedProject);
+await expectText("#projectName", "Nested TSV Project");
+await expectText("#counts", "scene 1 / multicut 0 / cut 0");
+await page.reload();
+await expectText("#projectName", "Sample Project");
+const wrappedProject = makeStoredZip(
+  new Map([
+    ["project/manifest.json", JSON.stringify({ projectName: "Wrapped Project", mainCutlist: "cutlist.tsv" })],
+    ["project/cutlist.tsv", `${expectedHeaders().join("\t")}\nscene\tsc901\t\t1\tWrapped Scene\t\t\t\t\t\t\t\t\t\t\t\t`],
+  ]),
+);
+await loadProjectFile("wrapped-project.lctproj", wrappedProject);
+await expectText("#projectName", "Wrapped Project");
+await expectText("#counts", "scene 1 / multicut 0 / cut 0");
+await page.reload();
+await expectText("#projectName", "Sample Project");
+const legacyProject = makeStoredZip(
+  new Map([
+    ["manifest.json", JSON.stringify({ projectName: "Legacy TSV Project", mainCutlist: "cutlist.tsv" })],
+    ["cutlist.tsv", " row_type \tid\tparent_id\torder\tcut\ttitle\tduration\tstatus\taudio\nscene\tsc900\t\t1\t\tLegacy Scene\t\t\t\nmulticut\tmc900\tsc900\t1\t\tLegacy MC\t\t\t\ncut\tct900\tmc900\t1\t1\tLegacy Cut\t2s\tdraft\tLegacy Dialogue"],
+  ]),
+);
+await loadProjectFile("legacy-project.lctproj", legacyProject);
+await expectText("#projectName", "Legacy TSV Project");
+await expectText("#counts", "scene 1 / multicut 1 / cut 1");
+await expectText('tbody tr[data-id="ct900"] td[data-column="dialogue"]', "Legacy Dialogue");
+await page.reload();
+await expectText("#projectName", "Sample Project");
+await page.fill("#searchInput", "not-in-next-project");
+const uppercaseProject = makeStoredZip(
+  new Map([
+    ["manifest.json", JSON.stringify({ projectName: "Uppercase Project", mainCutlist: "cutlist.tsv" })],
+    ["cutlist.tsv", `${expectedHeaders().join("\t")}\nscene\tsc902\t\t1\tUppercase Scene\t\t\t\t\t\t\t\t\t\t\t\t`],
+  ]),
+);
+await loadProjectFile("UPPERCASE.LCTPROJ", uppercaseProject);
+await expectText("#projectName", "Uppercase Project");
+await expectText("#counts", "scene 1 / multicut 0 / cut 0");
+if (await page.inputValue("#searchInput")) throw new Error("Project load should clear search input");
+await expectCount(".data-table tbody tr[data-id]", 1);
+await page.reload();
+await expectText("#projectName", "Sample Project");
+const aliasHeaderProject = makeStoredZip(
+  new Map([
+    ["manifest.json", JSON.stringify({ projectName: "Alias Header Project", mainCutlist: "cutlist.tsv" })],
+    ["cutlist.tsv", "row type\tid\tparent id\torder\ttitle\tduration\taudio file\taudio\nScene \tsc910\t\t1\tAlias Scene\t\t\t\nmulti cut\tmc910\tsc910\t1\tAlias MC\t\t\t\nCT\tct910\tmc910\t1\tAlias Cut\t2s\talias.wav\tAlias Dialogue"],
+  ]),
+);
+await loadProjectFile("alias-header.lctproj", aliasHeaderProject);
+await expectText("#projectName", "Alias Header Project");
+await expectText("#counts", "scene 1 / multicut 1 / cut 1");
+await expectText('tbody tr[data-id="ct910"] td[data-column="audio_file"]', "alias.wav");
+await expectText('tbody tr[data-id="ct910"] td[data-column="dialogue"]', "Alias Dialogue");
+await page.reload();
+await expectText("#projectName", "Sample Project");
+const orphanCutProject = makeStoredZip(
+  new Map([
+    ["manifest.json", JSON.stringify({ projectName: "Orphan Cut Project", mainCutlist: "cutlist.tsv" })],
+    ["cutlist.tsv", `${expectedHeaders().join("\t")}\ncut\tct920\tmissing-parent\t1\tOrphan Cut\t2s\t\t\t\t\t\t\t\t\t\t\t`],
+  ]),
+);
+await loadProjectFile("orphan-cut.lctproj", orphanCutProject);
+await expectText("#projectName", "Orphan Cut Project");
+await expectText("#counts", "scene 1 / multicut 1 / cut 1");
+await expectText(".data-table", "Imported Scene");
+await expectText(".data-table", "Imported Multicut");
+await expectText('tbody tr[data-id="ct920"] td[data-column="title"]', "Orphan Cut");
+await expectText("#validationPanel", "Imported Multicut");
+await page.reload();
+await expectText("#projectName", "Sample Project");
+const invalidZipDialog = page.waitForEvent("dialog");
+await loadProjectFile("invalid.lctproj", Buffer.from("not a zip"));
+const dialog = await invalidZipDialog;
+const sawInvalidZipAlert = /ZIP|manifest|cutlist/.test(dialog.message());
+await dialog.dismiss();
+if (!sawInvalidZipAlert) throw new Error("Invalid project should show a load error");
+await expectText("#projectName", "Sample Project");
+await expectText("#counts", "scene 1 / multicut 2 / cut 3");
 for (const removedButton of ["addSceneBtn", "addMulticutBtn", "addCutBtn", "groupCutsBtn", "groupMulticutsBtn"]) {
   if (await page.locator(`#${removedButton}`).count()) throw new Error(`${removedButton} should be removed from the toolbar`);
 }
@@ -354,21 +438,81 @@ function expectedHeaders() {
 
 function readZipEntries(bytes) {
   const entries = new Map();
-  let offset = 0;
-  while (offset < bytes.length - 4) {
-    if (bytes.readUInt32LE(offset) !== 0x04034b50) break;
-    const method = bytes.readUInt16LE(offset + 8);
-    const compressedSize = bytes.readUInt32LE(offset + 18);
-    const fileNameLength = bytes.readUInt16LE(offset + 26);
-    const extraLength = bytes.readUInt16LE(offset + 28);
-    const nameStart = offset + 30;
-    const dataStart = nameStart + fileNameLength + extraLength;
-    const name = bytes.subarray(nameStart, nameStart + fileNameLength).toString("utf8");
-    const data = bytes.subarray(dataStart, dataStart + compressedSize);
-    if (method === 0) entries.set(name, data.toString("utf8"));
-    offset = dataStart + compressedSize;
+  const endOffset = findEocd(bytes);
+  if (endOffset < 0) return entries;
+  const count = bytes.readUInt16LE(endOffset + 10);
+  let offset = bytes.readUInt32LE(endOffset + 16);
+  for (let index = 0; index < count; index += 1) {
+    if (bytes.readUInt32LE(offset) !== 0x02014b50) break;
+    const method = bytes.readUInt16LE(offset + 10);
+    const compressedSize = bytes.readUInt32LE(offset + 20);
+    const fileNameLength = bytes.readUInt16LE(offset + 28);
+    const extraLength = bytes.readUInt16LE(offset + 30);
+    const commentLength = bytes.readUInt16LE(offset + 32);
+    const localOffset = bytes.readUInt32LE(offset + 42);
+    const nameStart = offset + 46;
+    const name = bytes.subarray(nameStart, nameStart + fileNameLength).toString("utf8").replace(/\\/g, "/").replace(/^\.\//, "");
+    const localNameLength = bytes.readUInt16LE(localOffset + 26);
+    const localExtraLength = bytes.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    if (method === 0) entries.set(name, bytes.subarray(dataStart, dataStart + compressedSize).toString("utf8"));
+    offset = nameStart + fileNameLength + extraLength + commentLength;
   }
   return entries;
+}
+
+function findEocd(bytes) {
+  for (let offset = bytes.length - 22; offset >= 0; offset -= 1) {
+    if (bytes.readUInt32LE(offset) === 0x06054b50) return offset;
+  }
+  return -1;
+}
+
+function makeStoredZip(files) {
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+  files.forEach((content, name) => {
+    const fileName = Buffer.from(name);
+    const data = Buffer.from(content);
+    const local = Buffer.alloc(30 + fileName.length + data.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(fileName.length, 26);
+    fileName.copy(local, 30);
+    data.copy(local, 30 + fileName.length);
+    chunks.push(local);
+    const entry = Buffer.alloc(46 + fileName.length);
+    entry.writeUInt32LE(0x02014b50, 0);
+    entry.writeUInt16LE(20, 4);
+    entry.writeUInt16LE(20, 6);
+    entry.writeUInt32LE(data.length, 20);
+    entry.writeUInt32LE(data.length, 24);
+    entry.writeUInt16LE(fileName.length, 28);
+    entry.writeUInt32LE(offset, 42);
+    fileName.copy(entry, 46);
+    central.push(entry);
+    offset += local.length;
+  });
+  const centralSize = central.reduce((sum, item) => sum + item.length, 0);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(files.size, 8);
+  end.writeUInt16LE(files.size, 10);
+  end.writeUInt32LE(centralSize, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...chunks, ...central, end]);
+}
+
+async function loadProjectFile(name, bytes) {
+  await page.locator("#projectInput").setInputFiles({
+    name,
+    mimeType: "application/zip",
+    buffer: bytes,
+  });
 }
 
 async function expectCount(selector, count) {

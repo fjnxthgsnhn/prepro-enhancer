@@ -46,6 +46,7 @@ fn save_project_as(default_name: String, bytes: Vec<u8>) -> Result<Option<SavedF
     else {
         return Ok(None);
     };
+    let path = ensure_extension(path, "lctproj");
     fs::write(&path, bytes).map_err(|error| error.to_string())?;
     Ok(Some(saved_file(path)))
 }
@@ -89,6 +90,18 @@ fn file_name(path: &PathBuf) -> String {
     path.file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_default()
+}
+
+fn ensure_extension(mut path: PathBuf, extension: &str) -> PathBuf {
+    if path
+        .extension()
+        .map(|value| value.to_string_lossy().eq_ignore_ascii_case(extension))
+        .unwrap_or(false)
+    {
+        return path;
+    }
+    path.set_extension(extension);
+    path
 }
 
 fn main() {
