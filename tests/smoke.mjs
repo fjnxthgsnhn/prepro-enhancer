@@ -71,6 +71,9 @@ await expectCount(".timeline-seek", 1);
 await expectCount(".timeline-clip.scene", 1);
 await expectCount(".timeline-clip.multicut", 2);
 await expectCount(".timeline-clip.cut", 3);
+await expectCount(".timeline-clip.cut .clip-resize-handle", 3);
+await expectCount(".timeline-clip.scene .clip-resize-handle", 0);
+await expectCount(".timeline-clip.multicut .clip-resize-handle", 0);
 await expectText(".timeline", "顕微鏡の寄り");
 await page.waitForFunction(() => {
   const preview = document.querySelector(".timeline-preview");
@@ -103,11 +106,19 @@ await page.waitForFunction(() => {
   const text = document.querySelector(".timeline-text-preview");
   return preview && text && !preview.querySelector("img") && text.textContent.includes("title");
 });
+await dragResizeHandle('.timeline-clip.cut[data-id="ct002"] .clip-resize-handle', 80);
+await page.click('[data-view="table"]');
+await page.waitForFunction(() => parseFloat(document.querySelector('tbody tr[data-id="ct002"] td[data-column="duration"]')?.textContent || "0") > 3);
+await page.waitForFunction(() => parseFloat(document.querySelector('tbody tr[data-id="sc001"] td[data-column="duration"]')?.textContent || "0") > 8);
+await page.click('[data-view="timeline"]');
 await page.locator('.timeline-clip.cut[data-id="ct001"]').dragTo(page.locator('.timeline-clip.multicut[data-id="mc001"]'), {
   sourcePosition: { x: 20, y: 20 },
   targetPosition: { x: 20, y: 20 },
 });
-await page.waitForFunction(() => document.querySelector('.timeline-clip.cut[data-id="ct001"]')?.classList.contains("selected"));
+await page.waitForFunction(() => {
+  const clip = document.querySelector('.timeline-clip.cut[data-id="ct001"]');
+  return clip?.classList.contains("selected") && (clip.classList.contains("moved") || clip.classList.contains("flip-animating"));
+});
 
 await page.click('[data-view="table"]');
 await page.click("#tableView", { position: { x: 12, y: 780 } });
@@ -266,6 +277,17 @@ async function clearTableCell(rowId, column) {
     ({ selector }) => document.querySelector(selector)?.textContent?.trim() === "",
     { selector },
   );
+}
+
+async function dragResizeHandle(selector, deltaX) {
+  const box = await page.locator(selector).boundingBox();
+  if (!box) throw new Error(`resize handle not found: ${selector}`);
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + deltaX, y, { steps: 8 });
+  await page.mouse.up();
 }
 
 async function expectText(selector, text) {

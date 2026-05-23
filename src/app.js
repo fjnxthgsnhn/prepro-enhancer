@@ -129,6 +129,7 @@ const state = {
   addOverlayAnchor: null,
   timelinePreviewCutId: "",
   timelineScrubbing: false,
+  timelineResizing: null,
 };
 
 const tauriInvoke = window.__TAURI__?.core?.invoke || null;
@@ -754,12 +755,17 @@ function renderTimelineLane(lane, items, type) {
     clip.dataset.type = type;
     clip.style.left = `${item.start}px`;
     clip.style.width = `${item.width}px`;
-    clip.innerHTML = `<strong>${escapeHtml(rowLabel(item.row))}</strong><span>${escapeHtml(displayDuration(item.row))}</span>`;
+    clip.innerHTML = `<strong>${escapeHtml(rowLabel(item.row))}</strong><span>${escapeHtml(displayDuration(item.row))}</span>${type === "cut" ? `<button class="clip-resize-handle" type="button" aria-label="Adjust out point"></button>` : ""}`;
     clip.addEventListener("click", (event) => {
       event.stopPropagation();
       selectRow(item.row.id, event);
     });
+    clip.querySelector(".clip-resize-handle")?.addEventListener("pointerdown", (event) => startClipResize(event, item.row));
     clip.addEventListener("dragstart", (event) => {
+      if (state.timelineResizing) {
+        event.preventDefault();
+        return;
+      }
       clip.classList.add("dragging");
       handleDragStart(event, item.row);
     });
@@ -784,8 +790,8 @@ function sortByGlobalTimeline(a, b) {
 }
 
 function timelineModel() {
-  const unit = 72;
-  const minWidth = 112;
+  const unit = timelineUnit();
+  const minWidth = timelineMinWidth();
   let cursor = 0;
   const scenes = [];
   const multicuts = [];
@@ -887,6 +893,74 @@ function scrubTimelineAt(event) {
   state.playOffset = total ? (x / track.offsetWidth) * total : 0;
   if (state.playing) state.playStartedAt = performance.now();
   updateTimelinePlaybackUi();
+}
+
+function startClipResize(event, row) {
+  event.preventDefault();
+  event.stopPropagation();
+  const clip = event.currentTarget.closest(".timeline-clip");
+  if (!clip || row.row_type !== "cut") return;
+  const seconds = durationSeconds(row.duration);
+  state.timelineResizing = {
+    id: row.id,
+    startX: event.clientX,
+    startSeconds: seconds,
+    previewSeconds: seconds,
+  };
+  clip.classList.add("resizing");
+  const move = (moveEvent) => resizeClipPreview(moveEvent, clip);
+  const end = (upEvent) => {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", end);
+    document.removeEventListener("pointercancel", end);
+    finishClipResize(upEvent, clip, row);
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", end);
+  document.addEventListener("pointercancel", end);
+}
+
+function resizeClipPreview(event, clip) {
+  if (!state.timelineResizing) return;
+  event.preventDefault();
+  const delta = event.clientX - state.timelineResizing.startX;
+  const nextSeconds = clampDuration(state.timelineResizing.startSeconds + delta / timelineUnit());
+  state.timelineResizing.previewSeconds = nextSeconds;
+  clip.style.width = `${Math.max(timelineMinWidth(), nextSeconds * timelineUnit())}px`;
+  clip.querySelector("span").textContent = formatDuration(nextSeconds);
+}
+
+function finishClipResize(event, clip, row) {
+  if (!state.timelineResizing) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const seconds = state.timelineResizing.previewSeconds;
+  state.timelineResizing = null;
+  clip.classList.remove("resizing");
+  const nextDuration = formatDuration(seconds);
+  if (row.duration !== nextDuration) {
+    pushHistory();
+    row.duration = nextDuration;
+    state.activeId = row.id;
+    state.selectedIds = new Set([row.id]);
+    state.selectionAnchorId = row.id;
+    state.playOffset = clamp(state.playOffset, 0, timelineModel().total);
+    if (state.playing) state.playStartedAt = performance.now();
+    markDirty();
+  }
+  render();
+}
+
+function clampDuration(seconds) {
+  return Math.round(Math.max(0.5, seconds) * 10) / 10;
+}
+
+function timelineUnit() {
+  return 72;
+}
+
+function timelineMinWidth() {
+  return 112;
 }
 
 function renderDetail() {
@@ -1293,6 +1367,7 @@ function handleDrop(event, target) {
   }
   const dragged = getRow(event.dataTransfer?.getData("text/plain") || state.draggingId);
   const mode = dragged ? dropMode(event, dragged, target) : "";
+  const timelineFlip = event.currentTarget?.classList?.contains("timeline-clip") ? captureTimelineFlip() : null;
   clearDropClasses();
   if (!dragged || !mode || dragged.id === target.id) return;
   event.preventDefault();
@@ -1304,6 +1379,7 @@ function handleDrop(event, target) {
   state.selectionAnchorId = dragged.id;
   markDirty();
   render();
+  if (timelineFlip) requestAnimationFrame(() => animateTimelineFlip(timelineFlip, dragged.id));
 }
 
 function hasFilePayload(dataTransfer) {
@@ -1398,6 +1474,38 @@ function clearDragState() {
   state.draggingId = "";
   document.querySelectorAll(".dragging").forEach((item) => item.classList.remove("dragging"));
   clearDropClasses();
+}
+
+function captureTimelineFlip() {
+  const positions = new Map();
+  document.querySelectorAll(".timeline-clip[data-id]").forEach((clip) => {
+    positions.set(clip.dataset.id, clip.getBoundingClientRect());
+  });
+  return positions;
+}
+
+function animateTimelineFlip(previous, movedId) {
+  document.querySelectorAll(".timeline-clip[data-id]").forEach((clip) => {
+    const before = previous.get(clip.dataset.id);
+    if (!before) return;
+    const after = clip.getBoundingClientRect();
+    const dx = before.left - after.left;
+    const dy = before.top - after.top;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+      clip.classList.add("flip-animating");
+      clip.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px)` },
+          { transform: "translate(0, 0)" },
+        ],
+        { duration: 260, easing: "cubic-bezier(.2, .8, .2, 1)" },
+      ).addEventListener("finish", () => clip.classList.remove("flip-animating"), { once: true });
+    }
+    if (clip.dataset.id === movedId) {
+      clip.classList.add("moved");
+      setTimeout(() => clip.classList.remove("moved"), 520);
+    }
+  });
 }
 
 function validate() {
