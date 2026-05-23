@@ -112,6 +112,7 @@ const state = {
   dirty: false,
   lastSaved: "",
   projectFileName: "",
+  projectPath: "",
   mediaUrls: new Map(),
   mediaBlobs: new Map(),
   collapsed: new Set(),
@@ -127,6 +128,8 @@ const state = {
   contextMenu: null,
   addOverlayAnchor: null,
 };
+
+const tauriInvoke = window.__TAURI__?.core?.invoke || null;
 
 const el = {
   projectName: document.querySelector("#projectName"),
@@ -147,12 +150,17 @@ const el = {
   search: document.querySelector("#searchInput"),
 };
 
-document.querySelector("#openProjectBtn").addEventListener("click", () => el.input.click());
-document.querySelector("#loadSampleBtn").addEventListener("click", () => loadTsv(SAMPLE_TSV, "Sample Project"));
-document.querySelector("#saveTsvBtn").addEventListener("click", exportTsv);
-document.querySelector("#exportLlmTsvBtn").addEventListener("click", exportLlmTsv);
-document.querySelector("#exportProjectBtn").addEventListener("click", exportProject);
-document.querySelector("#exportXmlBtn").addEventListener("click", exportPremiereXml);
+document.querySelector("#fileMenuBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleFileMenu();
+});
+document.querySelectorAll("[data-file-action]").forEach((button) => {
+  button.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    closeFileMenu();
+    await handleFileAction(button.dataset.fileAction);
+  });
+});
 document.querySelectorAll("[data-toggle-panel]").forEach((button) => {
   button.addEventListener("click", () => togglePanel(button.dataset.togglePanel));
 });
@@ -173,7 +181,7 @@ el.input.addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
   if (file.name.endsWith(".lctproj")) {
-    await loadProject(file);
+    await loadProjectFromBytes(new Uint8Array(await file.arrayBuffer()), file.name, "");
   } else {
     loadTsv(await file.text(), file.name.replace(/\.[^.]+$/, ""));
   }
@@ -188,11 +196,11 @@ el.search.addEventListener("input", () => {
 document.addEventListener("keydown", (event) => {
   if (event.ctrlKey && event.key.toLowerCase() === "s") {
     event.preventDefault();
-    exportTsv();
+    saveProject();
   }
   if (event.ctrlKey && event.key.toLowerCase() === "o") {
     event.preventDefault();
-    el.input.click();
+    openProject();
   }
   if (event.ctrlKey && event.key.toLowerCase() === "f") {
     event.preventDefault();
@@ -214,12 +222,78 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     setView(["table", "storyboard", "timeline"][Number(event.key) - 1]);
   }
-  if (event.key === "Escape") closeContextMenu();
+  if (event.key === "Escape") {
+    closeContextMenu();
+    closeFileMenu();
+  }
 });
 
 document.addEventListener("click", (event) => {
   if (!event.target.closest?.(".table-context-menu")) closeContextMenu();
+  if (!event.target.closest?.(".file-menu")) closeFileMenu();
 });
+
+function toggleFileMenu() {
+  const menu = document.querySelector("#fileMenu");
+  const button = document.querySelector("#fileMenuBtn");
+  const open = menu.hidden;
+  menu.hidden = !open;
+  button.setAttribute("aria-expanded", String(open));
+}
+
+function closeFileMenu() {
+  const menu = document.querySelector("#fileMenu");
+  if (!menu || menu.hidden) return;
+  menu.hidden = true;
+  document.querySelector("#fileMenuBtn")?.setAttribute("aria-expanded", "false");
+}
+
+async function handleFileAction(action) {
+  if (action === "new") return newProject();
+  if (action === "open") return openProject();
+  if (action === "save") return saveProject();
+  if (action === "saveAs") return saveProjectAs();
+  if (action === "exportTsv") return exportTsv();
+  if (action === "exportLlmTsv") return exportLlmTsv();
+  if (action === "exportXml") return exportPremiereXml();
+}
+
+function newProject() {
+  revokeMediaUrls();
+  state.manifest = structuredClone(DEFAULT_MANIFEST);
+  state.rows = [];
+  state.selectedIds.clear();
+  state.activeId = "";
+  state.selectionAnchorId = "";
+  state.projectFileName = "";
+  state.projectPath = "";
+  state.mediaUrls = new Map();
+  state.mediaBlobs = new Map();
+  state.undo = [];
+  state.redo = [];
+  state.dirty = false;
+  state.lastSaved = "";
+  render();
+}
+
+async function openProject() {
+  if (!tauriInvoke) {
+    el.input.click();
+    return;
+  }
+  const opened = await tauriInvoke("open_project");
+  if (!opened) return;
+  const fileName = opened.file_name || "";
+  const path = opened.path || "";
+  const bytes = new Uint8Array(opened.bytes || []);
+  if (fileName.endsWith(".lctproj")) {
+    await loadProjectFromBytes(bytes, fileName, path);
+  } else {
+    loadTsv(new TextDecoder().decode(bytes), fileName.replace(/\.[^.]+$/, ""));
+    state.projectPath = path;
+    render();
+  }
+}
 
 function loadTsv(text, name) {
   state.manifest = {
@@ -231,6 +305,7 @@ function loadTsv(text, name) {
   state.mediaBlobs = new Map();
   if (text === SAMPLE_TSV) seedSampleMedia();
   state.projectFileName = name || "";
+  state.projectPath = "";
   state.selectedIds.clear();
   state.activeId = state.rows[0]?.id || "";
   if (state.activeId) state.selectedIds.add(state.activeId);
@@ -241,9 +316,9 @@ function loadTsv(text, name) {
   render();
 }
 
-async function loadProject(file) {
+async function loadProjectFromBytes(bytes, fileName, path = "") {
   revokeMediaUrls();
-  const entries = await readZipEntries(await file.arrayBuffer());
+  const entries = await readZipEntries(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
   const manifestText = decodeZipText(entries.get("manifest.json"));
   const cutlistText = decodeZipText(entries.get("cutlist.tsv"));
   if (!manifestText || !cutlistText) {
@@ -260,7 +335,8 @@ async function loadProject(file) {
     state.mediaBlobs.set(name, blob);
     state.mediaUrls.set(name, URL.createObjectURL(blob));
   });
-  state.projectFileName = file.name;
+  state.projectFileName = fileName;
+  state.projectPath = path;
   state.selectedIds.clear();
   state.activeId = state.rows[0]?.id || "";
   if (state.activeId) state.selectedIds.add(state.activeId);
@@ -361,7 +437,7 @@ function render() {
 function renderStatus(issues) {
   const counts = countRows();
   el.projectName.textContent = state.manifest.projectName || "Untitled Project";
-  el.projectPath.textContent = state.projectFileName || "Browser workspace";
+  el.projectPath.textContent = state.projectPath || state.projectFileName || "Browser workspace";
   el.counts.textContent = `scene ${counts.scene} / multicut ${counts.multicut} / cut ${counts.cut}`;
   el.missingCount.textContent = `Missing ${issues.filter((issue) => issue.kind === "missing-media").length}`;
   el.saveState.textContent = state.dirty ? "Unsaved" : "Saved";
@@ -1178,17 +1254,66 @@ function redo() {
 }
 
 function exportTsv() {
-  downloadText(`${safeName(state.manifest.projectName)}_cutlist.tsv`, serializeTsv(), "text/tab-separated-values;charset=utf-8");
+  const name = `${safeName(state.manifest.projectName)}_cutlist.tsv`;
+  const content = serializeTsv();
+  if (tauriInvoke) return exportFile(name, content, "tsv");
+  downloadText(name, content, "text/tab-separated-values;charset=utf-8");
   state.dirty = false;
   state.lastSaved = new Date().toLocaleTimeString();
   render();
 }
 
 function exportLlmTsv() {
-  downloadText(`${safeName(state.manifest.projectName)}_llm.tsv`, serializeLlmTsv(), "text/tab-separated-values;charset=utf-8");
+  const name = `${safeName(state.manifest.projectName)}_llm.tsv`;
+  const content = serializeLlmTsv();
+  if (tauriInvoke) return exportFile(name, content, "llm");
+  downloadText(name, content, "text/tab-separated-values;charset=utf-8");
 }
 
 async function exportProject() {
+  const bytes = await projectArchiveBytes();
+  downloadBlob(`${safeName(state.manifest.projectName)}.lctproj`, new Blob([bytes], { type: "application/zip" }));
+  state.dirty = false;
+  state.lastSaved = new Date().toLocaleTimeString();
+  render();
+}
+
+async function saveProject() {
+  if (!tauriInvoke || !state.projectPath) return saveProjectAs();
+  const bytes = await projectArchiveBytes();
+  const saved = await tauriInvoke("save_project", { path: state.projectPath, bytes: [...bytes] });
+  if (!saved) return;
+  state.dirty = false;
+  state.lastSaved = new Date().toLocaleTimeString();
+  render();
+}
+
+async function saveProjectAs() {
+  if (!tauriInvoke) return exportProject();
+  const bytes = await projectArchiveBytes();
+  const saved = await tauriInvoke("save_project_as", {
+    defaultName: `${safeName(state.manifest.projectName)}.lctproj`,
+    bytes: [...bytes],
+  });
+  if (!saved) return;
+  state.projectPath = saved.path || state.projectPath;
+  state.projectFileName = saved.file_name || state.projectFileName;
+  state.dirty = false;
+  state.lastSaved = new Date().toLocaleTimeString();
+  render();
+}
+
+async function exportFile(defaultName, content, kind) {
+  const saved = await tauriInvoke("export_file", { defaultName, content, kind });
+  if (!saved) return;
+  if (kind === "tsv") {
+    state.dirty = false;
+    state.lastSaved = new Date().toLocaleTimeString();
+  }
+  render();
+}
+
+async function projectArchiveBytes() {
   const now = new Date();
   const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
   const manifest = {
@@ -1212,16 +1337,14 @@ async function exportProject() {
   for (const [path, mediaBlob] of state.mediaBlobs.entries()) {
     files.set(path, new Uint8Array(await mediaBlob.arrayBuffer()));
   }
-  const blob = new Blob([createZip(files)], { type: "application/zip" });
-  downloadBlob(`${safeName(manifest.projectName)}.lctproj`, blob);
-  state.dirty = false;
-  state.lastSaved = new Date().toLocaleTimeString();
-  render();
+  return createZip(files);
 }
 
 function exportPremiereXml() {
   const xml = buildPremiereXml();
-  downloadText(`${safeName(state.manifest.projectName)}_premiere.xml`, xml, "application/xml;charset=utf-8");
+  const name = `${safeName(state.manifest.projectName)}_premiere.xml`;
+  if (tauriInvoke) return exportFile(name, xml, "xml");
+  downloadText(name, xml, "application/xml;charset=utf-8");
 }
 
 function buildPremiereXml() {

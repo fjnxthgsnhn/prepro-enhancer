@@ -115,6 +115,69 @@ button.active {
   border-left: 1px solid var(--line);
 }
 
+.file-menu {
+  position: relative;
+}
+
+.menu-button[aria-expanded="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.dropdown-menu,
+.submenu-panel {
+  position: absolute;
+  z-index: 60;
+  min-width: 176px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #151813;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.42);
+  animation: item-enter 140ms ease;
+}
+
+.dropdown-menu {
+  top: calc(100% + 8px);
+  left: 12px;
+}
+
+.dropdown-menu button,
+.submenu-panel button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border-color: transparent;
+  background: transparent;
+}
+
+.dropdown-menu button:hover,
+.submenu-panel button:hover {
+  border-color: var(--line);
+  background: rgba(215, 255, 87, 0.08);
+}
+
+.submenu {
+  position: relative;
+}
+
+.submenu-trigger::after {
+  content: ">";
+  float: right;
+  color: var(--muted);
+}
+
+.submenu-panel {
+  top: 0;
+  left: calc(100% + 8px);
+  display: none;
+}
+
+.submenu:hover .submenu-panel,
+.submenu:focus-within .submenu-panel {
+  display: block;
+}
+
 .search-box {
   margin-left: auto;
   display: flex;

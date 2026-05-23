@@ -16,13 +16,22 @@
             <span id="projectName">Untitled Project</span>
           </div>
         </div>
-        <div class="tool-section">
-          <button id="openProjectBtn" title="Open Project">Open</button>
-          <button id="loadSampleBtn" title="Load Sample">Sample</button>
-          <button id="saveTsvBtn" title="Export TSV">Save TSV</button>
-          <button id="exportLlmTsvBtn" title="Export LLM TSV">LLM TSV</button>
-          <button id="exportProjectBtn" title="Export Project">Save .lctproj</button>
-          <button id="exportXmlBtn" title="Export Premiere XML">XML</button>
+        <div class="tool-section file-menu">
+          <button id="fileMenuBtn" class="menu-button" type="button" aria-haspopup="true" aria-expanded="false">File</button>
+          <div id="fileMenu" class="dropdown-menu" role="menu" hidden>
+            <button type="button" data-file-action="new" role="menuitem">NewProject</button>
+            <button type="button" data-file-action="open" role="menuitem">OpenProject</button>
+            <button type="button" data-file-action="save" role="menuitem">Save</button>
+            <button type="button" data-file-action="saveAs" role="menuitem">Save as</button>
+            <div class="submenu" role="none">
+              <button type="button" class="submenu-trigger" role="menuitem" aria-haspopup="true">Export</button>
+              <div class="submenu-panel" role="menu">
+                <button type="button" data-file-action="exportTsv" role="menuitem">TSV</button>
+                <button type="button" data-file-action="exportLlmTsv" role="menuitem">LLM TSV</button>
+                <button type="button" data-file-action="exportXml" role="menuitem">Premiere XML</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="tool-section view-switch">
           <button class="view-btn active" data-view="table">Table</button>

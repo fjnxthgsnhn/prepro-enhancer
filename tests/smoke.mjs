@@ -13,6 +13,15 @@ await expectText("#counts", "scene 1 / multicut 2 / cut 3");
 await expectText("#missingCount", "Missing 0");
 await expectCount(".data-table tbody tr[data-id]", 6);
 await expectCount(".tree-node", 6);
+for (const removedButton of ["openProjectBtn", "loadSampleBtn", "saveTsvBtn", "exportLlmTsvBtn", "exportProjectBtn", "exportXmlBtn"]) {
+  if (await page.locator(`#${removedButton}`).count()) throw new Error(`${removedButton} should be moved into the File menu`);
+}
+await page.click("#fileMenuBtn");
+for (const menuItem of ["NewProject", "OpenProject", "Save", "Save as", "Export"]) {
+  await expectText("#fileMenu", menuItem);
+}
+await page.keyboard.press("Escape");
+await page.waitForFunction(() => document.querySelector("#fileMenu")?.hidden);
 for (const removedButton of ["addSceneBtn", "addMulticutBtn", "addCutBtn", "groupCutsBtn", "groupMulticutsBtn"]) {
   if (await page.locator(`#${removedButton}`).count()) throw new Error(`${removedButton} should be removed from the toolbar`);
 }
@@ -139,19 +148,29 @@ await page.waitForFunction(() => {
   return rows.indexOf("ct001") > rows.indexOf("mc002");
 });
 
-const [tsvDownload] = await Promise.all([page.waitForEvent("download"), page.click("#saveTsvBtn")]);
-if (!tsvDownload.suggestedFilename().endsWith("_cutlist.tsv")) throw new Error("TSV download filename mismatch");
-
-const [llmDownload] = await Promise.all([page.waitForEvent("download"), page.click("#exportLlmTsvBtn")]);
-if (!llmDownload.suggestedFilename().endsWith("_llm.tsv")) throw new Error("LLM TSV download filename mismatch");
-
-const [projectDownload] = await Promise.all([page.waitForEvent("download"), page.click("#exportProjectBtn")]);
+const [projectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
 if (!projectDownload.suggestedFilename().endsWith(".lctproj")) throw new Error("Project download filename mismatch");
 
-const [xmlDownload] = await Promise.all([page.waitForEvent("download"), page.click("#exportXmlBtn")]);
+const [tsvDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("exportTsv")]);
+if (!tsvDownload.suggestedFilename().endsWith("_cutlist.tsv")) throw new Error("TSV download filename mismatch");
+
+const [llmDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("exportLlmTsv")]);
+if (!llmDownload.suggestedFilename().endsWith("_llm.tsv")) throw new Error("LLM TSV download filename mismatch");
+
+const [xmlDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("exportXml")]);
 if (!xmlDownload.suggestedFilename().endsWith("_premiere.xml")) throw new Error("XML download filename mismatch");
 
+await clickFileAction("new");
+await expectText("#projectName", "Untitled Project");
+await expectCount(".data-table tbody tr[data-id]", 0);
+
 await browser.close();
+
+async function clickFileAction(action) {
+  await page.click("#fileMenuBtn");
+  if (action.startsWith("export")) await page.hover(".submenu");
+  await page.click(`[data-file-action="${action}"]`);
+}
 
 async function expectText(selector, text) {
   await page.waitForFunction(

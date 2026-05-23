@@ -2,6 +2,8 @@ node_modules/
 *.log
 *.tmp
 dist/
+src-tauri/gen/
+src-tauri/target/
 coverage/
 playwright-report/
 test-results/

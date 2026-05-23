@@ -5,10 +5,15 @@
   "description": "Local cut board editor MVP for TSV based previs workflows.",
   "scripts": {
     "dev": "python -m http.server 4173",
+    "build:web": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force dist | Out-Null; Copy-Item index.html dist/index.html; Copy-Item -Recurse src dist/src\"",
     "check": "node --check src/app.js",
-    "test:smoke": "node tests/smoke.mjs"
+    "test:smoke": "node tests/smoke.mjs",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:check": "cargo check --manifest-path src-tauri/Cargo.toml"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
     "playwright": "^1.60.0"
   }
 }
