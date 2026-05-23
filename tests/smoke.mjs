@@ -202,6 +202,16 @@ await expectText('tbody tr[data-id="ct002"] td[data-column="audio_file"]', "stor
 if ((await page.locator('tbody tr[data-id="sc001"] td[data-column="image"]').textContent()).includes("ignored-scene.png")) {
   throw new Error("scene file drop should be ignored");
 }
+await page.click('[data-view="storyboard"]');
+await page.click('.cut-card[data-id="ct003"]', { button: "right" });
+await expectText(".table-context-menu", "Duplicate");
+await expectText(".table-context-menu", "Delete");
+await page.keyboard.press("Escape");
+await page.click('[data-view="timeline"]');
+await page.click('.timeline-clip.cut[data-id="ct003"]', { button: "right" });
+await expectText(".table-context-menu", "Duplicate");
+await page.keyboard.press("Escape");
+await page.click('[data-view="table"]');
 
 await page.click('[data-toggle-panel="detail"]');
 await page.waitForFunction(() => document.querySelector('[data-panel="detail"]')?.classList.contains("collapsed"));
@@ -212,6 +222,15 @@ await page.click("#rightPanelToggle");
 await page.waitForFunction(() => document.querySelector(".app-shell")?.classList.contains("right-collapsed"));
 await page.click("#rightPanelToggle");
 await page.waitForFunction(() => !document.querySelector(".app-shell")?.classList.contains("right-collapsed") && [...document.querySelectorAll("#detailPanel label")].some((label) => label.textContent === "title"));
+
+const rowsBeforeDuplicate = await page.locator(".data-table tbody tr[data-id]").count();
+await page.click('tbody tr[data-id="ct004"]', { button: "right" });
+await expectText(".table-context-menu", "Duplicate");
+await expectText(".table-context-menu", "Delete");
+await page.locator(".table-context-menu button", { hasText: "Duplicate" }).click();
+await page.waitForFunction((count) => document.querySelectorAll(".data-table tbody tr[data-id]").length === count + 1, rowsBeforeDuplicate);
+await page.keyboard.press("Delete");
+await page.waitForFunction((count) => document.querySelectorAll(".data-table tbody tr[data-id]").length === count, rowsBeforeDuplicate);
 
 await page.click("#tableView", { position: { x: 12, y: 780 } });
 await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');

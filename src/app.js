@@ -213,6 +213,10 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     groupSelectionFromShortcut();
   }
+  if ((event.key === "Delete" || event.key === "Backspace") && !isTextEntryTarget(event.target)) {
+    event.preventDefault();
+    deleteSelectedRows();
+  }
   if (event.code === "Space" && !isTextEntryTarget(event.target)) {
     event.preventDefault();
     togglePlayback();
@@ -522,7 +526,7 @@ function renderTable() {
     tr.addEventListener("dragleave", clearDropClasses);
     tr.addEventListener("drop", (event) => handleDrop(event, row));
     tr.addEventListener("dragend", clearDragState);
-    tr.addEventListener("contextmenu", (event) => showGroupMenu(event, row));
+    tr.addEventListener("contextmenu", (event) => showRowContextMenu(event, row));
     DISPLAY_COLUMNS.forEach((column) => {
       const td = document.createElement("td");
       td.dataset.column = column;
@@ -632,6 +636,7 @@ function renderStoryboard() {
       event.stopPropagation();
       selectRow(scene.row.id, event);
     });
+    sceneEl.querySelector(".scene-header").addEventListener("contextmenu", (event) => showRowContextMenu(event, scene.row));
     scene.multicuts.forEach((multicut) => {
       const mc = document.createElement("section");
       mc.className = `multicut-section${state.activeId === multicut.row.id ? " selected" : ""}`;
@@ -641,6 +646,7 @@ function renderStoryboard() {
         event.stopPropagation();
         selectRow(multicut.row.id, event);
       });
+      mc.querySelector(".multicut-header").addEventListener("contextmenu", (event) => showRowContextMenu(event, multicut.row));
       const grid = document.createElement("div");
       grid.className = "card-grid";
       multicut.cuts.forEach((cut) => grid.appendChild(cutCard(cut)));
@@ -683,6 +689,7 @@ function cutCard(cut) {
   card.className = `cut-card${state.activeId === cut.id ? " selected" : ""}`;
   attachStoryboardDrag(card, cut);
   card.addEventListener("click", (event) => selectRow(cut.id, event));
+  card.addEventListener("contextmenu", (event) => showRowContextMenu(event, cut));
   const media = displayMediaUrl(cut.image);
   card.innerHTML = `
       <div class="thumb">${media ? `<img src="${media}" alt="">` : `<span>${cut.image ? "Missing image" : "No image"}</span>`}</div>
@@ -773,6 +780,7 @@ function renderTimelineLane(lane, items, type) {
     clip.addEventListener("dragleave", clearDropClasses);
     clip.addEventListener("drop", (event) => handleDrop(event, item.row));
     clip.addEventListener("dragend", clearDragState);
+    clip.addEventListener("contextmenu", (event) => showRowContextMenu(event, item.row));
     lane.appendChild(clip);
   });
 }
@@ -1241,31 +1249,131 @@ function selectedRowsOfType(type) {
   return [...state.selectedIds].map(getRow).filter((row) => row?.row_type === type);
 }
 
-function showGroupMenu(event, row) {
+function selectedRows() {
+  const selected = new Set(state.selectedIds);
+  return hierarchyRows().filter((row) => selected.has(row.id));
+}
+
+function deleteSelectedRows() {
+  const rows = selectedRows();
+  if (!rows.length) return;
+  closeContextMenu();
+  pushHistory();
+  const ordered = hierarchyRows();
+  const firstIndex = ordered.findIndex((row) => row.id === rows[0].id);
+  const deleteIds = new Set();
+  rows.forEach((row) => collectDescendantIds(row, deleteIds));
+  state.rows = state.rows.filter((row) => !deleteIds.has(row.id));
+  normalizeOrders();
+  const remaining = hierarchyRows();
+  const next = remaining[Math.min(firstIndex, remaining.length - 1)] || null;
+  state.activeId = next?.id || "";
+  state.selectedIds = next ? new Set([next.id]) : new Set();
+  state.selectionAnchorId = state.activeId;
+  markDirty();
+  render();
+}
+
+function collectDescendantIds(row, ids) {
+  if (!row || ids.has(row.id)) return;
+  ids.add(row.id);
+  if (row.row_type === "scene") {
+    state.rows.filter((item) => item.row_type === "multicut" && item.parent_id === row.id).forEach((item) => collectDescendantIds(item, ids));
+  }
+  if (row.row_type === "multicut") {
+    state.rows.filter((item) => item.row_type === "cut" && item.parent_id === row.id).forEach((item) => collectDescendantIds(item, ids));
+  }
+}
+
+function duplicateSelectedRows() {
+  const roots = selectedDuplicateRoots();
+  if (!roots.length) return;
+  closeContextMenu();
+  pushHistory();
+  const created = [];
+  roots.forEach((row) => duplicateRowTree(row, created));
+  normalizeOrders();
+  const first = created[0];
+  state.activeId = first?.id || "";
+  state.selectedIds = new Set(created.map((row) => row.id));
+  state.selectionAnchorId = state.activeId;
+  markDirty();
+  render();
+}
+
+function selectedDuplicateRoots() {
+  const selected = new Set(state.selectedIds);
+  return selectedRows().filter((row) => {
+    const parent = getRow(row.parent_id);
+    return !parent || !selected.has(parent.id);
+  });
+}
+
+function duplicateRowTree(row, created, parentOverride = null) {
+  const copy = cloneRow(row, parentOverride ?? row.parent_id);
+  state.rows.push(copy);
+  const group = state.rows.filter((item) => item.row_type === copy.row_type && (item.parent_id || "") === (copy.parent_id || "")).sort(sortByOrder);
+  const originalIndex = parentOverride == null ? group.findIndex((item) => item.id === row.id) + 1 : group.length;
+  insertIntoOrderedGroup(copy, group, Math.max(0, originalIndex));
+  created.push(copy);
+  if (row.row_type === "scene") {
+    state.rows
+      .filter((item) => item.row_type === "multicut" && item.parent_id === row.id)
+      .sort(sortByOrder)
+      .forEach((child) => duplicateRowTree(child, created, copy.id));
+  }
+  if (row.row_type === "multicut") {
+    state.rows
+      .filter((item) => item.row_type === "cut" && item.parent_id === row.id)
+      .sort(sortByOrder)
+      .forEach((child) => duplicateRowTree(child, created, copy.id));
+  }
+  return copy;
+}
+
+function cloneRow(row, parentId) {
+  const copy = { ...row };
+  copy.id = nextId(row.row_type);
+  copy.parent_id = parentId || "";
+  return copy;
+}
+
+function showRowContextMenu(event, row) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!state.selectedIds.has(row.id)) {
+    state.selectedIds = new Set([row.id]);
+    state.activeId = row.id;
+    state.selectionAnchorId = row.id;
+    render();
+  }
   const cutCount = selectedRowsOfType("cut").length;
   const multicutCount = selectedRowsOfType("multicut").length;
   const canGroupCuts = row.row_type === "cut" && state.selectedIds.has(row.id) && cutCount >= 2;
   const canGroupMulticuts = row.row_type === "multicut" && state.selectedIds.has(row.id) && multicutCount >= 2;
-  if (!canGroupCuts && !canGroupMulticuts) return;
-  event.preventDefault();
-  event.stopPropagation();
   closeContextMenu();
   const menu = document.createElement("div");
   menu.className = "table-context-menu";
   menu.style.left = `${event.clientX}px`;
   menu.style.top = `${event.clientY}px`;
+  if (canGroupCuts) menu.appendChild(contextMenuButton("Create Multicut", groupCuts));
+  if (canGroupMulticuts) menu.appendChild(contextMenuButton("Create Scene", groupMulticuts));
+  menu.appendChild(contextMenuButton("Duplicate", duplicateSelectedRows));
+  menu.appendChild(contextMenuButton("Delete", deleteSelectedRows));
+  document.body.appendChild(menu);
+  state.contextMenu = menu;
+}
+
+function contextMenuButton(label, action) {
   const button = document.createElement("button");
   button.type = "button";
-  button.textContent = canGroupCuts ? "Create Multicut" : "Create Scene";
+  button.textContent = label;
   button.addEventListener("click", (clickEvent) => {
     clickEvent.stopPropagation();
     closeContextMenu();
-    if (canGroupCuts) groupCuts();
-    else groupMulticuts();
+    action();
   });
-  menu.appendChild(button);
-  document.body.appendChild(menu);
-  state.contextMenu = menu;
+  return button;
 }
 
 function closeContextMenu() {
