@@ -1067,12 +1067,14 @@ function normalizeOrders() {
 
 function handleDragStart(event, row) {
   state.draggingId = row.id;
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("text/plain", row.id);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", row.id);
+  }
 }
 
 function handleDragOver(event, target) {
-  const dragged = getRow(event.dataTransfer.getData("text/plain") || state.draggingId);
+  const dragged = getRow(event.dataTransfer?.getData("text/plain") || state.draggingId);
   if (!dragged || dragged.id === target.id) return;
   const mode = dropMode(event, dragged, target);
   clearDropClasses();
@@ -1082,7 +1084,7 @@ function handleDragOver(event, target) {
 }
 
 function handleDrop(event, target) {
-  const dragged = getRow(event.dataTransfer.getData("text/plain") || state.draggingId);
+  const dragged = getRow(event.dataTransfer?.getData("text/plain") || state.draggingId);
   const mode = dragged ? dropMode(event, dragged, target) : "";
   clearDropClasses();
   if (!dragged || !mode || dragged.id === target.id) return;
