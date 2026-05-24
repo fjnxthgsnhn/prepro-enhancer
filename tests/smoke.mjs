@@ -502,6 +502,10 @@ function expectAgentsMd(content, label) {
   if (!content.includes(expectedHeaders().join("\t"))) throw new Error(`${label} AGENTS.md should document current cutlist columns`);
   if (!content.includes("scene > multicut > cut")) throw new Error(`${label} AGENTS.md should document hierarchy rules`);
   if (!content.includes("100文字で17秒")) throw new Error(`${label} AGENTS.md should document dialogue duration rule`);
+  if (!content.includes("`.lctproj` はZIPアーカイブです")) throw new Error(`${label} AGENTS.md should document lctproj zip archive format`);
+  if (!content.includes("ZIPルート直下には少なくとも `manifest.json` と `cutlist.tsv`")) throw new Error(`${label} AGENTS.md should document required zip root files`);
+  if (!content.includes("Compress-Archive")) throw new Error(`${label} AGENTS.md should include a PowerShell rearchive example`);
+  if (!content.includes("zip -r ../EditedProject.lctproj .")) throw new Error(`${label} AGENTS.md should include a macOS/Linux rearchive example`);
 }
 
 async function expectTableHeaders() {
