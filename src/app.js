@@ -1222,8 +1222,9 @@ function renderTimeline() {
       <span id="timelineTime">${formatTime(playTime)} / ${formatTime(total)}</span>
     </div>
     <div class="timeline-stage">
-      <div class="playhead"><div class="playhead-handle" aria-label="Scrub timeline"></div></div>
       <div class="nested-track" style="width:${model.width}px">
+        <div class="playhead"><div class="playhead-handle" aria-label="Scrub timeline"></div></div>
+        <div class="timeline-ruler">${timelineRulerHtml(model)}</div>
         <div class="timeline-lane scene-lane"></div>
         <div class="timeline-lane multicut-lane"></div>
         <div class="timeline-lane cut-lane"></div>
@@ -1239,6 +1240,16 @@ function renderTimeline() {
   attachTimelineScrub(root.querySelector(".timeline-stage"));
   el.timeline.replaceChildren(root);
   updateTimelinePlaybackUi({ forcePreview: true, model, active });
+}
+
+function timelineRulerHtml(model) {
+  const total = Math.ceil(model.total || 0);
+  if (!total) return "";
+  return Array.from({ length: total + 1 }, (_, second) => {
+    const major = second % 5 === 0;
+    const left = timelineXFromSeconds(second, model);
+    return `<div class="timeline-tick${major ? " major" : ""}" style="left:${left}px">${major ? `<span>${second}s</span>` : ""}</div>`;
+  }).join("");
 }
 
 function timelinePreviewHtml(cut, offset) {
@@ -1350,20 +1361,23 @@ function updateTimelinePlaybackUi({ forcePreview = false, model = timelineModel(
   const stage = root.querySelector(".timeline-stage");
   const track = root.querySelector(".nested-track");
   const playhead = root.querySelector(".playhead");
+  const playBtn = root.querySelector("#playBtn");
+  if (playBtn) playBtn.textContent = state.playing ? "Stop" : "Play";
   if (seek) {
     seek.max = String(total || 0);
     seek.value = String(playTime);
   }
   if (time) time.textContent = `${formatTime(playTime)} / ${formatTime(total)}`;
-  if (stage && track && playhead) {
-    const x = total ? (playTime / total) * track.offsetWidth : 0;
-    playhead.style.left = `${track.offsetLeft + x - stage.scrollLeft}px`;
+  if (track && playhead) {
+    playhead.style.left = `${timelineXFromSeconds(playTime, model)}px`;
   }
   const preview = root.querySelector(".timeline-preview");
   const cut = activeCut?.cut || null;
   const offset = activeCut?.offset || 0;
   if (preview && (forcePreview || preview.dataset.cutId !== (cut?.id || ""))) {
     preview.outerHTML = timelinePreviewHtml(cut, offset);
+  } else if (preview) {
+    preview.dataset.cutOffset = String(offset);
   }
   syncTimelineAudio(cut, offset);
 }
@@ -1394,17 +1408,60 @@ function attachTimelineScrub(stage) {
   stage.addEventListener("pointerup", end);
   stage.addEventListener("pointercancel", end);
   stage.addEventListener("scroll", () => updateTimelinePlaybackUi());
+  stage.addEventListener("wheel", (event) => {
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (!delta) return;
+    event.preventDefault();
+    stage.scrollLeft += delta;
+    updateTimelinePlaybackUi();
+  }, { passive: false });
 }
 
 function scrubTimelineAt(event) {
   const stage = event.currentTarget;
-  const track = stage.querySelector(".nested-track");
-  if (!track) return;
-  const total = timelineModel().total;
-  const x = clamp(event.clientX - track.getBoundingClientRect().left, 0, track.offsetWidth);
-  state.playOffset = total ? (x / track.offsetWidth) * total : 0;
+  const model = timelineModel();
+  const x = timelineXFromClientX(stage, event.clientX);
+  state.playOffset = secondsFromTimelineX(x, model);
   if (state.playing) state.playStartedAt = performance.now();
-  updateTimelinePlaybackUi();
+  updateTimelinePlaybackUi({ model });
+}
+
+function timelineXFromClientX(stage, clientX) {
+  const track = stage?.querySelector(".nested-track");
+  if (!stage || !track) return 0;
+  const stageRect = stage.getBoundingClientRect();
+  return clamp(clientX - stageRect.left + stage.scrollLeft - track.offsetLeft, 0, track.offsetWidth);
+}
+
+function timelineXFromSeconds(seconds, model = timelineModel()) {
+  if (!model.cuts.length) return 0;
+  const target = clamp(seconds, 0, model.total);
+  let elapsed = 0;
+  for (const item of model.cuts) {
+    const end = elapsed + item.seconds;
+    if (target <= end || item === model.cuts[model.cuts.length - 1]) {
+      const ratio = item.seconds ? clamp((target - elapsed) / item.seconds, 0, 1) : 0;
+      return item.start + item.width * ratio;
+    }
+    elapsed = end;
+  }
+  const last = model.cuts[model.cuts.length - 1];
+  return last.start + last.width;
+}
+
+function secondsFromTimelineX(x, model = timelineModel()) {
+  if (!model.cuts.length) return 0;
+  const target = clamp(x, 0, model.width);
+  let elapsed = 0;
+  for (const item of model.cuts) {
+    const endX = item.start + item.width;
+    if (target <= endX || item === model.cuts[model.cuts.length - 1]) {
+      const ratio = item.width ? clamp((target - item.start) / item.width, 0, 1) : 0;
+      return clamp(elapsed + item.seconds * ratio, 0, model.total);
+    }
+    elapsed += item.seconds;
+  }
+  return model.total;
 }
 
 function startClipResize(event, row) {
@@ -2487,7 +2544,7 @@ function togglePlayback() {
     state.playStartedAt = performance.now();
     schedulePlaybackFrame();
   }
-  renderTimeline();
+  updateTimelinePlaybackUi();
 }
 
 function schedulePlaybackFrame() {

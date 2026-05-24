@@ -954,14 +954,15 @@ button.active {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
-  padding: 14px;
+  padding: 18px 14px 14px;
   overflow-x: auto;
+  overscroll-behavior: contain;
 }
 
 .playhead {
   position: absolute;
-  top: 4px;
-  bottom: 10px;
+  top: 0;
+  bottom: 0;
   width: 20px;
   z-index: 5;
   cursor: ew-resize;
@@ -973,7 +974,7 @@ button.active {
 .playhead::before {
   content: "";
   position: absolute;
-  top: 14px;
+  top: 16px;
   bottom: 0;
   left: 9px;
   width: 2px;
@@ -1000,10 +1001,38 @@ button.active {
 .nested-track {
   position: relative;
   display: grid;
-  grid-template-rows: 32px 32px 64px;
+  grid-template-rows: 44px 32px 32px 64px;
   min-width: 100%;
   border: 1px solid var(--line);
   background: #0f110e;
+}
+
+.timeline-ruler {
+  position: relative;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01));
+}
+
+.timeline-tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 12px;
+  background: rgba(238, 241, 232, 0.22);
+}
+
+.timeline-tick.major {
+  height: 24px;
+  background: rgba(215, 255, 87, 0.56);
+}
+
+.timeline-tick span {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .timeline-lane {

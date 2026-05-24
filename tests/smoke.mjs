@@ -230,37 +230,73 @@ await expectCount(".timeline-clip.cut", 3);
 await expectCount(".timeline-clip.cut .clip-resize-handle", 3);
 await expectCount(".timeline-clip.scene .clip-resize-handle", 0);
 await expectCount(".timeline-clip.multicut .clip-resize-handle", 0);
+await expectCount(".timeline-ruler", 1);
+await expectCount(".timeline-tick.major", 2);
 await expectText(".timeline", "顕微鏡の寄り");
 await page.waitForFunction(() => {
   const preview = document.querySelector(".timeline-preview");
   return preview && Math.abs(preview.getBoundingClientRect().width / preview.getBoundingClientRect().height - 16 / 9) < 0.03;
 });
+await page.evaluate(() => {
+  document.querySelector(".nested-track").style.width = "1800px";
+  const stage = document.querySelector(".timeline-stage");
+  stage.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 320 }));
+});
+await page.waitForFunction(() => document.querySelector(".timeline-stage")?.scrollLeft > 0);
+const scrolledBeforePlay = await page.locator(".timeline-stage").evaluate((node) => node.scrollLeft);
 await page.click("#playBtn");
 await page.waitForTimeout(250);
 await expectText("#playBtn", "Stop");
+await page.waitForFunction((left) => Math.abs(document.querySelector(".timeline-stage")?.scrollLeft - left) < 2, scrolledBeforePlay);
 await expectCount(".timeline-clip.scene", 1);
 await expectCount(".timeline-clip.multicut", 2);
 await expectCount(".timeline-clip.cut", 3);
 await page.keyboard.press("Space");
 await expectText("#playBtn", "Play");
-await page.locator(".timeline-seek").fill("4");
+await page.locator(".timeline-seek").evaluate((input) => {
+  input.value = "4";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+});
 await page.waitForFunction(() => Number(document.querySelector(".timeline-seek")?.value || 0) >= 4);
+await page.waitForFunction(() => document.querySelector(".timeline-preview")?.dataset.cutId);
 await expectCount(".playhead-handle", 1);
+const scrubClick = await page.locator(".timeline-stage").evaluate((stage) => {
+  const rect = stage.getBoundingClientRect();
+  return { x: rect.left + 250, y: rect.top + 28 };
+});
+await page.mouse.click(scrubClick.x, scrubClick.y);
+await page.waitForFunction(() => Number(document.querySelector(".timeline-seek")?.value || 0) > 0.5);
+await page.waitForFunction((x) => {
+  const track = document.querySelector(".nested-track");
+  const playhead = document.querySelector(".playhead");
+  const viewportX = track.getBoundingClientRect().left + Number.parseFloat(playhead.style.left || "0");
+  return Math.abs(viewportX - x) < 4;
+}, scrubClick.x);
 await page.locator(".playhead-handle").dragTo(page.locator(".timeline-stage"), {
   sourcePosition: { x: 6, y: 6 },
-  targetPosition: { x: 320, y: 50 },
+  targetPosition: { x: 260, y: 28 },
 });
-await page.waitForFunction(() => Number(document.querySelector(".timeline-seek")?.value || 0) > 0.5);
+await page.waitForFunction(() => Number(document.querySelector(".timeline-seek")?.value || 0) > 1);
+await page.waitForFunction(() => {
+  const stage = document.querySelector(".timeline-stage");
+  const track = document.querySelector(".nested-track");
+  const playhead = document.querySelector(".playhead");
+  const viewportX = track.getBoundingClientRect().left + Number.parseFloat(playhead.style.left || "0");
+  return Math.abs(viewportX - (stage.getBoundingClientRect().left + 260)) < 8 && stage.scrollLeft > 0;
+});
 await page.click('[data-view="table"]');
 await clearTableCell("ct001", "image");
 await clearTableCell("ct002", "image");
 await clearTableCell("ct003", "image");
 await page.click('[data-view="timeline"]');
-await page.locator(".timeline-seek").fill("1");
+await page.locator(".timeline-seek").evaluate((input) => {
+  input.value = "1";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+});
 await page.waitForFunction(() => {
   const preview = document.querySelector(".timeline-preview");
   const text = document.querySelector(".timeline-text-preview");
-  return preview && text && !preview.querySelector("img") && text.textContent.includes("title");
+  return preview?.dataset.cutId && text && !preview.querySelector("img") && text.textContent.includes("title");
 });
 await dragResizeHandle('.timeline-clip.cut[data-id="ct002"] .clip-resize-handle', 80);
 await page.click('[data-view="table"]');
