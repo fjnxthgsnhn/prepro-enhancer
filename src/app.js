@@ -114,125 +114,111 @@ const DEFAULT_MANIFEST = {
 const PROJECT_AGENTS_MD = [
   "# Prepro Enhancer Project Agent Instructions",
   "",
-  "あなたはPrepro Enhancer用のカットリスト制作エージェントです。",
-  "ユーザーからこの `.lctproj` と脚本が渡されたら、`cutlist.tsv` を直接編集し、脚本をカット単位へ分解してください。",
+  "You are a cutlist production agent for Prepro Enhancer.",
+  "When the user provides this `.lctproj` and a script, edit `cutlist.tsv` directly and decompose the script into cuts.",
   "",
-  "## 正本ファイル",
+  "## Source of Truth",
   "",
-  "編集対象は `cutlist.tsv` です。",
-  "列順は必ず以下を維持してください。",
+  "Edit `cutlist.tsv` only. Keep this column order exactly:",
   "",
   "row_type\tid\tparent_id\torder\ttitle\tduration\tscene\tsubject\tcomposition\taction\tcamera\tdialogue\timage\taudio_file\timage_prompt\tvideo_prompt\tnote",
   "",
-  "## 初回構築方針",
+  "## Initial Build Policy",
   "",
-  "初回では本格的なマルチカット構築はしません。",
-  "ただしアプリの階層は `scene > multicut > cut` なので、各sceneの下に仮の単一multicutを作り、その下へcutを配置してください。",
+  "The default hierarchy is `scene > cut`. `multicut` is optional and should not be created during the first pass.",
+  "Use `scene > multicut > cut` only later when the user asks to group cuts.",
   "",
-  "- scene: 脚本上のシーン単位",
-  "- multicut: 初回は各sceneにつき1つだけ作る仮グループ",
-  "- cut: ト書き・セリフ・視点・構図の変化ごとの最小単位",
+  "- scene: script scene unit",
+  "- multicut: optional group for related cuts",
+  "- cut: smallest unit of action, dialogue, viewpoint, or composition change",
   "",
-  "`image`, `audio_file`, `image_prompt`, `video_prompt` は初回では空欄にしてください。",
+  "Leave `image`, `audio_file`, `image_prompt`, and `video_prompt` empty during the first pass.",
   "",
-  "## カット分解ルール",
+  "## Cut Decomposition Rules",
   "",
-  "1つのシーンのト書きとセリフを読み、カット単位に分解してください。",
+  "Read each scene's action lines and dialogue, then divide it into cuts.",
+  "Use this composition rhythm as a baseline:",
   "",
-  "構図の基本構成は以下です。",
+  "1. Long shot: location, situation, and character placement",
+  "2. Medium shot: action, conversation, and relationships",
+  "3. Close shot: expression, hands, important objects, emotion",
+  "4. Repeat medium or close shots for dialogue and reactions",
+  "5. Return to a long shot when the situation changes",
   "",
-  "1. ロングショット: 場所、状況、人物配置の説明",
-  "2. ミドルショット: アクション、会話、人物同士の関係",
-  "3. クローズショット: 表情、手元、重要な物、感情の強調",
-  "4. ミドルまたはクローズの反復: 会話や反応をつなぐ",
-  "5. 状況が変化した時: 再度ロングショットで状況を説明",
+  "For cuts with dialogue, calculate duration from `100 Japanese characters = 17 seconds` and include natural pauses.",
+  "For action-only cuts, choose a natural duration from the content.",
   "",
-  "セリフがあるcutのdurationは、100文字で17秒を基準に計算してください。",
-  "短いセリフでも自然な間を含め、極端に短すぎる尺にしないでください。",
-  "アクションのみのcutは、内容に応じて自然な尺を判断してください。",
+  "## Column Guidance",
   "",
-  "## 各列の入れ方",
+  "- title: short cut name",
+  "- duration: seconds such as `3s` or `5.5s`",
+  "- scene: location or scene name",
+  "- subject: main character, object, or subject",
+  "- composition: long, medium, close, hands, eyes, etc.",
+  "- action: action extracted from script directions",
+  "- camera: fixed, pan, dolly, push in, pull out, handheld, etc.",
+  "- dialogue: only the dialogue used in that cut",
+  "- note: rationale, direction intent, or unresolved points",
   "",
-  "- title: カット内容を短く表す名前",
-  "- duration: `3s`, `5.5s` のような秒数",
-  "- scene: 場所またはシーン名",
-  "- subject: 主な被写体、人物、物",
-  "- composition: ロング、ミドル、クローズ、手元、目元など",
-  "- action: ト書きから抽出した動作",
-  "- camera: 固定、パン、ドリー、寄り、引き、手持ち風など",
-  "- dialogue: そのcutで扱うセリフのみ",
-  "- note: 判断理由、演出意図、未確定事項",
-  "",
-  "ト書きは `action`, `camera`, `composition`, `note` へ整理し、`dialogue` にはそのcutで扱うセリフだけを入れてください。",
-  "",
-  "## IDルール",
+  "## ID Rules",
   "",
   "- scene: `sc001`, `sc002`",
   "- multicut: `mc001`, `mc002`",
   "- cut: `ct001`, `ct002`",
   "",
-  "`parent_id` は必ず階層に合わせて設定してください。",
-  "`order` は同じ親の中で1から順に振ってください。",
+  "For direct cuts, set `parent_id` to the scene id. For grouped cuts, set `parent_id` to the multicut id.",
+  "Use `order` from 1 within the same parent. In a scene, direct cuts and multicuts share the same order sequence.",
   "",
-  "## 初回構築後の応答",
+  "## After First Pass",
   "",
-  "`cutlist.tsv` の初回構築が終わったら、ユーザーに次を確認してください。",
+  "After the initial `cutlist.tsv` build, ask the user whether to create multicuts and how to group them:",
   "",
-  "1. マルチカットを構築するか",
-  "2. 構築する場合、どの単位でまとめるか",
-  "   - 会話単位",
-  "   - アクション単位",
-  "   - 場所・状況変化単位",
-  "   - カメラワーク単位",
+  "1. Dialogue unit",
+  "2. Action unit",
+  "3. Location or situation change unit",
+  "4. Camera-work unit",
   "",
-  "さらに、カット構築の確認が終わったら、次の工程として `image_prompt` と `video_prompt` の構築もできることを案内してください。",
+  "Also tell the user that after confirming the cut structure, you can build `image_prompt` and `video_prompt` as the next step.",
   "",
-  "## チャットAIで編集した場合の最終納品",
+  "## Final Delivery for Chat AI Editing",
   "",
-  "`.lctproj` はZIPアーカイブです。拡張子だけを `.lctproj` にしたZIPとして扱ってください。",
-  "チャットAI環境でプロジェクトを編集した場合も、最終的には元のZIP構造を保った `.lctproj` として返してください。",
+  "`.lctproj` is a ZIP archive whose extension is `.lctproj`.",
+  "In principle, only edit `cutlist.tsv`. Do not delete or rename `manifest.json`, `timeline.json`, `settings.json`, `media_index.json`, or `AGENTS.md`.",
   "",
-  "原則として編集対象は `cutlist.tsv` のみです。",
-  "`manifest.json`, `timeline.json`, `settings.json`, `media_index.json`, `AGENTS.md` は削除・改名しないでください。",
+  "Final packaging steps:",
   "",
-  "最終成果物を作る手順:",
+  "1. Extract the original `.lctproj` as a ZIP archive.",
+  "2. Replace `cutlist.tsv` with the edited version.",
+  "3. ZIP only the contents of the extracted folder, not the folder itself.",
+  "4. Rename the resulting ZIP extension to `.lctproj`.",
   "",
-  "1. 元の `.lctproj` をZIPとして展開する",
-  "2. 更新済みの `cutlist.tsv` を差し替える",
-  "3. 展開済みフォルダの中身だけをZIP化する",
-  "4. 生成したZIPの拡張子を `.lctproj` にする",
+  "At the ZIP root, at minimum `manifest.json` and `cutlist.tsv` must exist.",
+  "Place `cutlist.tsv` at the ZIP root unless the existing `manifest.json` explicitly points to another path.",
   "",
-  "ZIPルート直下には少なくとも `manifest.json` と `cutlist.tsv` が存在する必要があります。",
-  "`Project/cutlist.tsv` のように余計な親フォルダをZIP内へ入れず、基本は `cutlist.tsv` をZIPルートに置いてください。",
-  "",
-  "PowerShell例:",
+  "PowerShell example:",
   "",
   "```powershell",
   "Compress-Archive -Path .\\ExtractedProject\\* -DestinationPath .\\EditedProject.zip -Force",
   "Rename-Item .\\EditedProject.zip EditedProject.lctproj",
   "```",
   "",
-  "macOS/Linux例:",
+  "macOS/Linux example:",
   "",
   "```sh",
   "cd ExtractedProject",
   "zip -r ../EditedProject.lctproj .",
   "```",
   "",
-  "`.lctproj` ファイルを直接添付できる環境では、再ZIP化した `.lctproj` を返してください。",
-  "直接添付できない環境では、`cutlist.tsv` の完全版を返し、既存プロジェクト内の `cutlist.tsv` と差し替えるよう案内してください。",
-  "Base64で `.lctproj` 全体を返す方式は長大化しやすいため、原則として避けてください。",
-  "",
+  "If direct `.lctproj` attachment is unavailable, return the complete `cutlist.tsv` instead. Avoid returning the entire `.lctproj` as Base64 unless explicitly requested.",
 ].join("\n");
 
-const SAMPLE_TSV = `row_type\tid\tparent_id\torder\ttitle\tduration\tscene\tsubject\tcomposition\taction\tcamera\tdialogue\timage\taudio_file\timage_prompt\tvideo_prompt\tnote
-scene\tsc001\t\t1\t研究室の異変\t\t研究室\t\t全体\t異変の前兆\tスローな移動\t\t\t\t白い研究室、薄明かり、緊張感のある映画的な画作り\t研究室全体をゆっくり見せる導入シーン\tシーン全体の方向性
-multicut\tmc001\tsc001\t1\t顕微鏡シークエンス\t\t研究室\t山本\t寄り中心\t観察する\tドリーイン\t\t\t\t顕微鏡、研究員の手元、浅い被写界深度\t顕微鏡を覗く動作から表情変化までを数カットで見せる\t導入マルチカット
-cut\tct001\tmc001\t1\t顕微鏡の寄り\t3s\t研究室\t顕微鏡\t超寄り\tレンズが光る\tゆっくりドリーイン\t低い機械音\tmedia/images/cut001.jpg\tmedia/audio/cut001.wav\t顕微鏡レンズの超クローズアップ、白い研究室照明、浅い被写界深度\t顕微鏡レンズへゆっくりドリーイン、微細な反射が揺れる\t導入カット
-cut\tct002\tmc001\t2\t山本の目元\t3s\t研究室\t山本\t目元アップ\t違和感に気づく\t微細なプッシュイン\t息を呑む音\tmedia/images/cut002.jpg\t\t研究員の目元アップ、真剣な表情、白い壁面\t山本が顕微鏡を覗き込み、わずかに眉を寄せる\t表情重要
-multicut\tmc002\tsc001\t2\t警告ランプ\t\t研究室\t警告灯\t切り返し\t警報が始まる\t固定とパン\t警告音\t\t\t赤い警告ランプ、反射するガラス、硬質な影\t警告ランプの点滅と室内の反応\t
-cut\tct003\tmc002\t1\t警告灯の点滅\t2s\t研究室\t警告灯\tクローズアップ\t点滅する\t固定\t警告音\tmedia/images/cut003.jpg\tmedia/audio/cut003.wav\t赤い警告灯のクローズアップ、暗い反射、強いコントラスト\t警告灯が点滅し、画面に赤い反射が走る\t`;
-
+const SAMPLE_TSV = `row_type	id	parent_id	order	title	duration	scene	subject	composition	action	camera	dialogue	image	audio_file	image_prompt	video_prompt	note
+scene	sc001		1	Lab Anomaly		Laboratory		Long shot	Establish the lab	Slow push				wide cinematic laboratory, tense atmosphere	establishing shot of a quiet research lab	Opening scene
+multicut	mc001	sc001	1	Microscope Sequence		Laboratory	Yamamoto	Close coverage	Observe specimen	Dolly in				microscope lens, scientist hands, shallow depth of field	push in from microscope to scientist reaction	Intro multicut
+cut	ct001	mc001	1	Microscope Close	3s	Laboratory	Microscope	Close shot	Lens fills the frame	Slow dolly	low machine hum	media/images/cut001.jpg	media/audio/cut001.wav	extreme close-up of microscope lens in a white lab	slow dolly toward microscope lens	Opening cut
+cut	ct002	mc001	2	Yamamoto Eyes	3s	Laboratory	Yamamoto	Eye close-up	Notices something strange	Subtle push in	breath catches	media/images/cut002.jpg		close-up of a scientist's eyes, tense expression	scientist narrows eyes while looking into microscope	Reaction cut
+multicut	mc002	sc001	2	Warning Lamp		Laboratory	Warning lamp	Cutaway	Alarm begins	Fixed and pan	warning beep			red warning lamp reflected in glass	warning lamp flashes and lab reacts	
+cut	ct003	mc002	1	Warning Flash	2s	Laboratory	Warning lamp	Close shot	Lamp flashes	Locked shot	warning beep	media/images/cut003.jpg	media/audio/cut003.wav	close-up of red warning lamp, hard shadows	red warning lamp flashes rhythmically	`; 
 const state = {
   manifest: structuredClone(DEFAULT_MANIFEST),
   rows: [],
@@ -699,7 +685,6 @@ function normalizeImportedRows(rows) {
   const ids = new Set(normalized.map((row) => row.id).filter(Boolean));
   const get = (id) => normalized.find((row) => row.id === id);
   let importedScene = null;
-  let importedMulticut = null;
 
   const uniqueId = (prefix, preferred) => {
     if (!ids.has(preferred)) {
@@ -726,21 +711,6 @@ function normalizeImportedRows(rows) {
     return importedScene;
   };
 
-  const ensureImportedMulticut = () => {
-    if (importedMulticut) return importedMulticut;
-    const scene = ensureImportedScene();
-    importedMulticut = {
-      ...emptyRow("multicut"),
-      id: uniqueId("mc", "mc_imported"),
-      parent_id: scene.id,
-      title: "Imported Multicut",
-      order: String(nextOrder(normalized.filter((row) => row.row_type === "multicut" && row.parent_id === scene.id))),
-    };
-    normalized.push(importedMulticut);
-    warnings.push("Imported Multicut was created for cuts with missing or invalid multicut parents.");
-    return importedMulticut;
-  };
-
   normalized.forEach((row) => {
     row.row_type = normalizeRowType(row.row_type);
     row.id = String(row.id || uniqueId("row", "row_imported")).trim();
@@ -764,9 +734,9 @@ function normalizeImportedRows(rows) {
   normalized.forEach((row) => {
     if (row.row_type !== "cut") return;
     const parent = get(row.parent_id);
-    if (!parent || parent.row_type !== "multicut") {
-      row.parent_id = ensureImportedMulticut().id;
-      warnings.push(`${row.id}: cut was moved under Imported Multicut.`);
+    if (!parent || !["scene", "multicut"].includes(parent.row_type)) {
+      row.parent_id = ensureImportedScene().id;
+      warnings.push(`${row.id}: cut was moved under Imported Scene.`);
     }
   });
 
@@ -781,11 +751,21 @@ function emptyRow(type) {
 function normalizeRowOrders(rows) {
   const groups = new Map();
   rows.forEach((row) => {
-    const key = `${row.row_type}:${row.parent_id || "root"}`;
+    const key = orderGroupKey(row, rows);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   });
   groups.forEach((items) => items.sort(sortByOrder).forEach((row, index) => (row.order = String(index + 1))));
+}
+
+function orderGroupKey(row, rows = state.rows) {
+  if (row.row_type === "scene") return "scene:root";
+  const parent = rows.find((item) => item.id === row.parent_id);
+  if ((row.row_type === "multicut" && parent?.row_type === "scene") || (row.row_type === "cut" && parent?.row_type === "scene")) {
+    return `scene-children:${parent.id}`;
+  }
+  if (row.row_type === "cut" && parent?.row_type === "multicut") return `multicut-cuts:${parent.id}`;
+  return `${row.row_type}:${row.parent_id || "root"}`;
 }
 
 function parseDelimitedText(text, delimiter = "\t") {
@@ -863,15 +843,30 @@ function buildTree() {
   const scenes = state.rows.filter((row) => row.row_type === "scene").sort(sortByOrder);
   const multicuts = state.rows.filter((row) => row.row_type === "multicut").sort(sortByOrder);
   const cuts = state.rows.filter((row) => row.row_type === "cut").sort(sortByOrder);
-  return scenes.map((scene) => ({
-    row: scene,
-    multicuts: multicuts
-      .filter((multicut) => multicut.parent_id === scene.id)
-      .map((multicut) => ({
-        row: multicut,
-        cuts: cuts.filter((cut) => cut.parent_id === multicut.id),
-      })),
-  }));
+  return scenes.map((scene) => {
+    const children = [
+      ...multicuts
+        .filter((multicut) => multicut.parent_id === scene.id)
+        .map((multicut) => ({
+          type: "multicut",
+          row: multicut,
+          cuts: cuts.filter((cut) => cut.parent_id === multicut.id).sort(sortByOrder),
+        })),
+      ...cuts
+        .filter((cut) => cut.parent_id === scene.id)
+        .map((cut) => ({
+          type: "cut",
+          row: cut,
+          cuts: [],
+        })),
+    ].sort((a, b) => sortByOrder(a.row, b.row));
+    return {
+      row: scene,
+      children,
+      multicuts: children.filter((child) => child.type === "multicut"),
+      directCuts: children.filter((child) => child.type === "cut").map((child) => child.row),
+    };
+  });
 }
 
 function sortByOrder(a, b) {
@@ -887,7 +882,7 @@ function filteredRows() {
 function hierarchyRows() {
   return buildTree().flatMap((scene) => [
     scene.row,
-    ...scene.multicuts.flatMap((multicut) => [multicut.row, ...multicut.cuts]),
+    ...scene.children.flatMap((child) => (child.type === "multicut" ? [child.row, ...child.cuts] : [child.row])),
   ]);
 }
 
@@ -961,10 +956,14 @@ function renderTree() {
   tree.forEach((scene) => {
     el.tree.appendChild(treeNode(scene.row, 0));
     if (!state.collapsed.has(scene.row.id)) {
-      scene.multicuts.forEach((multicut) => {
-        el.tree.appendChild(treeNode(multicut.row, 1));
-        if (!state.collapsed.has(multicut.row.id)) {
-          multicut.cuts.forEach((cut) => el.tree.appendChild(treeNode(cut, 2)));
+      scene.children.forEach((child) => {
+        if (child.type === "cut") {
+          el.tree.appendChild(treeNode(child.row, 1));
+          return;
+        }
+        el.tree.appendChild(treeNode(child.row, 1));
+        if (!state.collapsed.has(child.row.id)) {
+          child.cuts.forEach((cut) => el.tree.appendChild(treeNode(cut, 2)));
         }
       });
     }
@@ -1135,13 +1134,28 @@ function renderStoryboard() {
     const sceneEl = document.createElement("section");
     sceneEl.className = `scene-section${state.activeId === scene.row.id ? " selected" : ""}`;
     attachStoryboardDrag(sceneEl, scene.row);
-    sceneEl.innerHTML = `<div class="scene-header"><h2>${escapeHtml(scene.row.title || scene.row.id)}</h2><span>${scene.multicuts.length} multicuts / ${displayDuration(scene.row)}</span></div>`;
+    sceneEl.innerHTML = `<div class="scene-header"><h2>${escapeHtml(scene.row.title || scene.row.id)}</h2><span>${scene.directCuts.length} direct cuts / ${scene.multicuts.length} multicuts / ${displayDuration(scene.row)}</span></div>`;
     sceneEl.querySelector(".scene-header").addEventListener("click", (event) => {
       event.stopPropagation();
       selectRow(scene.row.id, event);
     });
     sceneEl.querySelector(".scene-header").addEventListener("contextmenu", (event) => showRowContextMenu(event, scene.row));
-    scene.multicuts.forEach((multicut) => {
+    let directGrid = null;
+    const appendDirectCut = (cut) => {
+      if (!directGrid) {
+        directGrid = document.createElement("div");
+        directGrid.className = "card-grid scene-cut-grid";
+        sceneEl.appendChild(directGrid);
+      }
+      directGrid.appendChild(cutCard(cut));
+    };
+    scene.children.forEach((child) => {
+      if (child.type === "cut") {
+        appendDirectCut(child.row);
+        return;
+      }
+      directGrid = null;
+      const multicut = child;
       const mc = document.createElement("section");
       mc.className = `multicut-section${state.activeId === multicut.row.id ? " selected" : ""}`;
       attachStoryboardDrag(mc, multicut.row);
@@ -1301,15 +1315,8 @@ function renderTimelineLane(lane, items, type) {
 }
 
 function sortByGlobalTimeline(a, b) {
-  const parentA = getRow(a.parent_id);
-  const parentB = getRow(b.parent_id);
-  const sceneA = parentA ? getRow(parentA.parent_id) : null;
-  const sceneB = parentB ? getRow(parentB.parent_id) : null;
-  return (
-    Number(sceneA?.order || 0) - Number(sceneB?.order || 0) ||
-    Number(parentA?.order || 0) - Number(parentB?.order || 0) ||
-    Number(a.order || 0) - Number(b.order || 0)
-  );
+  const ordered = hierarchyRows();
+  return ordered.findIndex((row) => row.id === a.id) - ordered.findIndex((row) => row.id === b.id);
 }
 
 function timelineModel() {
@@ -1321,7 +1328,14 @@ function timelineModel() {
   const cuts = [];
   buildTree().forEach((scene) => {
     const sceneStart = cursor;
-    scene.multicuts.forEach((multicut) => {
+    scene.children.forEach((child) => {
+      if (child.type === "cut") {
+        const width = Math.max(minWidth, durationSeconds(child.row.duration) * unit);
+        cuts.push({ row: child.row, start: cursor, width, seconds: durationSeconds(child.row.duration) });
+        cursor += width;
+        return;
+      }
+      const multicut = child;
       const multicutStart = cursor;
       multicut.cuts.forEach((cut) => {
         const width = Math.max(minWidth, durationSeconds(cut.duration) * unit);
@@ -1701,15 +1715,15 @@ function addRow(type) {
   }
   if (type === "multicut") {
     const scene = active?.row_type === "scene" ? active : getAncestor(active, "scene") || state.rows.find((item) => item.row_type === "scene");
-    if (!scene) return alert("scene が必要です。");
+    if (!scene) return alert("scene is required.");
     row.parent_id = scene.id;
-    row.order = String(nextOrder(state.rows.filter((item) => item.row_type === "multicut" && item.parent_id === scene.id)));
+    row.order = String(nextOrder(siblingsOf(row)));
   }
   if (type === "cut") {
-    const multicut = active?.row_type === "multicut" ? active : getAncestor(active, "multicut") || state.rows.find((item) => item.row_type === "multicut");
-    if (!multicut) return alert("multicut が必要です。");
-    row.parent_id = multicut.id;
-    row.order = String(nextOrder(state.rows.filter((item) => item.row_type === "cut" && item.parent_id === multicut.id)));
+    const parent = active?.row_type === "scene" || active?.row_type === "multicut" ? active : getRow(active?.parent_id) || state.rows.find((item) => item.row_type === "scene");
+    if (!parent) return alert("scene is required.");
+    row.parent_id = parent.id;
+    row.order = String(nextOrder(siblingsOf(row)));
     row.duration = "3s";
   }
   state.rows.push(row);
@@ -1720,7 +1734,6 @@ function addRow(type) {
   markDirty();
   render();
 }
-
 function addInitialRow(type) {
   pushHistory();
   let selectedRow = null;
@@ -1729,20 +1742,19 @@ function addInitialRow(type) {
   if (type === "scene") {
     state.rows.push(scene);
     selectedRow = scene;
-  } else {
+  } else if (type === "multicut") {
     const multicut = blankRow("multicut", nextId("multicut"));
     multicut.parent_id = scene.id;
     multicut.order = "1";
     state.rows.push(scene, multicut);
     selectedRow = multicut;
-    if (type === "cut") {
-      const cut = blankRow("cut", nextId("cut"));
-      cut.parent_id = multicut.id;
-      cut.order = "1";
-      cut.duration = "3s";
-      state.rows.push(cut);
-      selectedRow = cut;
-    }
+  } else {
+    const cut = blankRow("cut", nextId("cut"));
+    cut.parent_id = scene.id;
+    cut.order = "1";
+    cut.duration = "3s";
+    state.rows.push(scene, cut);
+    selectedRow = cut;
   }
   normalizeOrders();
   state.activeId = selectedRow.id;
@@ -1787,38 +1799,39 @@ function insertMulticutAfter(row, active) {
   const scene = active.row_type === "scene" ? active : getAncestor(active, "scene");
   if (!scene) return;
   row.parent_id = scene.id;
-  const multicuts = state.rows.filter((item) => item.row_type === "multicut" && item.parent_id === scene.id).sort(sortByOrder);
+  const children = sceneChildren(scene.id);
   let index = 0;
-  if (active.row_type === "multicut") index = multicuts.findIndex((item) => item.id === active.id) + 1;
+  if (active.row_type === "scene") index = children.length;
+  if (active.row_type === "multicut") index = children.findIndex((item) => item.id === active.id) + 1;
   if (active.row_type === "cut") {
     const parent = getRow(active.parent_id);
-    index = multicuts.findIndex((item) => item.id === parent?.id) + 1;
+    index = parent?.row_type === "scene"
+      ? children.findIndex((item) => item.id === active.id) + 1
+      : children.findIndex((item) => item.id === parent?.id) + 1;
   }
   state.rows.push(row);
-  insertIntoOrderedGroup(row, multicuts, Math.max(0, index));
+  insertIntoOrderedGroup(row, children, Math.max(0, index));
 }
 
 function insertCutAfter(row, active) {
-  let multicut = active.row_type === "multicut" ? active : getAncestor(active, "multicut");
-  if (!multicut && active.row_type === "scene") {
-    multicut = state.rows
-      .filter((item) => item.row_type === "multicut" && item.parent_id === active.id)
-      .sort(sortByOrder)[0];
-    if (!multicut) {
-      multicut = blankRow("multicut", nextId("multicut"));
-      multicut.parent_id = active.id;
-      state.rows.push(multicut);
-      insertIntoOrderedGroup(multicut, [], 0);
-    }
-  }
-  if (!multicut) return row;
-  row.parent_id = multicut.id;
+  const parent = active.row_type === "scene" || active.row_type === "multicut" ? active : getRow(active.parent_id);
+  if (!parent || !["scene", "multicut"].includes(parent.row_type)) return row;
+  row.parent_id = parent.id;
   row.duration = "3s";
-  const cuts = state.rows.filter((item) => item.row_type === "cut" && item.parent_id === multicut.id).sort(sortByOrder);
-  const index = active.row_type === "cut" ? cuts.findIndex((item) => item.id === active.id) + 1 : cuts.length;
+  const siblings = siblingsOf(row).sort(sortByOrder);
+  const index = active.row_type === "cut" ? siblings.findIndex((item) => item.id === active.id) + 1 : siblings.length;
   state.rows.push(row);
-  insertIntoOrderedGroup(row, cuts, Math.max(0, index));
+  insertIntoOrderedGroup(row, siblings, Math.max(0, index));
   return row;
+}
+
+function sceneChildren(sceneId) {
+  return state.rows
+    .filter((item) => {
+      const parent = getRow(item.parent_id);
+      return parent?.id === sceneId && (item.row_type === "multicut" || item.row_type === "cut");
+    })
+    .sort(sortByOrder);
 }
 
 function insertIntoOrderedGroup(row, group, index) {
@@ -1870,7 +1883,7 @@ function collectDescendantIds(row, ids) {
   if (!row || ids.has(row.id)) return;
   ids.add(row.id);
   if (row.row_type === "scene") {
-    state.rows.filter((item) => item.row_type === "multicut" && item.parent_id === row.id).forEach((item) => collectDescendantIds(item, ids));
+    sceneChildren(row.id).forEach((item) => collectDescendantIds(item, ids));
   }
   if (row.row_type === "multicut") {
     state.rows.filter((item) => item.row_type === "cut" && item.parent_id === row.id).forEach((item) => collectDescendantIds(item, ids));
@@ -1909,10 +1922,7 @@ function duplicateRowTree(row, created, parentOverride = null) {
   insertIntoOrderedGroup(copy, group, Math.max(0, originalIndex));
   created.push(copy);
   if (row.row_type === "scene") {
-    state.rows
-      .filter((item) => item.row_type === "multicut" && item.parent_id === row.id)
-      .sort(sortByOrder)
-      .forEach((child) => duplicateRowTree(child, created, copy.id));
+    sceneChildren(row.id).forEach((child) => duplicateRowTree(child, created, copy.id));
   }
   if (row.row_type === "multicut") {
     state.rows
@@ -1984,15 +1994,22 @@ function groupSelectionFromShortcut() {
 
 function groupCuts() {
   const cuts = selectedRowsOfType("cut");
-  if (cuts.length < 2) return alert("2つ以上のcutを選択してください。");
-  const parent = getRow(cuts[0].parent_id);
-  if (!parent) return;
+  if (cuts.length < 2) return alert("Select at least 2 cuts.");
+  const scene = getAncestor(cuts[0], "scene");
+  if (!scene || cuts.some((cut) => getAncestor(cut, "scene")?.id !== scene.id)) return alert("Cuts must be in the same scene.");
   pushHistory();
   const mc = blankRow("multicut", nextId("multicut"));
-  mc.parent_id = parent.parent_id;
+  mc.parent_id = scene.id;
   mc.title = "Grouped Multicut";
-  mc.order = String(nextOrder(state.rows.filter((row) => row.row_type === "multicut" && row.parent_id === mc.parent_id)));
   state.rows.push(mc);
+  const selectedIds = new Set(cuts.map((cut) => cut.id));
+  const children = sceneChildren(scene.id).filter((row) => !selectedIds.has(row.id));
+  const firstSceneChildIndex = Math.max(0, Math.min(...cuts.map((cut) => {
+    const parent = getRow(cut.parent_id);
+    const sceneChild = parent?.row_type === "scene" ? cut : parent;
+    return sceneChildren(scene.id).findIndex((row) => row.id === sceneChild?.id);
+  }).filter((index) => index >= 0)));
+  insertIntoOrderedGroup(mc, children, Number.isFinite(firstSceneChildIndex) ? firstSceneChildIndex : children.length);
   cuts.sort(sortByOrder).forEach((cut, index) => {
     cut.parent_id = mc.id;
     cut.order = String(index + 1);
@@ -2007,7 +2024,7 @@ function groupCuts() {
 
 function groupMulticuts() {
   const multicuts = selectedRowsOfType("multicut");
-  if (multicuts.length < 2) return alert("2つ以上のmulticutを選択してください。");
+  if (multicuts.length < 2) return alert("Select at least 2 multicuts.");
   pushHistory();
   const scene = blankRow("scene", nextId("scene"));
   scene.title = "Grouped Scene";
@@ -2132,7 +2149,7 @@ function dropMode(event, dragged, target) {
     if (target.row_type === "multicut") return beforeAfter ? "before" : "after";
   }
   if (dragged.row_type === "cut") {
-    if (target.row_type === "multicut") return "into";
+    if (target.row_type === "scene" || target.row_type === "multicut") return "into";
     if (target.row_type === "cut") return beforeAfter ? "before" : "after";
   }
   return "";
@@ -2155,7 +2172,8 @@ function moveRow(dragged, target, mode) {
 }
 
 function siblingsOf(row) {
-  return state.rows.filter((candidate) => candidate.row_type === row.row_type && (candidate.parent_id || "") === (row.parent_id || ""));
+  const key = orderGroupKey(row);
+  return state.rows.filter((candidate) => orderGroupKey(candidate) === key);
 }
 
 function clearDropClasses() {
@@ -2217,7 +2235,7 @@ function validate() {
     const parent = getRow(row.parent_id);
     if (row.row_type === "scene" && row.parent_id) issues.push(error(`${row.id}: scene parent_id must be empty.`));
     if (row.row_type === "multicut" && (!parent || parent.row_type !== "scene")) issues.push(error(`${row.id}: multicut parent_id must reference scene.`));
-    if (row.row_type === "cut" && (!parent || parent.row_type !== "multicut")) issues.push(error(`${row.id}: cut parent_id must reference multicut.`));
+    if (row.row_type === "cut" && (!parent || !["scene", "multicut"].includes(parent.row_type))) issues.push(error(`${row.id}: cut parent_id must reference scene or multicut.`));
     if (row.row_type === "cut" && durationSeconds(row.duration) <= 0) issues.push(warn(`${row.id}: invalid duration, default 3s will be used.`));
     if (row.row_type === "cut" && row.image && !mediaUrl(row.image)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: image may be missing (${row.image}).` });
     if (row.row_type === "cut" && row.audio_file && !mediaUrl(row.audio_file)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: audio may be missing (${row.audio_file}).` });
@@ -2283,9 +2301,7 @@ function computedDuration(row) {
       .reduce((sum, cut) => sum + computedDuration(cut), 0);
   }
   if (row.row_type === "scene") {
-    return state.rows
-      .filter((multicut) => multicut.row_type === "multicut" && multicut.parent_id === row.id)
-      .reduce((sum, multicut) => sum + computedDuration(multicut), 0);
+    return sceneChildren(row.id).reduce((sum, child) => sum + computedDuration(child), 0);
   }
   return 0;
 }

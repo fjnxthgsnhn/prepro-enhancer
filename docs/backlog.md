@@ -52,7 +52,7 @@
   - `row_type` の不正値を検出できる
   - `id` の重複を検出できる
   - `parent_id` の参照先欠落を検出できる
-  - `scene > multicut > cut` 以外の階層を検出できる
+  - `scene > cut` と任意の `scene > multicut > cut` 以外の階層を検出できる
   - 循環参照を検出できる
 
 ### PE-005 Table View
@@ -94,7 +94,7 @@
 
 - 優先度: P0
 - フェーズ: Phase 2
-- 内容: TSV行から `scene > multicut > cut` の階層モデルを生成する。
+- 内容: TSV行から `scene > cut` と任意の `scene > multicut > cut` の階層モデルを生成する。
 - 受け入れ条件:
   - `parent_id` と `order` から階層を復元できる
   - 同一階層内を `order` 順に並べられる
@@ -160,7 +160,7 @@
 - 受け入れ条件:
   - sceneの表示順を変更できる
   - multicutを別sceneへ移動できる
-  - cutを別multicutへ移動できる
+  - cutをscene直下または別multicutへ移動できる
   - 移動後に `parent_id` と `order` を更新できる
 
 ### PE-015 リナンバー
@@ -555,7 +555,7 @@
 ### M2 階層管理
 
 - 対象: PE-008, PE-009, PE-010, PE-013, PE-038, PE-039, PE-040
-- 完了条件: `scene > multicut > cut` の階層を表示し、追加とグループ作成ができる。
+- 完了条件: `scene > cut` と任意の `scene > multicut > cut` の階層を表示し、追加とグループ作成ができる。
 
 ### M3 プロンプト運用
 
@@ -582,7 +582,7 @@
 - `.lctproj` を開ける
 - `cutlist.tsv` を読み込める
 - scene / multicut / cutをTSV上で表現できる
-- `scene > multicut > cut` の階層を検証できる
+- `scene > cut` と任意の `scene > multicut > cut` の階層を検証できる
 - Table ViewでTSVを表示できる
 - Hierarchy Viewで階層表示できる
 - Grouped Storyboard Viewでcutをサムネイル付き表示できる

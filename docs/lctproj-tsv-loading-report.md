@@ -63,7 +63,7 @@
 - `parseTsv()` 後に `normalizeImportedRows()` を通すようにした。
 - sceneの `parent_id` は空に補正する。
 - 親が無い、または不正なmulticutは自動作成した `Imported Scene` 配下へ移す。
-- 親が無い、または不正なcutは自動作成した `Imported Multicut` 配下へ移す。
+- 親が無い、または不正なcutは自動作成した `Imported Scene` 直下へ移す。
 - 補正後にorderを再計算する。
 - 補正が発生した場合、Validationにwarningとして表示する。
 
@@ -83,7 +83,7 @@
 - 旧TSVの `audio` が `dialogue` に入る。
 - `.LCTPROJ` 大文字拡張子を読める。
 - `row type` / `parent id` / `audio file` などのヘッダー揺れを読める。
-- orphan cutを `Imported Scene` / `Imported Multicut` 配下に表示できる。
+- orphan cutを `Imported Scene` 直下に表示できる。
 - 不正ZIP読み込み時にalertが出て、既存Sample Projectが維持される。
 
 ## 現在確認できている実装上の注意点
@@ -215,4 +215,3 @@ JS手書きZIP readerは限界がある。
   - `ensure_extension()`
 - `tests/smoke.mjs`
   - `.lctproj` / TSV互換テストfixture
-

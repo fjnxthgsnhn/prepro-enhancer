@@ -7,7 +7,7 @@
 | `.lctproj` を開ける | `Open` から `manifest.json` / `cutlist.tsv` を含む `.lctproj` を読み込み |
 | `cutlist.tsv` を読み込める | `.tsv` / `.txt` 読み込み、または `.lctproj` 内TSV読み込み |
 | scene / multicut / cutをTSV上で表現できる | 標準カラムと行タイプを `src/app.js` のデータモデルで保持 |
-| `scene > multicut > cut` の階層を検証できる | `validate()` で親子関係、ID重複、不正行タイプを検証 |
+| `scene > cut` と任意の `scene > multicut > cut` の階層を検証できる | `validate()` で親子関係、ID重複、不正行タイプを検証 |
 | Table ViewでTSVを表示できる | Main AreaのTable View |
 | Hierarchy Viewで階層表示できる | Left PanelのHierarchy |
 | Grouped Storyboard Viewでcutをサムネイル付き表示できる | Storyboard View |

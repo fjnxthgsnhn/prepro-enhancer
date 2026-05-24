@@ -85,6 +85,7 @@ scene
 MVPでは以下の階層のみ許可する。
 
 ```text
+scene > cut
 scene > multicut > cut
 ```
 
@@ -253,7 +254,7 @@ row_type	id	parent_id	order	cut	title	duration	status	image	audio_file	image_pro
 |---|---:|---|
 | row_type | 必須 | `scene` / `multicut` / `cut` |
 | id | 必須 | 一意ID。例：`sc001`、`mc001`、`ct001` |
-| parent_id | 条件付き | 親ID。sceneでは空、multicutではscene ID、cutではmulticut ID |
+| parent_id | 条件付き | 親ID。sceneでは空、multicutではscene ID、cutではscene IDまたはmulticut ID |
 | order | 必須 | 同一階層内の並び順 |
 | cut | 任意 | 表示用カット番号。例：`cut001` |
 | title | 任意 | 行タイトル |
@@ -530,7 +531,7 @@ TSVを直接編集する。
 既存のidは変更しない。
 row_type / id / parent_id / order の整合性を壊さない。
 新規行を追加する場合は一意のidを付ける。
-cutは必ずmulticutの子にする。
+cutはscene直下、または任意のmulticutの子にできる。
 multicutは必ずsceneの子にする。
 sceneのparent_idは空にする。
 セル内にタブを入れない。
@@ -1187,7 +1188,7 @@ MVPでは最大100操作まで保持する。
 - parent_idが存在するか
 - sceneのparent_idが空か
 - multicutのparent_idがsceneか
-- cutのparent_idがmulticutか
+- cutのparent_idがsceneまたはmulticutか
 - orderが有効か
 - 循環参照がないか
 
@@ -1367,7 +1368,7 @@ MVP完了条件は以下とする。
 - `.lctproj` を開ける
 - `cutlist.tsv` を読み込める
 - scene / multicut / cutをTSV上で表現できる
-- scene > multicut > cutの階層を検証できる
+- scene > cut と任意の scene > multicut > cut の階層を検証できる
 - Table ViewでTSVを表示できる
 - Hierarchy Viewで階層表示できる
 - Grouped Storyboard Viewでcutをサムネイル付き表示できる
@@ -1449,6 +1450,7 @@ MVPではWindows 10 / 11を第一ターゲットとする。
   cut
 
 階層:
+  scene > cut
   scene > multicut > cut
 
 MVPメディア:

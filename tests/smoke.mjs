@@ -42,8 +42,15 @@ await clickFileAction("new");
 await expectText("#counts", "scene 0 / multicut 0 / cut 0");
 await expectTableHeaders();
 await page.click('.empty-table-row .add-row-btn.cut');
-await expectText("#counts", "scene 1 / multicut 1 / cut 1");
-await expectCount(".data-table tbody tr[data-id]", 3);
+await expectText("#counts", "scene 1 / multicut 0 / cut 1");
+await expectCount(".data-table tbody tr[data-id]", 2);
+await expectCount(".tree-node", 2);
+await expectText('tbody tr[data-id="ct001"] td[data-column="title"]', "New Cut");
+await page.click('[data-view="storyboard"]');
+await expectCount(".cut-card[data-id='ct001']", 1);
+await page.click('[data-view="timeline"]');
+await expectCount(".timeline-clip.cut[data-id='ct001']", 1);
+await page.click('[data-view="table"]');
 await clickFileAction("new");
 await expectText("#counts", "scene 0 / multicut 0 / cut 0");
 await expectCount(".tree-node", 0);
@@ -161,11 +168,10 @@ const orphanCutProject = makeStoredZip(
 );
 await loadProjectFile("orphan-cut.lctproj", orphanCutProject);
 await expectText("#projectName", "Orphan Cut Project");
-await expectText("#counts", "scene 1 / multicut 1 / cut 1");
+await expectText("#counts", "scene 1 / multicut 0 / cut 1");
 await expectText(".data-table", "Imported Scene");
-await expectText(".data-table", "Imported Multicut");
 await expectText('tbody tr[data-id="ct920"] td[data-column="title"]', "Orphan Cut");
-await expectText("#validationPanel", "Imported Multicut");
+await expectText("#validationPanel", "Imported Scene");
 await page.reload();
 await expectText("#projectName", "Sample Project");
 const invalidZipDialog = page.waitForEvent("dialog");
@@ -219,7 +225,7 @@ await page.locator('.multicut-section[data-id="mc002"]').dragTo(page.locator('.m
   targetPosition: { x: 20, y: 15 },
 });
 await page.waitForFunction(() => document.querySelector('.multicut-section[data-id="mc002"]')?.classList.contains("selected"));
-await expectText(".storyboard", "顕微鏡の寄り");
+await expectText(".storyboard", "Microscope Close");
 
 await page.click('[data-view="timeline"]');
 await expectCount(".timeline-preview", 1);
@@ -232,7 +238,7 @@ await expectCount(".timeline-clip.scene .clip-resize-handle", 0);
 await expectCount(".timeline-clip.multicut .clip-resize-handle", 0);
 await expectCount(".timeline-ruler", 1);
 await expectCount(".timeline-tick.major", 2);
-await expectText(".timeline", "顕微鏡の寄り");
+await expectText(".timeline", "Microscope Close");
 await page.waitForFunction(() => {
   const preview = document.querySelector(".timeline-preview");
   return preview && Math.abs(preview.getBoundingClientRect().width / preview.getBoundingClientRect().height - 16 / 9) < 0.03;
@@ -538,14 +544,14 @@ function expectAgentsMd(content, label) {
   if (!content) throw new Error(`${label} archive should include AGENTS.md`);
   if (!content.includes("# Prepro Enhancer Project Agent Instructions")) throw new Error(`${label} AGENTS.md title mismatch`);
   if (!content.includes(expectedHeaders().join("\t"))) throw new Error(`${label} AGENTS.md should document current cutlist columns`);
-  if (!content.includes("scene > multicut > cut")) throw new Error(`${label} AGENTS.md should document hierarchy rules`);
-  if (!content.includes("100文字で17秒")) throw new Error(`${label} AGENTS.md should document dialogue duration rule`);
-  if (!content.includes("`.lctproj` はZIPアーカイブです")) throw new Error(`${label} AGENTS.md should document lctproj zip archive format`);
-  if (!content.includes("ZIPルート直下には少なくとも `manifest.json` と `cutlist.tsv`")) throw new Error(`${label} AGENTS.md should document required zip root files`);
+  if (!content.includes("scene > cut")) throw new Error(`${label} AGENTS.md should document direct cut hierarchy rules`);
+  if (!content.includes("multicut` is optional")) throw new Error(`${label} AGENTS.md should document optional multicut rules`);
+  if (!content.includes("100 Japanese characters = 17 seconds")) throw new Error(`${label} AGENTS.md should document dialogue duration rule`);
+  if (!content.includes("`.lctproj` is a ZIP archive")) throw new Error(`${label} AGENTS.md should document lctproj zip archive format`);
+  if (!content.includes("At the ZIP root, at minimum `manifest.json` and `cutlist.tsv`")) throw new Error(`${label} AGENTS.md should document required zip root files`);
   if (!content.includes("Compress-Archive")) throw new Error(`${label} AGENTS.md should include a PowerShell rearchive example`);
   if (!content.includes("zip -r ../EditedProject.lctproj .")) throw new Error(`${label} AGENTS.md should include a macOS/Linux rearchive example`);
 }
-
 async function expectTableHeaders() {
   const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
   const expected = expectedHeaders().filter((name) => !["row_type", "id", "parent_id", "order"].includes(name));
