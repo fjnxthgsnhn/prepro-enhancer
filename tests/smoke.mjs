@@ -425,6 +425,8 @@ await clickFileAction("new");
 await expectText("#projectName", "Untitled Project");
 await expectCount(".data-table tbody tr[data-id]", 0);
 
+await runTauriWelcomeSmoke(browser);
+
 await browser.close();
 
 async function clickFileAction(action) {
@@ -512,6 +514,90 @@ async function expectTableHeaders() {
   const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
   const expected = expectedHeaders().filter((name) => !["row_type", "id", "parent_id", "order"].includes(name));
   if (headers.join("\t") !== expected.join("\t")) throw new Error(`Table headers mismatch: ${headers.join(",")}`);
+}
+
+async function runTauriWelcomeSmoke(browser) {
+  const recentPath = "C:\\Projects\\Recent Project.lctproj";
+  const recentProject = makeStoredZip(
+    new Map([
+      ["manifest.json", JSON.stringify({ projectName: "Recent Project", mainCutlist: "cutlist.tsv" })],
+      ["cutlist.tsv", `${expectedHeaders().join("\t")}\nscene\tsc777\t\t1\tRecent Scene\t\t\t\t\t\t\t\t\t\t\t\t`],
+    ]),
+  );
+  const tauriPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
+  await installTauriMock(tauriPage, {
+    files: [[recentPath, Array.from(recentProject)]],
+    recent: [{ fileName: "Recent Project.lctproj", path: recentPath, timestamp: "2026-05-24T00:00:00.000Z" }],
+  });
+  await tauriPage.goto(pathToFileURL(resolve("index.html")).href);
+  await tauriPage.locator("#welcomeView").waitFor({ state: "visible" });
+  await expectPageText(tauriPage, "#welcomeView", "プロジェクト新規作成");
+  await expectPageText(tauriPage, "#welcomeView", "プロジェクトを読み込む");
+  await expectPageText(tauriPage, "#recentProjectsList", "Recent Project.lctproj");
+  if (await tauriPage.locator(".data-table tbody tr[data-id]").count()) throw new Error("Tauri startup should not load Sample Project rows");
+  await tauriPage.click(".recent-project-row");
+  await tauriPage.waitForFunction(() => document.querySelector("#welcomeView")?.hidden);
+  await expectPageText(tauriPage, "#projectName", "Recent Project");
+  await expectPageText(tauriPage, "#counts", "scene 1 / multicut 0 / cut 0");
+  await tauriPage.close();
+
+  const newPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
+  await installTauriMock(newPage);
+  await newPage.goto(pathToFileURL(resolve("index.html")).href);
+  await newPage.locator("#welcomeView").waitFor({ state: "visible" });
+  await newPage.click("#welcomeNewProjectBtn");
+  await newPage.waitForFunction(() => document.querySelector("#welcomeView")?.hidden);
+  const newRecent = await newPage.evaluate(() => JSON.parse(localStorage.getItem("preproEnhancer.recentProjects.v1") || "[]"));
+  if (newRecent[0]?.fileName !== "Untitled Project.lctproj") throw new Error("NewProject should add the saved project to recent history");
+  if (!newRecent[0]?.path || !newRecent[0]?.timestamp) throw new Error("Recent history should include path and timestamp");
+  await newPage.close();
+
+  const missingPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
+  await installTauriMock(missingPage, {
+    recent: [{ fileName: "Missing Project.lctproj", path: "C:\\Missing\\Project.lctproj", timestamp: "2026-05-24T00:00:00.000Z" }],
+  });
+  missingPage.on("dialog", (dialog) => dialog.accept());
+  await missingPage.goto(pathToFileURL(resolve("index.html")).href);
+  await missingPage.locator(".recent-project-row").click();
+  await missingPage.waitForFunction(() => !document.querySelector(".recent-project-row"));
+  await missingPage.close();
+}
+
+async function installTauriMock(targetPage, options = {}) {
+  await targetPage.addInitScript((config) => {
+    const key = "preproEnhancer.recentProjects.v1";
+    localStorage.setItem(key, JSON.stringify(config.recent || []));
+    const files = new Map((config.files || []).map(([path, bytes]) => [path, bytes]));
+    window.__TAURI__ = {
+      core: {
+        invoke: async (command, args = {}) => {
+          if (command === "save_project_as") {
+            const path = `C:\\Projects\\${args.defaultName || "Untitled Project.lctproj"}`;
+            files.set(path, args.bytes || []);
+            return { path, file_name: path.split("\\").pop() };
+          }
+          if (command === "save_project") {
+            files.set(args.path, args.bytes || []);
+            return { path: args.path, file_name: args.path.split("\\").pop() };
+          }
+          if (command === "read_project_file") {
+            if (!files.has(args.path)) throw new Error("file not found");
+            return { path: args.path, file_name: args.path.split("\\").pop(), bytes: files.get(args.path) };
+          }
+          if (command === "open_project") return null;
+          if (command === "export_file") return null;
+          throw new Error(`unexpected command: ${command}`);
+        },
+      },
+    };
+  }, options);
+}
+
+async function expectPageText(targetPage, selector, text) {
+  await targetPage.waitForFunction(
+    ({ selector, text }) => document.querySelector(selector)?.textContent?.includes(text),
+    { selector, text },
+  );
 }
 
 function readZipEntries(bytes) {

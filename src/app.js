@@ -263,9 +263,13 @@ const state = {
   timelinePreviewCutId: "",
   timelineScrubbing: false,
   timelineResizing: null,
+  isWelcomeVisible: false,
+  recentProjects: [],
 };
 
 const tauriInvoke = window.__TAURI__?.core?.invoke || null;
+const RECENT_PROJECTS_KEY = "preproEnhancer.recentProjects.v1";
+const MAX_RECENT_PROJECTS = 10;
 
 const el = {
   projectName: document.querySelector("#projectName"),
@@ -279,6 +283,10 @@ const el = {
   table: document.querySelector("#tableView"),
   storyboard: document.querySelector("#storyboardView"),
   timeline: document.querySelector("#timelineView"),
+  welcome: document.querySelector("#welcomeView"),
+  welcomeNew: document.querySelector("#welcomeNewProjectBtn"),
+  welcomeOpen: document.querySelector("#welcomeOpenProjectBtn"),
+  recentProjects: document.querySelector("#recentProjectsList"),
   detail: document.querySelector("#detailPanel"),
   prompt: document.querySelector("#promptPanel"),
   media: document.querySelector("#mediaPanel"),
@@ -302,6 +310,8 @@ document.querySelectorAll("[data-toggle-panel]").forEach((button) => {
 });
 
 document.querySelector("#rightPanelToggle").addEventListener("click", toggleRightPanel);
+el.welcomeNew?.addEventListener("click", newProject);
+el.welcomeOpen?.addEventListener("click", openProject);
 
 document.querySelectorAll(".view-btn").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
@@ -411,6 +421,51 @@ function normalizeTauriFile(file) {
   };
 }
 
+function fileNameFromPath(path) {
+  return String(path || "").split(/[\\/]/).pop() || "";
+}
+
+function loadRecentProjects() {
+  if (!tauriInvoke) return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENT_PROJECTS_KEY) || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => item?.path).map((item) => ({
+          fileName: item.fileName || fileNameFromPath(item.path),
+          path: item.path,
+          timestamp: item.timestamp || new Date().toISOString(),
+        })).slice(0, MAX_RECENT_PROJECTS)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentProjects() {
+  if (!tauriInvoke) return;
+  localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(state.recentProjects.slice(0, MAX_RECENT_PROJECTS)));
+}
+
+function rememberRecentProject(fileName, path) {
+  if (!tauriInvoke || !path) return;
+  const normalizedPath = String(path);
+  const next = {
+    fileName: fileName || fileNameFromPath(normalizedPath),
+    path: normalizedPath,
+    timestamp: new Date().toISOString(),
+  };
+  state.recentProjects = [
+    next,
+    ...state.recentProjects.filter((item) => item.path !== normalizedPath),
+  ].slice(0, MAX_RECENT_PROJECTS);
+  saveRecentProjects();
+}
+
+function removeRecentProject(path) {
+  state.recentProjects = state.recentProjects.filter((item) => item.path !== path);
+  saveRecentProjects();
+}
+
 function isProjectFile(fileName = "", path = "") {
   const text = `${fileName} ${path}`.toLowerCase();
   return text.includes(".lctproj");
@@ -437,6 +492,7 @@ async function newProject() {
     downloadBlob(defaultName, new Blob([bytes], { type: "application/zip" }));
     await loadProjectFromBytes(bytes, defaultName, "");
   }
+  state.isWelcomeVisible = false;
   state.dirty = false;
   state.lastSaved = new Date().toLocaleTimeString();
   render();
@@ -458,6 +514,7 @@ async function openProject() {
   } else {
     loadTsvBytes(bytes, fileName.replace(/\.[^.]+$/, ""));
     state.projectPath = path;
+    state.isWelcomeVisible = false;
     render();
   }
 }
@@ -494,6 +551,17 @@ function loadTsv(text, name) {
   render();
 }
 
+async function openRecentProject(path) {
+  if (!tauriInvoke || !path) return;
+  try {
+    const opened = normalizeTauriFile(await tauriInvoke("read_project_file", { path }));
+    await loadProjectFromBytes(new Uint8Array(opened.bytes || []), opened.fileName || fileNameFromPath(path), opened.path || path);
+  } catch (error) {
+    removeRecentProject(path);
+    alert(error.message || "Recent project could not be opened.");
+    render();
+  }
+}
 
 async function loadProjectFromBytes(bytes, fileName, path = "") {
   let manifest;
@@ -529,6 +597,8 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
   });
   state.projectFileName = fileName;
   state.projectPath = path;
+  if (path) rememberRecentProject(fileName, path);
+  state.isWelcomeVisible = false;
   state.selectedIds.clear();
   state.activeId = state.rows[0]?.id || "";
   if (state.activeId) state.selectedIds.add(state.activeId);
@@ -827,6 +897,7 @@ function rowLabel(row) {
 
 function render() {
   const issues = validate();
+  renderWelcome();
   renderStatus(issues);
   renderTree();
   renderTable();
@@ -839,10 +910,31 @@ function render() {
   renderPanels();
 }
 
+function renderWelcome() {
+  if (!el.welcome) return;
+  el.welcome.hidden = !state.isWelcomeVisible;
+  document.querySelector(".app-shell")?.classList.toggle("welcome-active", state.isWelcomeVisible);
+  if (!el.recentProjects) return;
+  if (!state.recentProjects.length) {
+    el.recentProjects.innerHTML = `<div class="recent-empty">Recent projects will appear here.</div>`;
+    return;
+  }
+  el.recentProjects.innerHTML = state.recentProjects.map((project) => `
+    <button class="recent-project-row" type="button" data-path="${escapeAttr(project.path)}">
+      <span class="recent-file">${escapeHtml(project.fileName || "Untitled Project.lctproj")}</span>
+      <span class="recent-path">${escapeHtml(project.path)}</span>
+      <span class="recent-time">${escapeHtml(formatRecentTimestamp(project.timestamp))}</span>
+    </button>
+  `).join("");
+  el.recentProjects.querySelectorAll(".recent-project-row").forEach((button) => {
+    button.addEventListener("click", () => openRecentProject(button.dataset.path || ""));
+  });
+}
+
 function renderStatus(issues) {
   const counts = countRows();
   el.projectName.textContent = state.manifest.projectName || "Untitled Project";
-  el.projectPath.textContent = state.projectPath || state.projectFileName || "Browser workspace";
+  el.projectPath.textContent = state.projectPath || state.projectFileName || (tauriInvoke ? "No file loaded" : "Browser workspace");
   el.counts.textContent = `scene ${counts.scene} / multicut ${counts.multicut} / cut ${counts.cut}`;
   el.missingCount.textContent = `Missing ${issues.filter((issue) => issue.kind === "missing-media").length}`;
   el.saveState.textContent = state.dirty ? "Unsaved" : "Saved";
@@ -2220,6 +2312,8 @@ async function saveProject() {
   const bytes = await projectArchiveBytes();
   const saved = await tauriInvoke("save_project", { path: state.projectPath, bytes: [...bytes] });
   if (!saved) return;
+  const savedFile = normalizeTauriFile(saved);
+  rememberRecentProject(savedFile.fileName || state.projectFileName, savedFile.path || state.projectPath);
   state.dirty = false;
   state.lastSaved = new Date().toLocaleTimeString();
   render();
@@ -2236,6 +2330,7 @@ async function saveProjectAs() {
   const savedFile = normalizeTauriFile(saved);
   state.projectPath = savedFile.path || state.projectPath;
   state.projectFileName = savedFile.fileName || state.projectFileName;
+  rememberRecentProject(state.projectFileName, state.projectPath);
   state.dirty = false;
   state.lastSaved = new Date().toLocaleTimeString();
   render();
@@ -2359,8 +2454,18 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
 }
 
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
 function xmlEscape(value) {
   return escapeHtml(value);
+}
+
+function formatRecentTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString();
 }
 
 function formatTime(seconds) {
@@ -2662,4 +2767,24 @@ function crc32(data) {
   return (crc ^ -1) >>> 0;
 }
 
-loadTsv(SAMPLE_TSV, "Sample Project");
+function startApp() {
+  if (tauriInvoke) {
+    state.manifest = structuredClone(DEFAULT_MANIFEST);
+    state.rows = [];
+    state.projectFileName = "";
+    state.projectPath = "";
+    state.selectedIds.clear();
+    state.activeId = "";
+    state.selectionAnchorId = "";
+    state.search = "";
+    state.dirty = false;
+    state.lastSaved = "";
+    state.recentProjects = loadRecentProjects();
+    state.isWelcomeVisible = true;
+    render();
+    return;
+  }
+  loadTsv(SAMPLE_TSV, "Sample Project");
+}
+
+startApp();

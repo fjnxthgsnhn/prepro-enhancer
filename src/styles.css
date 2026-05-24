@@ -287,8 +287,97 @@ button.active {
 }
 
 .main-area {
+  position: relative;
   overflow: hidden;
   background: rgba(17, 19, 16, 0.84);
+}
+
+.welcome-view {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  overflow: auto;
+  background: linear-gradient(180deg, rgba(17, 19, 16, 0.98), rgba(17, 19, 16, 0.92));
+}
+
+.welcome-view[hidden] {
+  display: none;
+}
+
+.welcome-content {
+  width: min(760px, calc(100% - 48px));
+  margin: 56px auto 0;
+  animation: view-enter 180ms ease-out both;
+}
+
+.welcome-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.welcome-actions button {
+  min-width: 178px;
+}
+
+.primary-action {
+  border-color: var(--accent);
+  background: rgba(151, 178, 24, 0.16);
+  color: var(--accent);
+}
+
+.recent-projects {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.recent-title {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.recent-projects-list {
+  display: grid;
+  gap: 6px;
+}
+
+.recent-project-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1.4fr) max-content;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.025);
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.recent-project-row:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+}
+
+.recent-file {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.recent-path,
+.recent-time,
+.recent-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.recent-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .view-pane {

@@ -50,6 +50,18 @@
       </aside>
 
       <main class="main-area">
+        <section id="welcomeView" class="welcome-view" hidden>
+          <div class="welcome-content">
+            <div class="welcome-actions">
+              <button id="welcomeNewProjectBtn" class="primary-action" type="button">プロジェクト新規作成</button>
+              <button id="welcomeOpenProjectBtn" type="button">プロジェクトを読み込む</button>
+            </div>
+            <div class="recent-projects">
+              <div class="recent-title">Recent Projects</div>
+              <div id="recentProjectsList" class="recent-projects-list"></div>
+            </div>
+          </div>
+        </section>
         <section id="tableView" class="view-pane active"></section>
         <section id="storyboardView" class="view-pane"></section>
         <section id="timelineView" class="view-pane"></section>
