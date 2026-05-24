@@ -30,6 +30,7 @@ const newProjectBytes = await readFile(await newProjectDownload.path());
 const newProjectEntries = readZipEntries(newProjectBytes);
 const newCutlist = newProjectEntries.get("cutlist.tsv") || "";
 if (newCutlist.trim() !== expectedHeaders().join("\t")) throw new Error(`NewProject cutlist should contain only headers: ${newCutlist}`);
+expectAgentsMd(newProjectEntries.get("AGENTS.md"), "NewProject");
 await expectText("#counts", "scene 0 / multicut 0 / cut 0");
 await expectCount(".data-table tbody tr[data-id]", 0);
 await expectTableHeaders();
@@ -408,6 +409,8 @@ await page.waitForFunction(() => {
 
 const [projectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
 if (!projectDownload.suggestedFilename().endsWith(".lctproj")) throw new Error("Project download filename mismatch");
+const projectBytes = await readFile(await projectDownload.path());
+expectAgentsMd(readZipEntries(projectBytes).get("AGENTS.md"), "Save");
 
 const [tsvDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("exportTsv")]);
 if (!tsvDownload.suggestedFilename().endsWith("_cutlist.tsv")) throw new Error("TSV download filename mismatch");
@@ -491,6 +494,14 @@ function expectedHeaders() {
     "video_prompt",
     "note",
   ];
+}
+
+function expectAgentsMd(content, label) {
+  if (!content) throw new Error(`${label} archive should include AGENTS.md`);
+  if (!content.includes("# Prepro Enhancer Project Agent Instructions")) throw new Error(`${label} AGENTS.md title mismatch`);
+  if (!content.includes(expectedHeaders().join("\t"))) throw new Error(`${label} AGENTS.md should document current cutlist columns`);
+  if (!content.includes("scene > multicut > cut")) throw new Error(`${label} AGENTS.md should document hierarchy rules`);
+  if (!content.includes("100文字で17秒")) throw new Error(`${label} AGENTS.md should document dialogue duration rule`);
 }
 
 async function expectTableHeaders() {
