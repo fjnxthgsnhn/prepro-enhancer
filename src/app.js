@@ -340,7 +340,8 @@ document.addEventListener("keydown", (event) => {
   }
   if (event.ctrlKey && event.key.toLowerCase() === "g") {
     event.preventDefault();
-    groupSelectionFromShortcut();
+    if (event.shiftKey) ungroupSelectionFromShortcut();
+    else groupSelectionFromShortcut();
   }
   if ((event.key === "Delete" || event.key === "Backspace") && !isTextEntryTarget(event.target)) {
     event.preventDefault();
@@ -1012,7 +1013,8 @@ function renderTable() {
   } else {
     rows.forEach((row) => {
     const tr = document.createElement("tr");
-    tr.className = [row.row_type, state.selectedIds.has(row.id) ? "selected" : "", tableSelectionClass(row)].filter(Boolean).join(" ");
+    const visualSelected = tableVisualSelectedIds();
+    tr.className = [row.row_type, visualSelected.has(row.id) ? "selected" : "", tableSelectionClass(row)].filter(Boolean).join(" ");
     tr.draggable = true;
     tr.dataset.id = row.id;
     tr.dataset.type = row.row_type;
@@ -1071,7 +1073,7 @@ function renderAddOverlay() {
   const overlayWidth = 124;
   const overlayHeight = 42;
   const margin = 10;
-  const anchorX = state.addOverlayAnchor?.x ?? Math.min(rowRect.right - overlayWidth - margin, tableRect.right - overlayWidth - margin);
+  const anchorX = state.addOverlayAnchor?.x ?? tableRect.left + margin + 12;
   const minX = tableRect.left + margin;
   const maxX = tableRect.right - overlayWidth - margin;
   const viewportLeft = clamp(anchorX - 12, minX, Math.max(minX, maxX));
@@ -1669,11 +1671,12 @@ function clearSelection() {
 }
 
 function tableSelectionClass(row) {
-  if (!state.selectedIds.has(row.id)) return "";
+  const selected = tableVisualSelectedIds();
+  if (!selected.has(row.id)) return "";
   const rows = filteredRows();
   const index = rows.findIndex((item) => item.id === row.id);
-  const previousSelected = index > 0 && state.selectedIds.has(rows[index - 1].id);
-  const nextSelected = index >= 0 && index < rows.length - 1 && state.selectedIds.has(rows[index + 1].id);
+  const previousSelected = index > 0 && selected.has(rows[index - 1].id);
+  const nextSelected = index >= 0 && index < rows.length - 1 && selected.has(rows[index + 1].id);
   const classes = ["selection-range"];
   if (row.id === state.activeId) classes.push("selection-active");
   if (!previousSelected && !nextSelected) classes.push("selection-single");
@@ -1681,6 +1684,17 @@ function tableSelectionClass(row) {
   else if (!nextSelected) classes.push("selection-end");
   else classes.push("selection-middle");
   return classes.join(" ");
+}
+
+function tableVisualSelectedIds() {
+  const ids = new Set(state.selectedIds);
+  const active = getRow(state.activeId);
+  if (ids.size === 1 && active?.row_type === "multicut" && ids.has(active.id)) {
+    state.rows
+      .filter((row) => row.row_type === "cut" && row.parent_id === active.id)
+      .forEach((cut) => ids.add(cut.id));
+  }
+  return ids;
 }
 
 function toggleCollapse(id) {
@@ -1867,7 +1881,19 @@ function deleteSelectedRows() {
   const ordered = hierarchyRows();
   const firstIndex = ordered.findIndex((row) => row.id === rows[0].id);
   const deleteIds = new Set();
-  rows.forEach((row) => collectDescendantIds(row, deleteIds));
+  const selectedIds = new Set(rows.map((row) => row.id));
+  rows.forEach((row) => {
+    const parent = getRow(row.parent_id);
+    if (parent?.row_type === "scene" && selectedIds.has(parent.id)) return;
+    if (parent?.row_type === "multicut" && selectedIds.has(parent.id)) return;
+    if (row.row_type === "scene") collectDescendantIds(row, deleteIds);
+    else if (row.row_type === "multicut") {
+      ungroupMulticut(row);
+      deleteIds.add(row.id);
+    } else {
+      deleteIds.add(row.id);
+    }
+  });
   state.rows = state.rows.filter((row) => !deleteIds.has(row.id));
   normalizeOrders();
   const remaining = hierarchyRows();
@@ -1877,6 +1903,41 @@ function deleteSelectedRows() {
   state.selectionAnchorId = state.activeId;
   markDirty();
   render();
+}
+
+function ungroupSelectionFromShortcut() {
+  const multicuts = selectedRowsOfType("multicut");
+  if (!multicuts.length) return;
+  closeContextMenu();
+  pushHistory();
+  const first = multicuts[0];
+  multicuts.forEach((multicut) => {
+    ungroupMulticut(multicut);
+    state.rows = state.rows.filter((row) => row.id !== multicut.id);
+  });
+  normalizeOrders();
+  const next = hierarchyRows().find((row) => row.parent_id === first.parent_id) || getRow(first.parent_id);
+  state.activeId = next?.id || "";
+  state.selectedIds = next ? new Set([next.id]) : new Set();
+  state.selectionAnchorId = state.activeId;
+  markDirty();
+  render();
+}
+
+function ungroupMulticut(multicut) {
+  const scene = getRow(multicut.parent_id);
+  if (!scene || scene.row_type !== "scene") return;
+  const children = state.rows.filter((row) => row.row_type === "cut" && row.parent_id === multicut.id).sort(sortByOrder);
+  if (!children.length) return;
+  const sceneRows = sceneChildren(scene.id).filter((row) => row.id !== multicut.id);
+  const insertAt = Math.max(0, sceneChildren(scene.id).findIndex((row) => row.id === multicut.id));
+  children.forEach((cut) => {
+    cut.parent_id = scene.id;
+  });
+  sceneRows.splice(insertAt, 0, ...children);
+  sceneRows.forEach((row, index) => {
+    row.order = String(index + 1);
+  });
 }
 
 function collectDescendantIds(row, ids) {
@@ -1953,6 +2014,7 @@ function showRowContextMenu(event, row) {
   const multicutCount = selectedRowsOfType("multicut").length;
   const canGroupCuts = row.row_type === "cut" && state.selectedIds.has(row.id) && cutCount >= 2;
   const canGroupMulticuts = row.row_type === "multicut" && state.selectedIds.has(row.id) && multicutCount >= 2;
+  const canUngroupMulticut = row.row_type === "multicut" && state.selectedIds.has(row.id);
   closeContextMenu();
   const menu = document.createElement("div");
   menu.className = "table-context-menu";
@@ -1960,6 +2022,8 @@ function showRowContextMenu(event, row) {
   menu.style.top = `${event.clientY}px`;
   if (canGroupCuts) menu.appendChild(contextMenuButton("Create Multicut", groupCuts));
   if (canGroupMulticuts) menu.appendChild(contextMenuButton("Create Scene", groupMulticuts));
+  if (canUngroupMulticut) menu.appendChild(contextMenuButton("Ungroup Multicut", ungroupSelectionFromShortcut));
+  menu.appendChild(contextMenuButton("Copy ID", copySelectedIds));
   menu.appendChild(contextMenuButton("Duplicate", duplicateSelectedRows));
   menu.appendChild(contextMenuButton("Delete", deleteSelectedRows));
   document.body.appendChild(menu);
@@ -1983,6 +2047,11 @@ function closeContextMenu() {
   state.contextMenu = null;
 }
 
+function copySelectedIds() {
+  const ids = selectedRows().map((row) => row.id).filter(Boolean);
+  navigator.clipboard?.writeText(ids.join("\n"));
+}
+
 function groupSelectionFromShortcut() {
   if (state.view !== "table") return;
   if (selectedRowsOfType("cut").length >= 2) {
@@ -2001,7 +2070,6 @@ function groupCuts() {
   const mc = blankRow("multicut", nextId("multicut"));
   mc.parent_id = scene.id;
   mc.title = "Grouped Multicut";
-  state.rows.push(mc);
   const selectedIds = new Set(cuts.map((cut) => cut.id));
   const children = sceneChildren(scene.id).filter((row) => !selectedIds.has(row.id));
   const firstSceneChildIndex = Math.max(0, Math.min(...cuts.map((cut) => {
@@ -2009,6 +2077,7 @@ function groupCuts() {
     const sceneChild = parent?.row_type === "scene" ? cut : parent;
     return sceneChildren(scene.id).findIndex((row) => row.id === sceneChild?.id);
   }).filter((index) => index >= 0)));
+  state.rows.push(mc);
   insertIntoOrderedGroup(mc, children, Number.isFinite(firstSceneChildIndex) ? firstSceneChildIndex : children.length);
   cuts.sort(sortByOrder).forEach((cut, index) => {
     cut.parent_id = mc.id;
@@ -2081,16 +2150,29 @@ function handleDrop(event, target) {
   const timelineFlip = event.currentTarget?.classList?.contains("timeline-clip") ? captureTimelineFlip() : null;
   clearDropClasses();
   if (!dragged || !mode || dragged.id === target.id) return;
+  const draggedRows = dragRowsForDrop(dragged, target);
+  if (!draggedRows.length) return;
   event.preventDefault();
   pushHistory();
-  moveRow(dragged, target, mode);
+  if (draggedRows.length > 1) moveRows(draggedRows, target, mode);
+  else moveRow(dragged, target, mode);
   normalizeOrders();
-  state.activeId = dragged.id;
-  state.selectedIds = new Set([dragged.id]);
+  state.activeId = draggedRows[0].id;
+  state.selectedIds = new Set(draggedRows.map((row) => row.id));
   state.selectionAnchorId = dragged.id;
   markDirty();
   render();
   if (timelineFlip) requestAnimationFrame(() => animateTimelineFlip(timelineFlip, dragged.id));
+}
+
+function dragRowsForDrop(dragged, target) {
+  const selectedCuts = selectedRowsOfType("cut");
+  if (dragged.row_type === "cut" && state.selectedIds.has(dragged.id) && selectedCuts.length > 1) {
+    const targetSelected = target.row_type === "cut" && state.selectedIds.has(target.id);
+    if (targetSelected) return [];
+    return selectedRows().filter((row) => row.row_type === "cut");
+  }
+  return [dragged];
 }
 
 function hasFilePayload(dataTransfer) {
@@ -2166,6 +2248,24 @@ function moveRow(dragged, target, mode) {
   const targetIndex = siblings.findIndex((row) => row.id === target.id);
   const insertAt = mode === "before" ? targetIndex : targetIndex + 1;
   siblings.splice(insertAt, 0, dragged);
+  siblings.forEach((row, index) => {
+    row.order = String(index + 1);
+  });
+}
+
+function moveRows(rows, target, mode) {
+  const movingIds = new Set(rows.map((row) => row.id));
+  const parentId = mode === "into" ? target.id : target.parent_id;
+  rows.forEach((row) => {
+    row.parent_id = parentId;
+  });
+  const siblings = siblingsOf(rows[0]).filter((row) => !movingIds.has(row.id)).sort(sortByOrder);
+  let insertAt = siblings.length;
+  if (mode !== "into") {
+    const targetIndex = siblings.findIndex((row) => row.id === target.id);
+    insertAt = mode === "before" ? targetIndex : targetIndex + 1;
+  }
+  siblings.splice(Math.max(0, insertAt), 0, ...rows);
   siblings.forEach((row, index) => {
     row.order = String(index + 1);
   });

@@ -7,6 +7,19 @@ import { deflateRawSync } from "node:zlib";
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
+await page.addInitScript(() => {
+  const clipboard = {
+    value: "",
+    writeText(text) {
+      this.value = String(text);
+      return Promise.resolve();
+    },
+    readText() {
+      return Promise.resolve(this.value);
+    },
+  };
+  Object.defineProperty(navigator, "clipboard", { value: clipboard, configurable: true });
+});
 
 await page.goto(pathToFileURL(resolve("index.html")).href);
 
@@ -201,6 +214,58 @@ const cssText = await readFile(resolve("src/styles.css"), "utf8");
 if (!cssText.includes("prefers-reduced-motion")) throw new Error("CSS should include reduced motion handling");
 const appText = await readFile(resolve("src/app.js"), "utf8");
 if ((appText.match(/async function loadProjectFromBytes/g) || []).length !== 1) throw new Error("Only one loadProjectFromBytes implementation should remain");
+
+await page.click("#tableView", { position: { x: 12, y: 780 } });
+await page.click('tbody tr[data-id="mc001"] td[data-column="title"]');
+await page.waitForFunction(() => {
+  const selected = [...document.querySelectorAll(".data-table tr.selected")].map((row) => row.dataset.id);
+  return selected.includes("mc001") && selected.includes("ct001") && selected.includes("ct002") &&
+    document.querySelector('tbody tr[data-id="mc001"]')?.classList.contains("selection-start") &&
+    document.querySelector('tbody tr[data-id="ct002"]')?.classList.contains("selection-end");
+});
+await page.click('tbody tr[data-id="mc001"]', { button: "right" });
+await expectText(".table-context-menu", "Copy ID");
+await expectText(".table-context-menu", "Ungroup Multicut");
+await page.locator(".table-context-menu button", { hasText: "Copy ID" }).click();
+await page.waitForFunction(async () => (await navigator.clipboard.readText()) === "mc001");
+await page.keyboard.press("Control+Shift+G");
+await page.waitForFunction(() => !document.querySelector('tbody tr[data-id="mc001"]') &&
+  document.querySelector('tbody tr[data-id="ct001"]') &&
+  document.querySelector('tbody tr[data-id="ct002"]'));
+await expectText("#counts", "scene 1 / multicut 1 / cut 3");
+await page.reload();
+await expectText("#projectName", "Sample Project");
+
+await page.click("#tableView", { position: { x: 12, y: 780 } });
+await ctrlSelectRows(["ct001", "ct002"]);
+await page.click('tbody tr[data-id="ct001"]', { button: "right" });
+await page.locator(".table-context-menu button", { hasText: "Copy ID" }).click();
+await page.waitForFunction(async () => (await navigator.clipboard.readText()) === "ct001\nct002");
+await page.locator('tbody tr[data-id="ct001"]').dragTo(page.locator('tbody tr[data-id="mc002"]'), {
+  sourcePosition: { x: 24, y: 12 },
+  targetPosition: { x: 24, y: 12 },
+});
+await page.waitForFunction(() => {
+  const rows = [...document.querySelectorAll(".data-table tbody tr[data-id]")].map((row) => row.dataset.id);
+  return rows.indexOf("ct001") > rows.indexOf("mc002") && rows.indexOf("ct002") > rows.indexOf("mc002");
+});
+await page.reload();
+await expectText("#projectName", "Sample Project");
+
+await page.click("#tableView", { position: { x: 12, y: 780 } });
+await page.click('tbody tr[data-id="mc001"] td[data-column="title"]', { force: true });
+await page.keyboard.press("Control+Shift+G");
+await page.waitForFunction(() => !document.querySelector('tbody tr[data-id="mc001"]'));
+await ctrlSelectRows(["ct001", "ct002"]);
+await page.click('tbody tr[data-id="ct001"]', { button: "right" });
+await page.locator(".table-context-menu button", { hasText: "Create Multicut" }).click();
+await page.waitForFunction(() => {
+  const rows = [...document.querySelectorAll(".data-table tbody tr[data-id]")].map((row) => row.dataset.id);
+  const mc = rows.find((id) => id?.startsWith("mc") && !["mc001", "mc002"].includes(id));
+  return mc && rows.indexOf(mc) < rows.indexOf("ct001") && rows.indexOf("ct001") < rows.indexOf("ct002");
+});
+await page.reload();
+await expectText("#projectName", "Sample Project");
 
 await page.click('[data-view="storyboard"]');
 await expectCount(".cut-card", 3);
@@ -556,6 +621,16 @@ async function expectTableHeaders() {
   const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
   const expected = expectedHeaders().filter((name) => !["row_type", "id", "parent_id", "order"].includes(name));
   if (headers.join("\t") !== expected.join("\t")) throw new Error(`Table headers mismatch: ${headers.join(",")}`);
+}
+
+async function ctrlSelectRows(ids) {
+  await page.evaluate((rowIds) => {
+    rowIds.forEach((id, index) => {
+      document
+        .querySelector(`tbody tr[data-id="${id}"] td[data-column="title"]`)
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: index > 0 }));
+    });
+  }, ids);
 }
 
 async function runTauriWelcomeSmoke(browser) {
