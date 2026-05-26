@@ -549,6 +549,15 @@ button.active {
   box-shadow: inset 3px 0 0 rgba(255, 255, 255, 0.18);
 }
 
+.data-table tr.cut.direct-cut {
+  background: rgba(255, 255, 255, 0.026);
+}
+
+.data-table tr.cut.nested-cut {
+  background: rgba(111, 210, 255, 0.055);
+  box-shadow: inset 3px 0 0 rgba(111, 210, 255, 0.38);
+}
+
 .data-table tbody tr {
   transition:
     background-color 160ms ease,
@@ -861,6 +870,13 @@ button.active {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
+.scene-section.selected,
+.multicut-section.selected,
+.cut-card.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .scene-section.drop-before,
 .multicut-section.drop-before,
 .cut-card.drop-before {
@@ -906,6 +922,15 @@ button.active {
   animation: item-enter 180ms ease-out both;
 }
 
+.cut-card.direct-cut {
+  background: #181b17;
+}
+
+.cut-card.nested-cut {
+  background: #1d241f;
+  border-color: rgba(111, 210, 255, 0.2);
+}
+
 .cut-card.selected {
   border-color: var(--accent);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.36);
@@ -916,6 +941,19 @@ button.active {
   border-color: var(--accent-2);
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.26);
   transform: translateY(-1px);
+}
+
+.scene-section.moved,
+.multicut-section.moved,
+.cut-card.moved {
+  animation: moved-pulse 520ms ease-out;
+}
+
+.scene-section.flip-animating,
+.multicut-section.flip-animating,
+.cut-card.flip-animating {
+  z-index: 4;
+  pointer-events: none;
 }
 
 .thumb {
@@ -1175,6 +1213,14 @@ button.active {
 .timeline-clip.cut {
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.09));
   color: var(--text);
+}
+
+.timeline-clip.cut.direct-cut {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.075));
+}
+
+.timeline-clip.cut.nested-cut {
+  background: linear-gradient(90deg, rgba(111, 210, 255, 0.2), rgba(255, 255, 255, 0.11));
 }
 
 .timeline-clip strong,

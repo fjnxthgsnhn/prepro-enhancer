@@ -250,6 +250,7 @@ const state = {
   timelineScrubbing: false,
   timelineResizing: null,
   timelineScrollLeft: 0,
+  shiftDown: false,
   isWelcomeVisible: false,
   recentProjects: [],
 };
@@ -274,6 +275,7 @@ const el = {
   welcomeNew: document.querySelector("#welcomeNewProjectBtn"),
   welcomeOpen: document.querySelector("#welcomeOpenProjectBtn"),
   recentProjects: document.querySelector("#recentProjectsList"),
+  refreshTsv: document.querySelector("#refreshTsvBtn"),
   detail: document.querySelector("#detailPanel"),
   prompt: document.querySelector("#promptPanel"),
   media: document.querySelector("#mediaPanel"),
@@ -302,6 +304,7 @@ document.querySelectorAll("[data-toggle-panel]").forEach((button) => {
 document.querySelector("#rightPanelToggle").addEventListener("click", toggleRightPanel);
 el.welcomeNew?.addEventListener("click", newProject);
 el.welcomeOpen?.addEventListener("click", openProject);
+el.refreshTsv?.addEventListener("click", refreshTsvFromProject);
 
 document.querySelectorAll(".view-btn").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
@@ -330,6 +333,7 @@ el.search.addEventListener("input", () => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Shift") state.shiftDown = true;
   if (event.ctrlKey && event.key.toLowerCase() === "s") {
     event.preventDefault();
     saveProject();
@@ -371,6 +375,10 @@ document.addEventListener("keydown", (event) => {
     closeContextMenu();
     closeFileMenu();
   }
+});
+
+document.addEventListener("keyup", (event) => {
+  if (event.key === "Shift") state.shiftDown = false;
 });
 
 document.addEventListener("click", (event) => {
@@ -599,6 +607,71 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
   state.undo = [];
   state.redo = [];
   render();
+}
+
+async function refreshTsvFromProject() {
+  if (!tauriInvoke || !state.projectPath) {
+    alert("Open a saved .lctproj project to refresh cutlist.tsv.");
+    return;
+  }
+  if (state.dirty && !confirm("Discard unsaved changes and refresh cutlist.tsv from disk?")) return;
+  let rows;
+  try {
+    const opened = normalizeTauriFile(await tauriInvoke("read_project_file", { path: state.projectPath }));
+    const bytes = new Uint8Array(opened.bytes || []);
+    const entries = await readZipEntries(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    const manifestMatch = findZipEntry(entries, "manifest.json");
+    const manifestText = decodeZipText(manifestMatch?.entry);
+    if (!manifestText) throw new Error("manifest.json was not found.");
+    const diskManifest = { ...structuredClone(DEFAULT_MANIFEST), ...JSON.parse(manifestText) };
+    const cutlistMatch = findZipEntry(entries, diskManifest.mainCutlist || "cutlist.tsv");
+    const cutlistEntry = cutlistMatch?.entry;
+    if (!cutlistEntry) throw new Error(`${diskManifest.mainCutlist || "cutlist.tsv"} was not found.`);
+    rows = loadRowsFromTsv(decodeTsvBytes(cutlistEntry.data).text);
+  } catch (error) {
+    alert(error.message || "cutlist.tsv could not be refreshed.");
+    return;
+  }
+  pushHistory();
+  state.rows = rows;
+  preserveSelectionAfterRowsRefresh();
+  state.dirty = false;
+  state.lastSaved = new Date().toLocaleTimeString();
+  renderAfterRowsRefresh();
+}
+
+function preserveSelectionAfterRowsRefresh() {
+  const rowIds = new Set(state.rows.map((row) => row.id));
+  const selected = [...state.selectedIds].filter((id) => rowIds.has(id));
+  state.selectedIds = new Set(selected);
+  if (!rowIds.has(state.activeId)) state.activeId = selected[0] || state.rows[0]?.id || "";
+  if (state.activeId) state.selectedIds.add(state.activeId);
+  if (!rowIds.has(state.selectionAnchorId)) state.selectionAnchorId = state.activeId;
+}
+
+function renderAfterRowsRefresh() {
+  const issues = validate();
+  renderWelcome();
+  renderStatus(issues);
+  renderTree();
+  renderCurrentView();
+  renderDetail();
+  renderPrompt();
+  renderMedia();
+  renderValidation(issues);
+  renderPanels();
+}
+
+function renderCurrentView() {
+  if (state.view === "storyboard") {
+    renderStoryboard();
+    return;
+  }
+  if (state.view === "timeline") {
+    renderTimeline();
+    return;
+  }
+  renderTable();
 }
 
 function findZipEntry(entries, path) {
@@ -903,6 +976,11 @@ function rowTypeIcon(type) {
   return { scene: "movie", multicut: "dynamic_feed", cut: "content_cut" }[type] || "movie";
 }
 
+function cutPlacementClass(row) {
+  if (row?.row_type !== "cut") return "";
+  return getRow(row.parent_id)?.row_type === "multicut" ? "nested-cut" : "direct-cut";
+}
+
 function decorateStaticIconButton(button, icon) {
   if (!button || button.querySelector(".app-icon")) return;
   const label = button.textContent;
@@ -1044,7 +1122,7 @@ function renderTable() {
     rows.forEach((row) => {
     const tr = document.createElement("tr");
     const visualSelected = tableVisualSelectedIds();
-    tr.className = [row.row_type, visualSelected.has(row.id) ? "selected" : "", tableSelectionClass(row)].filter(Boolean).join(" ");
+    tr.className = [row.row_type, cutPlacementClass(row), visualSelected.has(row.id) ? "selected" : "", tableSelectionClass(row)].filter(Boolean).join(" ");
     tr.draggable = true;
     tr.dataset.id = row.id;
     tr.dataset.type = row.row_type;
@@ -1164,7 +1242,7 @@ function renderStoryboard() {
   });
   tree.forEach((scene) => {
     const sceneEl = document.createElement("section");
-    sceneEl.className = `scene-section${state.activeId === scene.row.id ? " selected" : ""}`;
+    sceneEl.className = `scene-section${state.selectedIds.has(scene.row.id) ? " selected" : ""}`;
     attachStoryboardDrag(sceneEl, scene.row);
     sceneEl.innerHTML = `<div class="scene-header"><h2>${iconHtml("movie")}<span>${escapeHtml(scene.row.title || scene.row.id)}</span></h2><span>${scene.directCuts.length} direct cuts / ${scene.multicuts.length} multicuts / ${displayDuration(scene.row)}</span></div>`;
     sceneEl.querySelector(".scene-header").addEventListener("click", (event) => {
@@ -1189,7 +1267,7 @@ function renderStoryboard() {
       directGrid = null;
       const multicut = child;
       const mc = document.createElement("section");
-      mc.className = `multicut-section${state.activeId === multicut.row.id ? " selected" : ""}`;
+      mc.className = `multicut-section${state.selectedIds.has(multicut.row.id) ? " selected" : ""}`;
       attachStoryboardDrag(mc, multicut.row);
       mc.innerHTML = `<div class="multicut-header"><h3>${iconHtml("dynamic_feed")}<span>${escapeHtml(multicut.row.title || multicut.row.id)}</span></h3><span>${multicut.cuts.length} cuts / ${displayDuration(multicut.row)}</span></div>`;
       mc.querySelector(".multicut-header").addEventListener("click", (event) => {
@@ -1236,7 +1314,7 @@ function attachStoryboardDrag(element, row) {
 
 function cutCard(cut) {
   const card = document.createElement("article");
-  card.className = `cut-card${state.activeId === cut.id ? " selected" : ""}`;
+  card.className = `cut-card ${cutPlacementClass(cut)}${state.selectedIds.has(cut.id) ? " selected" : ""}`;
   attachStoryboardDrag(card, cut);
   card.addEventListener("click", (event) => selectRow(cut.id, event));
   card.addEventListener("contextmenu", (event) => showRowContextMenu(event, cut));
@@ -1322,7 +1400,7 @@ function timelinePreviewHtml(cut, offset) {
 function renderTimelineLane(lane, items, type) {
   items.forEach((item) => {
     const clip = document.createElement("div");
-    clip.className = `clip timeline-clip ${type}${state.selectedIds.has(item.row.id) ? " selected" : ""}`;
+    clip.className = `clip timeline-clip ${type} ${cutPlacementClass(item.row)}${state.selectedIds.has(item.row.id) ? " selected" : ""}`;
     clip.draggable = true;
     clip.dataset.id = item.row.id;
     clip.dataset.type = type;
@@ -2208,6 +2286,7 @@ function handleDrop(event, target) {
   const dragged = getRow(event.dataTransfer?.getData("text/plain") || state.draggingId);
   const mode = dragged ? dropMode(event, dragged, target) : "";
   const timelineFlip = event.currentTarget?.classList?.contains("timeline-clip") ? captureTimelineFlip() : null;
+  const storyboardFlip = event.currentTarget?.closest?.(".storyboard") ? captureStoryboardFlip() : null;
   clearDropClasses();
   if (!dragged || !mode || dragged.id === target.id) return;
   const draggedRows = dragRowsForDrop(dragged, target);
@@ -2223,6 +2302,7 @@ function handleDrop(event, target) {
   markDirty();
   render();
   if (timelineFlip) requestAnimationFrame(() => animateTimelineFlip(timelineFlip, dragged.id));
+  if (storyboardFlip) requestAnimationFrame(() => animateStoryboardFlip(storyboardFlip, dragged.id));
 }
 
 function dragRowsForDrop(dragged, target) {
@@ -2285,13 +2365,16 @@ function dropMode(event, dragged, target) {
   const beforeAfter = event.currentTarget?.classList?.contains("timeline-clip")
     ? event.offsetX < event.currentTarget.clientWidth / 2
     : event.offsetY < event.currentTarget.clientHeight / 2;
+  const shiftDrop = event.shiftKey || state.shiftDown;
   if (dragged.row_type === "scene" && target.row_type === "scene") return beforeAfter ? "before" : "after";
   if (dragged.row_type === "multicut") {
     if (target.row_type === "scene") return "into";
     if (target.row_type === "multicut") return beforeAfter ? "before" : "after";
+    if (target.row_type === "cut") return beforeAfter ? "before" : "after";
   }
   if (dragged.row_type === "cut") {
-    if (target.row_type === "scene" || target.row_type === "multicut") return "into";
+    if (target.row_type === "scene") return "into";
+    if (target.row_type === "multicut") return shiftDrop ? (beforeAfter ? "before" : "after") : "into";
     if (target.row_type === "cut") return beforeAfter ? "before" : "after";
   }
   return "";
@@ -2303,9 +2386,9 @@ function moveRow(dragged, target, mode) {
     dragged.order = String(nextOrder(siblingsOf(dragged)));
     return;
   }
-  dragged.parent_id = target.parent_id;
-  const siblings = siblingsOf(dragged).filter((row) => row.id !== dragged.id).sort(sortByOrder);
-  const targetIndex = siblings.findIndex((row) => row.id === target.id);
+  dragged.parent_id = dropSiblingParentId(dragged, target);
+  const siblings = dropSiblingsForTarget(dragged, target).filter((row) => row.id !== dragged.id).sort(sortByOrder);
+  const targetIndex = siblings.findIndex((row) => row.id === dropAnchorId(dragged, target));
   const insertAt = mode === "before" ? targetIndex : targetIndex + 1;
   siblings.splice(insertAt, 0, dragged);
   siblings.forEach((row, index) => {
@@ -2315,20 +2398,44 @@ function moveRow(dragged, target, mode) {
 
 function moveRows(rows, target, mode) {
   const movingIds = new Set(rows.map((row) => row.id));
-  const parentId = mode === "into" ? target.id : target.parent_id;
+  const parentId = mode === "into" ? target.id : dropSiblingParentId(rows[0], target);
   rows.forEach((row) => {
     row.parent_id = parentId;
   });
-  const siblings = siblingsOf(rows[0]).filter((row) => !movingIds.has(row.id)).sort(sortByOrder);
+  const siblings = dropSiblingsForTarget(rows[0], target).filter((row) => !movingIds.has(row.id)).sort(sortByOrder);
   let insertAt = siblings.length;
   if (mode !== "into") {
-    const targetIndex = siblings.findIndex((row) => row.id === target.id);
+    const targetIndex = siblings.findIndex((row) => row.id === dropAnchorId(rows[0], target));
     insertAt = mode === "before" ? targetIndex : targetIndex + 1;
   }
   siblings.splice(Math.max(0, insertAt), 0, ...rows);
   siblings.forEach((row, index) => {
     row.order = String(index + 1);
   });
+}
+
+function dropSiblingParentId(dragged, target) {
+  if (dragged.row_type === "multicut" && target.row_type === "cut") {
+    const targetParent = getRow(target.parent_id);
+    return targetParent?.row_type === "multicut" ? targetParent.parent_id : target.parent_id;
+  }
+  return target.parent_id;
+}
+
+function dropSiblingsForTarget(dragged, target) {
+  if (dragged.row_type === "multicut" && target.row_type === "cut") {
+    const sceneId = dropSiblingParentId(dragged, target);
+    return sceneChildren(sceneId);
+  }
+  return siblingsOf(dragged);
+}
+
+function dropAnchorId(dragged, target) {
+  if (dragged.row_type === "multicut" && target.row_type === "cut") {
+    const targetParent = getRow(target.parent_id);
+    return targetParent?.row_type === "multicut" ? targetParent.id : target.id;
+  }
+  return target.id;
 }
 
 function siblingsOf(row) {
@@ -2358,26 +2465,44 @@ function captureTimelineFlip() {
 
 function animateTimelineFlip(previous, movedId) {
   document.querySelectorAll(".timeline-clip[data-id]").forEach((clip) => {
-    const before = previous.get(clip.dataset.id);
-    if (!before) return;
-    const after = clip.getBoundingClientRect();
-    const dx = before.left - after.left;
-    const dy = before.top - after.top;
-    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-      clip.classList.add("flip-animating");
-      clip.animate(
-        [
-          { transform: `translate(${dx}px, ${dy}px)` },
-          { transform: "translate(0, 0)" },
-        ],
-        { duration: 260, easing: "cubic-bezier(.2, .8, .2, 1)" },
-      ).addEventListener("finish", () => clip.classList.remove("flip-animating"), { once: true });
-    }
-    if (clip.dataset.id === movedId) {
-      clip.classList.add("moved");
-      setTimeout(() => clip.classList.remove("moved"), 520);
-    }
+    animateFlipElement(clip, previous, movedId);
   });
+}
+
+function captureStoryboardFlip() {
+  const positions = new Map();
+  document.querySelectorAll(".storyboard [data-id]").forEach((item) => {
+    positions.set(item.dataset.id, item.getBoundingClientRect());
+  });
+  return positions;
+}
+
+function animateStoryboardFlip(previous, movedId) {
+  document.querySelectorAll(".storyboard [data-id]").forEach((item) => {
+    animateFlipElement(item, previous, movedId);
+  });
+}
+
+function animateFlipElement(element, previous, movedId) {
+  const before = previous.get(element.dataset.id);
+  if (!before) return;
+  const after = element.getBoundingClientRect();
+  const dx = before.left - after.left;
+  const dy = before.top - after.top;
+  if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+    element.classList.add("flip-animating");
+    element.animate(
+      [
+        { transform: `translate(${dx}px, ${dy}px)` },
+        { transform: "translate(0, 0)" },
+      ],
+      { duration: 260, easing: "cubic-bezier(.2, .8, .2, 1)" },
+    ).addEventListener("finish", () => element.classList.remove("flip-animating"), { once: true });
+  }
+  if (element.dataset.id === movedId) {
+    element.classList.add("moved");
+    setTimeout(() => element.classList.remove("moved"), 520);
+  }
 }
 
 function validate() {

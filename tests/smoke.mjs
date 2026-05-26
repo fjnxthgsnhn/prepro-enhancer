@@ -514,6 +514,65 @@ await page.waitForFunction(() => {
   return rows.indexOf("ct001") > rows.indexOf("mc002");
 });
 
+const dragProjectRows = [
+  expectedHeaders().join("\t"),
+  "scene\tsc700\t\t1\tDrag Scene\t\t\t\t\t\t\t\t\t\t\t\t",
+  "multicut\tmc701\tsc700\t1\tFirst Multicut\t\t\t\t\t\t\t\t\t\t\t\t",
+  "cut\tct701\tmc701\t1\tNested One\t3s\t\t\t\t\t\t\t\t\t\t\t",
+  "multicut\tmc702\tsc700\t2\tSecond Multicut\t\t\t\t\t\t\t\t\t\t\t\t",
+  "cut\tct702\tmc702\t1\tNested Two\t3s\t\t\t\t\t\t\t\t\t\t\t",
+  "cut\tct703\tsc700\t3\tDirect One\t3s\t\t\t\t\t\t\t\t\t\t\t",
+  "cut\tct704\tsc700\t4\tDirect Two\t3s\t\t\t\t\t\t\t\t\t\t\t",
+].join("\n");
+await loadProjectFile("drag-behavior.lctproj", makeStoredZip(new Map([
+  ["manifest.json", JSON.stringify({ projectName: "Drag Behavior", mainCutlist: "cutlist.tsv" })],
+  ["cutlist.tsv", dragProjectRows],
+])));
+await expectText("#projectName", "Drag Behavior");
+await page.click('[data-view="table"]');
+await page.dragAndDrop('tbody tr[data-id="ct704"]', 'tbody tr[data-id="mc701"]');
+await page.waitForFunction(() => {
+  const rows = [...document.querySelectorAll(".data-table tbody tr")].map((row) => row.dataset.id);
+  return rows.indexOf("ct704") === rows.indexOf("ct701") + 1;
+});
+await dispatchDragDrop('tbody tr[data-id="ct704"]', 'tbody tr[data-id="mc702"]', { shiftKey: true, offsetY: 4 });
+await page.waitForFunction(() => {
+  const rows = [...document.querySelectorAll(".data-table tbody tr")].map((row) => row.dataset.id);
+  return rows.indexOf("ct704") === rows.indexOf("mc702") - 1 &&
+    document.querySelector('tbody tr[data-id="ct704"]')?.classList.contains("direct-cut");
+});
+await page.locator('tbody tr[data-id="mc702"]').dragTo(page.locator('tbody tr[data-id="ct704"]'), {
+  sourcePosition: { x: 20, y: 12 },
+  targetPosition: { x: 20, y: 22 },
+});
+await page.waitForFunction(() => {
+  const rows = [...document.querySelectorAll(".data-table tbody tr")].map((row) => row.dataset.id);
+  return rows.indexOf("mc702") === rows.indexOf("ct704") + 1;
+});
+await page.click('[data-view="timeline"]');
+await dispatchDragDrop('.timeline-clip.cut[data-id="ct703"]', '.timeline-clip.multicut[data-id="mc701"]', { shiftKey: true, offsetX: 8 });
+await page.click('[data-view="table"]');
+await page.waitForFunction(() => {
+  const rows = [...document.querySelectorAll(".data-table tbody tr")].map((row) => row.dataset.id);
+  return rows.indexOf("ct703") === rows.indexOf("mc701") - 1 &&
+    document.querySelector('tbody tr[data-id="ct703"]')?.classList.contains("direct-cut");
+});
+await page.click('[data-view="storyboard"]');
+await page.click('.cut-card[data-id="ct703"]');
+await page.click('.cut-card[data-id="ct704"]', { modifiers: ["Control"] });
+await page.waitForFunction(() => (
+  document.querySelector('.cut-card[data-id="ct703"]')?.classList.contains("selected") &&
+  document.querySelector('.cut-card[data-id="ct704"]')?.classList.contains("selected")
+));
+await page.locator('.cut-card[data-id="ct704"]').dragTo(page.locator('.cut-card[data-id="ct701"]'), {
+  sourcePosition: { x: 20, y: 20 },
+  targetPosition: { x: 20, y: 8 },
+});
+await page.waitForFunction(() => {
+  const card = document.querySelector('.cut-card[data-id="ct704"]');
+  return card?.classList.contains("moved") || card?.classList.contains("flip-animating");
+});
+
 const timelineProjectRows = [
   expectedHeaders().join("\t"),
   "scene\tsc500\t\t1\tTimeline Scene\t\t\t\t\t\t\t\t\t\t\t\t",
@@ -590,6 +649,36 @@ async function dropFiles(selector, files) {
     target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
     target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
   }, files);
+}
+
+async function dispatchDragDrop(sourceSelector, targetSelector, options = {}) {
+  await page.evaluate(
+    ({ sourceSelector, targetSelector, options }) => {
+      const source = document.querySelector(sourceSelector);
+      const target = document.querySelector(targetSelector);
+      if (!source || !target) throw new Error(`missing drag target: ${sourceSelector} -> ${targetSelector}`);
+      const dataTransfer = new DataTransfer();
+      const makeEvent = (type, node) => {
+        const rect = node.getBoundingClientRect();
+        const event = new DragEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer,
+          clientX: rect.left + (options.offsetX ?? Math.max(1, rect.width / 2)),
+          clientY: rect.top + (options.offsetY ?? Math.max(1, rect.height / 2)),
+          shiftKey: Boolean(options.shiftKey),
+        });
+        Object.defineProperty(event, "offsetX", { value: options.offsetX ?? Math.max(1, rect.width / 2) });
+        Object.defineProperty(event, "offsetY", { value: options.offsetY ?? Math.max(1, rect.height / 2) });
+        return event;
+      };
+      source.dispatchEvent(makeEvent("dragstart", source));
+      target.dispatchEvent(makeEvent("dragover", target));
+      target.dispatchEvent(makeEvent("drop", target));
+      source.dispatchEvent(makeEvent("dragend", source));
+    },
+    { sourceSelector, targetSelector, options },
+  );
 }
 
 async function clearTableCell(rowId, column) {
@@ -695,6 +784,34 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.waitForFunction(() => document.querySelector("#welcomeView")?.hidden);
   await expectPageText(tauriPage, "#projectName", "Recent Project");
   await expectPageText(tauriPage, "#counts", "scene 1 / multicut 0 / cut 0");
+  await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "Recent Scene");
+  await tauriPage.evaluate((path) => {
+    const updated = window.__makeStoredZip(new Map([
+      ["manifest.json", JSON.stringify({ projectName: "Recent Project Changed", mainCutlist: "cutlist.tsv" })],
+      ["cutlist.tsv", `${window.__expectedHeaders().join("\t")}\nscene\tsc777\t\t1\tLLM Updated Scene\t\t\t\t\t\t\t\t\t\t\t\t\ncut\tct778\tsc777\t1\tLLM Added Cut\t2s\t\t\t\t\t\t\t\t\t\t\t`],
+    ]));
+    window.__tauriMockFiles.set(path, Array.from(updated));
+  }, recentPath);
+  await tauriPage.click("#refreshTsvBtn");
+  await expectPageText(tauriPage, "#projectName", "Recent Project");
+  await expectPageText(tauriPage, "#counts", "scene 1 / multicut 0 / cut 1");
+  await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "LLM Updated Scene");
+  await tauriPage.click('tbody tr[data-id="sc777"] td[data-column="title"]');
+  await tauriPage.click('tbody tr[data-id="sc777"] td[data-column="title"]');
+  await tauriPage.locator('tbody tr[data-id="sc777"] td[data-column="title"] input').fill("Unsaved Local Scene");
+  await tauriPage.keyboard.press("Enter");
+  tauriPage.once("dialog", async (dialog) => {
+    if (dialog.type() !== "confirm") throw new Error("Refresh dirty state should ask for confirmation");
+    await dialog.dismiss();
+  });
+  await tauriPage.click("#refreshTsvBtn");
+  await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "Unsaved Local Scene");
+  tauriPage.once("dialog", async (dialog) => {
+    if (dialog.type() !== "confirm") throw new Error("Refresh dirty state should ask for confirmation");
+    await dialog.accept();
+  });
+  await tauriPage.click("#refreshTsvBtn");
+  await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "LLM Updated Scene");
   await tauriPage.close();
 
   const newPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
@@ -721,9 +838,75 @@ async function runTauriWelcomeSmoke(browser) {
 
 async function installTauriMock(targetPage, options = {}) {
   await targetPage.addInitScript((config) => {
+    window.__expectedHeaders = () => [
+      "row_type",
+      "id",
+      "parent_id",
+      "order",
+      "title",
+      "duration",
+      "scene",
+      "subject",
+      "composition",
+      "action",
+      "camera",
+      "dialogue",
+      "image",
+      "audio_file",
+      "image_prompt",
+      "video_prompt",
+      "note",
+    ];
+    window.__makeStoredZip = (files) => {
+      const chunks = [];
+      const central = [];
+      let offset = 0;
+      files.forEach((content, name) => {
+        const fileName = new TextEncoder().encode(name);
+        const raw = typeof content === "string" ? new TextEncoder().encode(content) : new Uint8Array(content);
+        const local = new Uint8Array(30 + fileName.length + raw.length);
+        const view = new DataView(local.buffer);
+        view.setUint32(0, 0x04034b50, true);
+        view.setUint16(4, 20, true);
+        view.setUint32(18, raw.length, true);
+        view.setUint32(22, raw.length, true);
+        view.setUint16(26, fileName.length, true);
+        local.set(fileName, 30);
+        local.set(raw, 30 + fileName.length);
+        chunks.push(local);
+        const entry = new Uint8Array(46 + fileName.length);
+        const entryView = new DataView(entry.buffer);
+        entryView.setUint32(0, 0x02014b50, true);
+        entryView.setUint16(4, 20, true);
+        entryView.setUint16(6, 20, true);
+        entryView.setUint32(20, raw.length, true);
+        entryView.setUint32(24, raw.length, true);
+        entryView.setUint16(28, fileName.length, true);
+        entryView.setUint32(42, offset, true);
+        entry.set(fileName, 46);
+        central.push(entry);
+        offset += local.length;
+      });
+      const centralSize = central.reduce((sum, item) => sum + item.length, 0);
+      const end = new Uint8Array(22);
+      const endView = new DataView(end.buffer);
+      endView.setUint32(0, 0x06054b50, true);
+      endView.setUint16(8, files.size, true);
+      endView.setUint16(10, files.size, true);
+      endView.setUint32(12, centralSize, true);
+      endView.setUint32(16, offset, true);
+      const output = new Uint8Array(offset + centralSize + end.length);
+      let cursor = 0;
+      [...chunks, ...central, end].forEach((chunk) => {
+        output.set(chunk, cursor);
+        cursor += chunk.length;
+      });
+      return output;
+    };
     const key = "preproEnhancer.recentProjects.v1";
     localStorage.setItem(key, JSON.stringify(config.recent || []));
     const files = new Map((config.files || []).map(([path, bytes]) => [path, bytes]));
+    window.__tauriMockFiles = files;
     window.__TAURI__ = {
       core: {
         invoke: async (command, args = {}) => {
