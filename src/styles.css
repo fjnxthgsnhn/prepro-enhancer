@@ -41,6 +41,10 @@ select {
 }
 
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid var(--line);
   background: #242920;
   color: var(--text);
@@ -48,6 +52,36 @@ button {
   padding: 0 10px;
   border-radius: 6px;
   cursor: pointer;
+}
+
+.material-symbols-outlined.app-icon {
+  overflow: hidden;
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 1em;
+  height: 1em;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+  font-family: "Material Symbols Outlined";
+  font-size: 18px;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  direction: ltr;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+.app-icon.small-icon,
+.app-icon.badge-icon {
+  font-size: 16px;
+}
+
+.icon-button-label {
+  min-width: 0;
 }
 
 button:hover,
@@ -144,8 +178,11 @@ button.active {
 
 .dropdown-menu button,
 .submenu-panel button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
+  justify-content: flex-start;
   text-align: left;
   border-color: transparent;
   background: transparent;
@@ -163,7 +200,7 @@ button.active {
 
 .submenu-trigger::after {
   content: ">";
-  float: right;
+  margin-left: auto;
   color: var(--muted);
 }
 
@@ -254,7 +291,9 @@ button.active {
   position: sticky;
   top: 0;
   z-index: 2;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   width: 100%;
   padding: 10px 12px;
   color: var(--accent);
@@ -346,7 +385,7 @@ button.active {
 
 .recent-project-row {
   display: grid;
-  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1.4fr) max-content;
+  grid-template-columns: 18px minmax(160px, 0.8fr) minmax(220px, 1.4fr) max-content;
   align-items: center;
   gap: 14px;
   width: 100%;
@@ -403,8 +442,16 @@ button.active {
   font-size: 12px;
 }
 
-.status-bar span {
+.status-bar span,
+.status-item {
   white-space: nowrap;
+}
+
+.status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .hierarchy-tree {
@@ -435,6 +482,7 @@ button.active {
   align-items: center;
   justify-content: center;
   min-width: 44px;
+  gap: 4px;
   height: 20px;
   padding: 0 6px;
   border-radius: 999px;
@@ -606,8 +654,7 @@ button.active {
 }
 
 .add-row-btn {
-  display: grid;
-  place-items: center;
+  display: inline-flex;
   width: 28px;
   min-height: 28px;
   padding: 0;
@@ -648,6 +695,9 @@ button.active {
 }
 
 .table-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   justify-content: flex-start;
   text-align: left;
@@ -789,6 +839,9 @@ button.active {
 
 .scene-header h2,
 .multicut-header h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   margin: 0;
   font-size: 16px;
 }
@@ -876,8 +929,17 @@ button.active {
 }
 
 .card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 700;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-title span:last-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1120,6 +1182,17 @@ button.active {
   padding-inline: 8px;
 }
 
+.timeline-clip strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.timeline-clip strong span {
+  min-width: 0;
+  padding-inline: 0;
+}
+
 .timeline-clip span {
   color: currentColor;
   opacity: 0.72;
@@ -1234,6 +1307,9 @@ button.active {
 }
 
 .issue {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
   border-left: 3px solid var(--warn);
   background: rgba(242, 191, 79, 0.08);
   padding: 7px 8px;

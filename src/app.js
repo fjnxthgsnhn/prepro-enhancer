@@ -281,6 +281,9 @@ const el = {
   search: document.querySelector("#searchInput"),
 };
 
+decorateStaticIconButton(el.welcomeNew, "note_add");
+decorateStaticIconButton(el.welcomeOpen, "folder_open");
+
 document.querySelector("#fileMenuBtn").addEventListener("click", (event) => {
   event.stopPropagation();
   toggleFileMenu();
@@ -892,6 +895,31 @@ function rowLabel(row) {
   return row?.title || row?.id || "";
 }
 
+function iconHtml(name, className = "") {
+  return `<span class="material-symbols-outlined app-icon${className ? ` ${className}` : ""}" aria-hidden="true">${escapeHtml(name)}</span>`;
+}
+
+function rowTypeIcon(type) {
+  return { scene: "movie", multicut: "dynamic_feed", cut: "content_cut" }[type] || "movie";
+}
+
+function decorateStaticIconButton(button, icon) {
+  if (!button || button.querySelector(".app-icon")) return;
+  const label = button.textContent;
+  button.innerHTML = `${iconHtml(icon)}<span class="icon-button-label"></span>`;
+  button.querySelector(".icon-button-label").textContent = label;
+}
+
+function setIconText(element, icon, text) {
+  if (!element) return;
+  element.innerHTML = `${iconHtml(icon)}<span class="icon-button-label">${escapeHtml(text)}</span>`;
+}
+
+function setStatusItem(element, icon, text) {
+  if (!element) return;
+  element.innerHTML = `${iconHtml(icon)}<span class="status-value">${escapeHtml(text)}</span>`;
+}
+
 function render() {
   const issues = validate();
   renderWelcome();
@@ -918,6 +946,7 @@ function renderWelcome() {
   }
   el.recentProjects.innerHTML = state.recentProjects.map((project) => `
     <button class="recent-project-row" type="button" data-path="${escapeAttr(project.path)}">
+      ${iconHtml("folder_open", "recent-icon")}
       <span class="recent-file">${escapeHtml(project.fileName || "Untitled Project.lctproj")}</span>
       <span class="recent-path">${escapeHtml(project.path)}</span>
       <span class="recent-time">${escapeHtml(formatRecentTimestamp(project.timestamp))}</span>
@@ -931,11 +960,11 @@ function renderWelcome() {
 function renderStatus(issues) {
   const counts = countRows();
   el.projectName.textContent = state.manifest.projectName || "Untitled Project";
-  el.projectPath.textContent = state.projectPath || state.projectFileName || (tauriInvoke ? "No file loaded" : "Browser workspace");
-  el.counts.textContent = `scene ${counts.scene} / multicut ${counts.multicut} / cut ${counts.cut}`;
-  el.missingCount.textContent = `Missing ${issues.filter((issue) => issue.kind === "missing-media").length}`;
-  el.saveState.textContent = state.dirty ? "Unsaved" : "Saved";
-  el.lastSaved.textContent = state.lastSaved ? `Saved ${state.lastSaved}` : "Never";
+  setStatusItem(el.projectPath, "folder", state.projectPath || state.projectFileName || (tauriInvoke ? "No file loaded" : "Browser workspace"));
+  setStatusItem(el.counts, "tag", `scene ${counts.scene} / multicut ${counts.multicut} / cut ${counts.cut}`);
+  setStatusItem(el.missingCount, "image_not_supported", `Missing ${issues.filter((issue) => issue.kind === "missing-media").length}`);
+  setStatusItem(el.saveState, "cloud_done", state.dirty ? "Unsaved" : "Saved");
+  setStatusItem(el.lastSaved, "schedule", state.lastSaved ? `Saved ${state.lastSaved}` : "Never");
 }
 
 function countRows() {
@@ -975,7 +1004,7 @@ function renderTree() {
 function treeNode(row, level) {
   const node = document.createElement("div");
   node.className = `tree-node level-${level}${state.activeId === row.id ? " selected" : ""}`;
-  node.innerHTML = `<span class="badge">${row.row_type}</span><span>${escapeHtml(rowLabel(row))}</span>`;
+  node.innerHTML = `<span class="badge">${iconHtml(rowTypeIcon(row.row_type), "badge-icon")}<span>${row.row_type}</span></span><span>${escapeHtml(rowLabel(row))}</span>`;
   node.addEventListener("click", (event) => {
     if (event.altKey && row.row_type !== "cut") {
       toggleCollapse(row.id);
@@ -1004,9 +1033,9 @@ function renderTable() {
       <div class="empty-table-state">
         <span>${state.search ? "No rows match the current search." : "No rows. Add a row to start."}</span>
         ${canInitialAdd ? `<div class="empty-add-actions">
-          <button class="add-row-btn scene" type="button" data-initial-add-type="scene" title="Add Scene">+</button>
-          <button class="add-row-btn multicut" type="button" data-initial-add-type="multicut" title="Add Multicut">+</button>
-          <button class="add-row-btn cut" type="button" data-initial-add-type="cut" title="Add Cut">+</button>
+          <button class="add-row-btn scene" type="button" data-initial-add-type="scene" title="Add Scene" aria-label="Add Scene">${iconHtml("movie", "small-icon")}</button>
+          <button class="add-row-btn multicut" type="button" data-initial-add-type="multicut" title="Add Multicut" aria-label="Add Multicut">${iconHtml("dynamic_feed", "small-icon")}</button>
+          <button class="add-row-btn cut" type="button" data-initial-add-type="cut" title="Add Cut" aria-label="Add Cut">${iconHtml("content_cut", "small-icon")}</button>
         </div>` : ""}
       </div>`;
     tr.appendChild(td);
@@ -1065,9 +1094,9 @@ function renderAddOverlay() {
   overlay.className = "add-row-overlay";
   overlay.innerHTML = `
     <div class="add-row-actions" aria-label="Add row below selection">
-      <button class="add-row-btn scene" type="button" data-add-type="scene" title="Add Scene">+</button>
-      <button class="add-row-btn multicut" type="button" data-add-type="multicut" title="Add Multicut">+</button>
-      <button class="add-row-btn cut" type="button" data-add-type="cut" title="Add Cut">+</button>
+      <button class="add-row-btn scene" type="button" data-add-type="scene" title="Add Scene" aria-label="Add Scene">${iconHtml("movie", "small-icon")}</button>
+      <button class="add-row-btn multicut" type="button" data-add-type="multicut" title="Add Multicut" aria-label="Add Multicut">${iconHtml("dynamic_feed", "small-icon")}</button>
+      <button class="add-row-btn cut" type="button" data-add-type="cut" title="Add Cut" aria-label="Add Cut">${iconHtml("content_cut", "small-icon")}</button>
     </div>`;
   const tableRect = el.table.getBoundingClientRect();
   const rowRect = activeRow.getBoundingClientRect();
@@ -1137,7 +1166,7 @@ function renderStoryboard() {
     const sceneEl = document.createElement("section");
     sceneEl.className = `scene-section${state.activeId === scene.row.id ? " selected" : ""}`;
     attachStoryboardDrag(sceneEl, scene.row);
-    sceneEl.innerHTML = `<div class="scene-header"><h2>${escapeHtml(scene.row.title || scene.row.id)}</h2><span>${scene.directCuts.length} direct cuts / ${scene.multicuts.length} multicuts / ${displayDuration(scene.row)}</span></div>`;
+    sceneEl.innerHTML = `<div class="scene-header"><h2>${iconHtml("movie")}<span>${escapeHtml(scene.row.title || scene.row.id)}</span></h2><span>${scene.directCuts.length} direct cuts / ${scene.multicuts.length} multicuts / ${displayDuration(scene.row)}</span></div>`;
     sceneEl.querySelector(".scene-header").addEventListener("click", (event) => {
       event.stopPropagation();
       selectRow(scene.row.id, event);
@@ -1162,7 +1191,7 @@ function renderStoryboard() {
       const mc = document.createElement("section");
       mc.className = `multicut-section${state.activeId === multicut.row.id ? " selected" : ""}`;
       attachStoryboardDrag(mc, multicut.row);
-      mc.innerHTML = `<div class="multicut-header"><h3>${escapeHtml(multicut.row.title || multicut.row.id)}</h3><span>${multicut.cuts.length} cuts / ${displayDuration(multicut.row)}</span></div>`;
+      mc.innerHTML = `<div class="multicut-header"><h3>${iconHtml("dynamic_feed")}<span>${escapeHtml(multicut.row.title || multicut.row.id)}</span></h3><span>${multicut.cuts.length} cuts / ${displayDuration(multicut.row)}</span></div>`;
       mc.querySelector(".multicut-header").addEventListener("click", (event) => {
         event.stopPropagation();
         selectRow(multicut.row.id, event);
@@ -1215,7 +1244,7 @@ function cutCard(cut) {
   card.innerHTML = `
       <div class="thumb">${media ? `<img src="${media}" alt="">` : `<span>${cut.image ? "Missing image" : "No image"}</span>`}</div>
     <div class="card-body">
-      <div class="card-title">${escapeHtml(rowLabel(cut))}</div>
+      <div class="card-title">${iconHtml("content_cut", "small-icon")}<span>${escapeHtml(rowLabel(cut))}</span></div>
       <div class="card-meta"><span>${escapeHtml(displayDuration(cut))}</span><span>${escapeHtml(cut.id)}</span></div>
     </div>`;
   return card;
@@ -1236,7 +1265,7 @@ function renderTimeline() {
   root.innerHTML = `
     ${timelinePreviewHtml(active?.cut, active?.offset || 0)}
     <div class="timeline-controls">
-      <button id="playBtn">${state.playing ? "Stop" : "Play"}</button>
+      <button id="playBtn"></button>
       <input id="timelineSeek" class="timeline-seek" type="range" min="0" max="${total || 0}" step="0.05" value="${playTime}" aria-label="Timeline seek" />
       <span id="timelineTime">${formatTime(playTime)} / ${formatTime(total)}</span>
     </div>
@@ -1252,6 +1281,7 @@ function renderTimeline() {
   renderTimelineLane(root.querySelector(".scene-lane"), model.scenes, "scene");
   renderTimelineLane(root.querySelector(".multicut-lane"), model.multicuts, "multicut");
   renderTimelineLane(root.querySelector(".cut-lane"), model.cuts, "cut");
+  renderPlayButton(root.querySelector("#playBtn"));
   root.querySelector("#playBtn").addEventListener("click", togglePlayback);
   root.querySelector("#timelineSeek").addEventListener("input", (event) => {
     setPlaybackOffset(Number(event.target.value) || 0);
@@ -1298,7 +1328,7 @@ function renderTimelineLane(lane, items, type) {
     clip.dataset.type = type;
     clip.style.left = `${item.start}px`;
     clip.style.width = `${item.width}px`;
-    clip.innerHTML = `<strong>${escapeHtml(rowLabel(item.row))}</strong><span>${escapeHtml(displayDuration(item.row))}</span>${type === "cut" ? `<button class="clip-resize-handle" type="button" aria-label="Adjust out point"></button>` : ""}`;
+    clip.innerHTML = `<strong>${iconHtml(rowTypeIcon(type), "small-icon")}<span>${escapeHtml(rowLabel(item.row))}</span></strong><span>${escapeHtml(displayDuration(item.row))}</span>${type === "cut" ? `<button class="clip-resize-handle" type="button" aria-label="Adjust out point" title="Adjust out point"></button>` : ""}`;
     clip.addEventListener("click", (event) => {
       event.stopPropagation();
       selectRow(item.row.id, event);
@@ -1383,7 +1413,7 @@ function updateTimelinePlaybackUi({ forcePreview = false, model = timelineModel(
   const track = root.querySelector(".nested-track");
   const playhead = root.querySelector(".playhead");
   const playBtn = root.querySelector("#playBtn");
-  if (playBtn) playBtn.textContent = state.playing ? "Stop" : "Play";
+  renderPlayButton(playBtn);
   if (seek) {
     seek.max = String(total || 0);
     seek.value = String(playTime);
@@ -1414,6 +1444,11 @@ function centerTimelineOnPlayhead() {
   stage.scrollLeft = clamp(target, 0, maxScroll);
   state.timelineScrollLeft = stage.scrollLeft;
   updateTimelinePlaybackUi({ model });
+}
+
+function renderPlayButton(playBtn) {
+  if (!playBtn) return;
+  setIconText(playBtn, state.playing ? "stop" : "play_arrow", state.playing ? "Stop" : "Play");
 }
 
 function attachTimelineScrub(stage) {
@@ -1603,7 +1638,7 @@ function renderPrompt() {
   el.prompt.innerHTML = `
     <div class="field"><label>Effective image_prompt</label><div class="prompt-output">${escapeHtml(effective.image || "(empty)")}</div></div>
     <div class="field"><label>Effective video_prompt</label><div class="prompt-output">${escapeHtml(effective.video || "(empty)")}</div></div>
-    <button id="copyPromptBtn">Copy Effective Prompts</button>`;
+    <button id="copyPromptBtn">${iconHtml("content_copy")}<span class="icon-button-label">Copy Effective Prompts</span></button>`;
   document.querySelector("#copyPromptBtn").addEventListener("click", () => {
     navigator.clipboard?.writeText(`image_prompt:\n${effective.image}\n\nvideo_prompt:\n${effective.video}`);
   });
@@ -1627,11 +1662,11 @@ function renderMedia() {
 
 function renderValidation(issues) {
   if (!issues.length) {
-    el.validation.innerHTML = `<div class="issue">No validation issues.</div>`;
+    el.validation.innerHTML = `<div class="issue">${iconHtml("fact_check")}<span>No validation issues.</span></div>`;
     return;
   }
   el.validation.innerHTML = `<div class="issues">${issues
-    .map((issue) => `<div class="issue ${issue.level}">${escapeHtml(issue.message)}</div>`)
+    .map((issue) => `<div class="issue ${issue.level}">${iconHtml(issue.level === "error" ? "fact_check" : "image_not_supported")}<span>${escapeHtml(issue.message)}</span></div>`)
     .join("")}</div>`;
 }
 
@@ -2045,20 +2080,20 @@ function showRowContextMenu(event, row) {
   menu.className = "table-context-menu";
   menu.style.left = `${event.clientX}px`;
   menu.style.top = `${event.clientY}px`;
-  if (canGroupCuts) menu.appendChild(contextMenuButton("Create Multicut", groupCuts));
-  if (canGroupMulticuts) menu.appendChild(contextMenuButton("Create Scene", groupMulticuts));
-  if (canUngroupMulticut) menu.appendChild(contextMenuButton("Ungroup Multicut", ungroupSelectionFromShortcut));
-  menu.appendChild(contextMenuButton("Copy ID", copySelectedIds));
-  menu.appendChild(contextMenuButton("Duplicate", duplicateSelectedRows));
-  menu.appendChild(contextMenuButton("Delete", deleteSelectedRows));
+  if (canGroupCuts) menu.appendChild(contextMenuButton("Create Multicut", groupCuts, "dynamic_feed"));
+  if (canGroupMulticuts) menu.appendChild(contextMenuButton("Create Scene", groupMulticuts, "movie_creation"));
+  if (canUngroupMulticut) menu.appendChild(contextMenuButton("Ungroup Multicut", ungroupSelectionFromShortcut, "call_split"));
+  menu.appendChild(contextMenuButton("Copy ID", copySelectedIds, "content_copy"));
+  menu.appendChild(contextMenuButton("Duplicate", duplicateSelectedRows, "file_copy"));
+  menu.appendChild(contextMenuButton("Delete", deleteSelectedRows, "delete"));
   document.body.appendChild(menu);
   state.contextMenu = menu;
 }
 
-function contextMenuButton(label, action) {
+function contextMenuButton(label, action, icon = "content_copy") {
   const button = document.createElement("button");
   button.type = "button";
-  button.textContent = label;
+  button.innerHTML = `${iconHtml(icon)}<span class="icon-button-label">${escapeHtml(label)}</span>`;
   button.addEventListener("click", (clickEvent) => {
     clickEvent.stopPropagation();
     closeContextMenu();

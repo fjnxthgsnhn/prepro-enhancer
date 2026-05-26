@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prepro Enhancer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&amp;icon_names=account_tree,call_split,cloud_done,content_copy,content_cut,dashboard,delete,dock_to_right,dynamic_feed,fact_check,file_copy,folder,folder_open,image_not_supported,ios_share,movie,movie_creation,note_add,perm_media,play_arrow,save,save_as,schedule,search,smart_toy,stop,subject,table_chart,table_view,tag,terminal,timeline&amp;display=block" rel="stylesheet" />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
@@ -17,35 +18,35 @@
           </div>
         </div>
         <div class="tool-section file-menu">
-          <button id="fileMenuBtn" class="menu-button" type="button" aria-haspopup="true" aria-expanded="false">File</button>
+          <button id="fileMenuBtn" class="menu-button" type="button" aria-haspopup="true" aria-expanded="false"><span class="material-symbols-outlined app-icon" aria-hidden="true">folder_open</span><span class="icon-button-label">File</span></button>
           <div id="fileMenu" class="dropdown-menu" role="menu" hidden>
-            <button type="button" data-file-action="new" role="menuitem">NewProject</button>
-            <button type="button" data-file-action="open" role="menuitem">OpenProject</button>
-            <button type="button" data-file-action="save" role="menuitem">Save</button>
-            <button type="button" data-file-action="saveAs" role="menuitem">Save as</button>
+            <button type="button" data-file-action="new" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">note_add</span><span class="icon-button-label">NewProject</span></button>
+            <button type="button" data-file-action="open" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">folder_open</span><span class="icon-button-label">OpenProject</span></button>
+            <button type="button" data-file-action="save" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save</span><span class="icon-button-label">Save</span></button>
+            <button type="button" data-file-action="saveAs" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save_as</span><span class="icon-button-label">Save as</span></button>
             <div class="submenu" role="none">
-              <button type="button" class="submenu-trigger" role="menuitem" aria-haspopup="true">Export</button>
+              <button type="button" class="submenu-trigger" role="menuitem" aria-haspopup="true"><span class="material-symbols-outlined app-icon" aria-hidden="true">ios_share</span><span class="icon-button-label">Export</span></button>
               <div class="submenu-panel" role="menu">
-                <button type="button" data-file-action="exportTsv" role="menuitem">TSV</button>
-                <button type="button" data-file-action="exportLlmTsv" role="menuitem">LLM TSV</button>
-                <button type="button" data-file-action="exportXml" role="menuitem">Premiere XML</button>
+                <button type="button" data-file-action="exportTsv" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">table_chart</span><span class="icon-button-label">TSV</span></button>
+                <button type="button" data-file-action="exportLlmTsv" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">smart_toy</span><span class="icon-button-label">LLM TSV</span></button>
+                <button type="button" data-file-action="exportXml" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">movie</span><span class="icon-button-label">Premiere XML</span></button>
               </div>
             </div>
           </div>
         </div>
         <div class="tool-section view-switch">
-          <button class="view-btn active" data-view="table">Table</button>
-          <button class="view-btn" data-view="storyboard">Storyboard</button>
-          <button class="view-btn" data-view="timeline">Timeline</button>
+          <button class="view-btn active" data-view="table"><span class="material-symbols-outlined app-icon" aria-hidden="true">table_view</span><span class="icon-button-label">Table</span></button>
+          <button class="view-btn" data-view="storyboard"><span class="material-symbols-outlined app-icon" aria-hidden="true">dashboard</span><span class="icon-button-label">Storyboard</span></button>
+          <button class="view-btn" data-view="timeline"><span class="material-symbols-outlined app-icon" aria-hidden="true">timeline</span><span class="icon-button-label">Timeline</span></button>
         </div>
         <label class="search-box">
-          <span>Search</span>
+          <span class="material-symbols-outlined app-icon" aria-hidden="true">search</span><span>Search</span>
           <input id="searchInput" type="search" autocomplete="off" />
         </label>
       </header>
 
       <aside class="left-panel">
-        <div class="panel-title">Hierarchy</div>
+        <div class="panel-title"><span class="material-symbols-outlined app-icon" aria-hidden="true">account_tree</span><span>Hierarchy</span></div>
         <div id="hierarchyTree" class="hierarchy-tree"></div>
       </aside>
 
@@ -68,33 +69,33 @@
       </main>
 
       <aside class="right-panel">
-        <button id="rightPanelToggle" class="right-panel-toggle" type="button" title="Toggle right panel">Panels</button>
+        <button id="rightPanelToggle" class="right-panel-toggle" type="button" title="Toggle right panel"><span class="material-symbols-outlined app-icon" aria-hidden="true">dock_to_right</span><span class="icon-button-label">Panels</span></button>
         <div class="right-panel-content">
         <section class="right-section" data-panel="detail">
-          <button class="panel-title panel-toggle" type="button" data-toggle-panel="detail">Detail</button>
+          <button class="panel-title panel-toggle" type="button" data-toggle-panel="detail"><span class="material-symbols-outlined app-icon" aria-hidden="true">subject</span><span class="icon-button-label">Detail</span></button>
           <div id="detailPanel" class="detail-panel panel-body"></div>
         </section>
         <section class="right-section" data-panel="prompt">
-          <button class="panel-title panel-toggle" type="button" data-toggle-panel="prompt">Prompt Preview</button>
+          <button class="panel-title panel-toggle" type="button" data-toggle-panel="prompt"><span class="material-symbols-outlined app-icon" aria-hidden="true">terminal</span><span class="icon-button-label">Prompt Preview</span></button>
           <div id="promptPanel" class="prompt-panel panel-body"></div>
         </section>
         <section class="right-section" data-panel="media">
-          <button class="panel-title panel-toggle" type="button" data-toggle-panel="media">Media Preview</button>
+          <button class="panel-title panel-toggle" type="button" data-toggle-panel="media"><span class="material-symbols-outlined app-icon" aria-hidden="true">perm_media</span><span class="icon-button-label">Media Preview</span></button>
           <div id="mediaPanel" class="media-panel panel-body"></div>
         </section>
         <section class="right-section" data-panel="validation">
-          <button class="panel-title panel-toggle" type="button" data-toggle-panel="validation">Validation</button>
+          <button class="panel-title panel-toggle" type="button" data-toggle-panel="validation"><span class="material-symbols-outlined app-icon" aria-hidden="true">fact_check</span><span class="icon-button-label">Validation</span></button>
           <div id="validationPanel" class="validation-panel panel-body"></div>
         </section>
         </div>
       </aside>
 
       <footer class="status-bar">
-        <span id="projectPath">No file loaded</span>
-        <span id="counts">scene 0 / multicut 0 / cut 0</span>
-        <span id="missingCount">Missing 0</span>
-        <span id="saveState">Saved</span>
-        <span id="lastSaved">Never</span>
+        <span id="projectPath" class="status-item"><span class="material-symbols-outlined app-icon" aria-hidden="true">folder</span><span class="status-value">No file loaded</span></span>
+        <span id="counts" class="status-item"><span class="material-symbols-outlined app-icon" aria-hidden="true">tag</span><span class="status-value">scene 0 / multicut 0 / cut 0</span></span>
+        <span id="missingCount" class="status-item"><span class="material-symbols-outlined app-icon" aria-hidden="true">image_not_supported</span><span class="status-value">Missing 0</span></span>
+        <span id="saveState" class="status-item"><span class="material-symbols-outlined app-icon" aria-hidden="true">cloud_done</span><span class="status-value">Saved</span></span>
+        <span id="lastSaved" class="status-item"><span class="material-symbols-outlined app-icon" aria-hidden="true">schedule</span><span class="status-value">Never</span></span>
       </footer>
     </div>
 
