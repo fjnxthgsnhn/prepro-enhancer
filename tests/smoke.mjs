@@ -514,6 +514,45 @@ await page.waitForFunction(() => {
   return rows.indexOf("ct001") > rows.indexOf("mc002");
 });
 
+const timelineProjectRows = [
+  expectedHeaders().join("\t"),
+  "scene\tsc500\t\t1\tTimeline Scene\t\t\t\t\t\t\t\t\t\t\t\t",
+  ...Array.from({ length: 8 }, (_, index) => {
+    const id = `ct50${index + 1}`;
+    return `cut\t${id}\tsc500\t${index + 1}\tTimeline Cut ${index + 1}\t5s\t\t\t\t\t\t\t\t\t\t\t`;
+  }),
+].join("\n");
+await loadProjectFile("timeline-selection.lctproj", makeStoredZip(new Map([
+  ["manifest.json", JSON.stringify({ projectName: "Timeline Selection", mainCutlist: "cutlist.tsv" })],
+  ["cutlist.tsv", timelineProjectRows],
+])));
+await expectText("#projectName", "Timeline Selection");
+await page.click('[data-view="timeline"]');
+await page.click('.timeline-clip.cut[data-id="ct501"]');
+await page.click('.timeline-clip.cut[data-id="ct503"]', { modifiers: ["Shift"] });
+await page.waitForFunction(() => (
+  document.querySelector('.timeline-clip.cut[data-id="ct501"]')?.classList.contains("selected") &&
+  document.querySelector('.timeline-clip.cut[data-id="ct502"]')?.classList.contains("selected") &&
+  document.querySelector('.timeline-clip.cut[data-id="ct503"]')?.classList.contains("selected")
+));
+await page.keyboard.press("Control+G");
+await page.waitForFunction(() => document.querySelector('.timeline-clip.multicut[data-id="mc001"]')?.classList.contains("selected"));
+await page.locator(".timeline-seek").evaluate((input) => {
+  input.value = "20";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await page.click('[data-view="table"]');
+await page.click('[data-view="timeline"]');
+await page.waitForFunction(() => {
+  const stage = document.querySelector(".timeline-stage");
+  const track = document.querySelector(".nested-track");
+  const playhead = document.querySelector(".playhead");
+  if (!stage || !track || !playhead || stage.scrollLeft <= 0) return false;
+  const playheadX = track.getBoundingClientRect().left + Number.parseFloat(playhead.style.left || "0");
+  const centerX = stage.getBoundingClientRect().left + stage.clientWidth / 2;
+  return Math.abs(playheadX - centerX) < 8;
+});
+
 const [projectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
 if (!projectDownload.suggestedFilename().endsWith(".lctproj")) throw new Error("Project download filename mismatch");
 const projectBytes = await readFile(await projectDownload.path());

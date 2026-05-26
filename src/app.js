@@ -249,6 +249,7 @@ const state = {
   timelinePreviewCutId: "",
   timelineScrubbing: false,
   timelineResizing: null,
+  timelineScrollLeft: 0,
   isWelcomeVisible: false,
   recentProjects: [],
 };
@@ -1221,6 +1222,8 @@ function cutCard(cut) {
 }
 
 function renderTimeline() {
+  const previousStage = el.timeline.querySelector(".timeline-stage");
+  if (previousStage) state.timelineScrollLeft = previousStage.scrollLeft;
   const model = timelineModel();
   const total = model.total;
   const playTime = Math.min(currentPlaybackTime(), total);
@@ -1253,8 +1256,10 @@ function renderTimeline() {
   root.querySelector("#timelineSeek").addEventListener("input", (event) => {
     setPlaybackOffset(Number(event.target.value) || 0);
   });
-  attachTimelineScrub(root.querySelector(".timeline-stage"));
+  const stage = root.querySelector(".timeline-stage");
+  attachTimelineScrub(stage);
   el.timeline.replaceChildren(root);
+  if (stage) stage.scrollLeft = Math.min(state.timelineScrollLeft, Math.max(0, stage.scrollWidth - stage.clientWidth));
   updateTimelinePlaybackUi({ forcePreview: true, model, active });
 }
 
@@ -1287,7 +1292,7 @@ function timelinePreviewHtml(cut, offset) {
 function renderTimelineLane(lane, items, type) {
   items.forEach((item) => {
     const clip = document.createElement("div");
-    clip.className = `clip timeline-clip ${type}${state.activeId === item.row.id ? " selected" : ""}`;
+    clip.className = `clip timeline-clip ${type}${state.selectedIds.has(item.row.id) ? " selected" : ""}`;
     clip.draggable = true;
     clip.dataset.id = item.row.id;
     clip.dataset.type = type;
@@ -1398,6 +1403,19 @@ function updateTimelinePlaybackUi({ forcePreview = false, model = timelineModel(
   syncTimelineAudio(cut, offset);
 }
 
+function centerTimelineOnPlayhead() {
+  const root = el.timeline.querySelector(".timeline");
+  const stage = root?.querySelector(".timeline-stage");
+  const track = root?.querySelector(".nested-track");
+  if (!stage) return;
+  const model = timelineModel();
+  const target = timelineXFromSeconds(currentPlaybackTime(), model) + (track?.offsetLeft || 0) - stage.clientWidth / 2;
+  const maxScroll = Math.max(0, stage.scrollWidth - stage.clientWidth);
+  stage.scrollLeft = clamp(target, 0, maxScroll);
+  state.timelineScrollLeft = stage.scrollLeft;
+  updateTimelinePlaybackUi({ model });
+}
+
 function attachTimelineScrub(stage) {
   if (!stage) return;
   const start = (event) => {
@@ -1423,7 +1441,10 @@ function attachTimelineScrub(stage) {
   stage.addEventListener("pointermove", move);
   stage.addEventListener("pointerup", end);
   stage.addEventListener("pointercancel", end);
-  stage.addEventListener("scroll", () => updateTimelinePlaybackUi());
+  stage.addEventListener("scroll", () => {
+    state.timelineScrollLeft = stage.scrollLeft;
+    updateTimelinePlaybackUi();
+  });
   stage.addEventListener("wheel", (event) => {
     const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
     if (!delta) return;
@@ -1704,10 +1725,14 @@ function toggleCollapse(id) {
 }
 
 function setView(view) {
+  const previousView = state.view;
   state.view = view;
   document.querySelectorAll(".view-btn").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   document.querySelectorAll(".view-pane").forEach((pane) => pane.classList.remove("active"));
   document.querySelector(`#${view}View`).classList.add("active");
+  if (view === "timeline" && previousView !== "timeline") {
+    requestAnimationFrame(centerTimelineOnPlayhead);
+  }
 }
 
 function updateRow(id, patch) {
@@ -2053,7 +2078,7 @@ function copySelectedIds() {
 }
 
 function groupSelectionFromShortcut() {
-  if (state.view !== "table") return;
+  if (!["table", "timeline"].includes(state.view)) return;
   if (selectedRowsOfType("cut").length >= 2) {
     groupCuts();
     return;
