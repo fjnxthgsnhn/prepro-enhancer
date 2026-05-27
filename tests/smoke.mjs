@@ -197,6 +197,25 @@ await dialog.dismiss();
 if (!sawInvalidZipAlert) throw new Error("Invalid project should show a load error");
 await expectText("#projectName", "Sample Project");
 await expectText("#counts", "scene 1 / multicut 2 / cut 3");
+const duplicateAssetIdProject = makeStoredZip(new Map([
+  ["manifest.json", JSON.stringify({ projectName: "Duplicate Asset IDs", mainCutlist: "cutlist.tsv", assets: "assets.json" })],
+  ["cutlist.tsv", expectedHeaders().join("\t")],
+  ["assets.json", JSON.stringify({ version: 1, assets: [
+    { id: "asset-dup", alias: "rui", path: "assets/rui.png", type: "image", title: "Rui" },
+    { id: "asset-dup", alias: "kou", path: "assets/kou.png", type: "image", title: "Kou" },
+  ] })],
+]));
+await loadProjectFile("duplicate-asset-ids.lctproj", duplicateAssetIdProject);
+await page.click('[data-view="assets"]');
+await expectCount(".asset-card", 2);
+const loadedAssetIds = await page.$$eval(".asset-card", (cards) => cards.map((card) => card.dataset.assetId));
+if (new Set(loadedAssetIds).size !== loadedAssetIds.length) throw new Error("Loaded asset IDs should be made unique");
+await page.locator(".asset-card").nth(1).locator(".asset-thumb").click();
+await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="alias"]')?.value === "kou");
+await page.locator('.asset-modal [data-asset-action="close"]').click();
+await page.reload();
+await expectText("#projectName", "Sample Project");
+await expectText("#counts", "scene 1 / multicut 2 / cut 3");
 for (const removedButton of ["addSceneBtn", "addMulticutBtn", "addCutBtn", "groupCutsBtn", "groupMulticutsBtn"]) {
   if (await page.locator(`#${removedButton}`).count()) throw new Error(`${removedButton} should be removed from the toolbar`);
 }
@@ -481,12 +500,25 @@ await expectText("#assetsView", "Drop asset files here");
 await dropFiles(".assets-drop-zone", [
   { name: "rui.png", type: "image/png" },
   { name: "voice.wav", type: "audio/wav" },
+  { name: "ルイ.png", type: "image/png" },
 ]);
-await expectCount(".asset-card", 2);
+await expectCount(".asset-card", 3);
 await page.waitForFunction(() => document.querySelector('.asset-card input[data-asset-field="alias"]')?.value === "rui");
+const droppedAssetIds = await page.$$eval(".asset-card", (cards) => cards.map((card) => card.dataset.assetId));
+if (new Set(droppedAssetIds).size !== droppedAssetIds.length) throw new Error("Dropped asset card IDs should be unique");
+const droppedAssetPaths = await page.$$eval(".asset-card .prompt-media-card[data-path]", (cards) => cards.map((card) => card.dataset.path));
+for (const expectedPath of ["assets/rui.png", "assets/voice.wav", "assets/ルイ.png"]) {
+  if (!droppedAssetPaths.includes(expectedPath)) throw new Error(`Dropped asset should use assets/ path: ${expectedPath}`);
+}
 await page.locator('.asset-card').first().click({ position: { x: 20, y: 150 } });
-await page.locator('.asset-card').nth(1).click({ modifiers: ["Shift"], position: { x: 20, y: 150 } });
+await page.waitForFunction(() => document.querySelectorAll(".asset-card.selected").length === 1);
+await page.locator('.asset-card').nth(1).click({ modifiers: process.platform === "darwin" ? ["Meta"] : ["Control"], position: { x: 20, y: 150 } });
 await page.waitForFunction(() => document.querySelectorAll(".asset-card.selected").length === 2);
+await page.locator('.asset-card').nth(2).click({ modifiers: ["Shift"], position: { x: 20, y: 150 } });
+await page.waitForFunction(() => document.querySelectorAll(".asset-card.selected").length === 3);
+await page.locator(".asset-card").nth(2).locator(".asset-thumb").click();
+await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "assets/ルイ.png");
+await page.locator('.asset-modal [data-asset-action="close"]').click();
 await page.keyboard.press("Delete");
 await expectCount(".asset-card", 0);
 await page.click("#addAssetBtn");
@@ -494,6 +526,14 @@ await page.locator('.asset-card [data-asset-field="alias"]').fill("rui");
 await page.locator('.asset-card [data-asset-field="alias"]').press("Tab");
 await page.locator('.asset-card [data-asset-field="title"]').fill("Rui");
 await page.locator('.asset-card [data-asset-field="title"]').press("Tab");
+await page.click('[data-view="promptEdit"]');
+await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').click();
+await page.keyboard.press("Control+A");
+await page.keyboard.press("Backspace");
+await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').pressSequentially("@rui");
+await page.waitForTimeout(120);
+if (await page.locator(".asset-suggest").count()) throw new Error("Asset without a path should not appear in @ suggestions");
+await page.click('[data-view="assets"]');
 await page.locator(".asset-card .asset-thumb").click();
 await expectText(".asset-modal", "Asset");
 await page.locator('.asset-modal [data-asset-field="path"]').fill("media/images/cut001.jpg");
@@ -511,11 +551,37 @@ await page.locator(".asset-card").nth(1).click();
 await page.keyboard.press("Backspace");
 await expectCount(".asset-card", 1);
 await page.click('[data-view="promptEdit"]');
-await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill("@rui");
+const imagePromptEditor = '.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor';
+const videoPromptEditor = '.prompt-edit-column[data-field="video_prompt"] .prompt-token-editor';
+await clearPromptEditor(imagePromptEditor);
+await page.locator(imagePromptEditor).pressSequentially("@rui");
 await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
 await page.keyboard.press("Tab");
-await expectText('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor', "media/images/cut001.jpg");
+if ((await promptEditorText(imagePromptEditor)) !== "media/images/cut001.jpg") throw new Error("PromptEdit @ suggestion should replace on line 1");
+await clearPromptEditor(imagePromptEditor);
+await page.locator(imagePromptEditor).pressSequentially("A");
+await page.keyboard.press("Enter");
+await page.locator(imagePromptEditor).pressSequentially("@rui");
+await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
+await page.keyboard.press("Tab");
+if ((await promptEditorText(imagePromptEditor)) !== "A\nmedia/images/cut001.jpg") throw new Error("PromptEdit @ suggestion should replace on line 2 without extra spaces");
+await clearPromptEditor(imagePromptEditor);
+await page.locator(imagePromptEditor).pressSequentially("A");
+await page.keyboard.press("Enter");
+await page.locator(imagePromptEditor).pressSequentially("B");
+await page.keyboard.press("Enter");
+await page.locator(imagePromptEditor).pressSequentially("@rui");
+await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
+await page.keyboard.press("Tab");
+if ((await promptEditorText(imagePromptEditor)) !== "A\nB\nmedia/images/cut001.jpg") throw new Error("PromptEdit @ suggestion should replace on line 3 without extra spaces");
 await page.waitForFunction(() => document.querySelector('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]'));
+await clearPromptEditor(videoPromptEditor);
+await page.locator(videoPromptEditor).pressSequentially("参照:");
+await page.keyboard.press("Enter");
+await page.locator(videoPromptEditor).pressSequentially("@rui");
+await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
+await page.locator(".asset-suggest button").first().click();
+if ((await promptEditorText(videoPromptEditor)) !== "参照:\nmedia/images/cut001.jpg") throw new Error("PromptEdit @ suggestion should replace by mouse click after newline");
 await page.click('[data-view="table"]');
 await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
 const detailImagePrompt = page.locator("#detailPanel textarea").nth(0);
@@ -755,10 +821,17 @@ async function clickFileAction(action) {
 }
 
 async function dropFiles(selector, files) {
-  await page.locator(selector).evaluate((target, files) => {
+  await dropFilesOnPage(page, selector, files);
+}
+
+async function dropFilesOnPage(targetPage, selector, files) {
+  await targetPage.locator(selector).evaluate((target, files) => {
     const dataTransfer = new DataTransfer();
     files.forEach((file) => {
-      dataTransfer.items.add(new File(["drop-test"], file.name, { type: file.type }));
+      const droppedFile = new File(["drop-test"], file.name, { type: file.type });
+      if (file.path) Object.defineProperty(droppedFile, "path", { value: file.path });
+      if (file.webkitRelativePath) Object.defineProperty(droppedFile, "webkitRelativePath", { value: file.webkitRelativePath });
+      dataTransfer.items.add(droppedFile);
     });
     target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
     target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
@@ -823,6 +896,32 @@ async function expectText(selector, text) {
     ({ selector, text }) => document.querySelector(selector)?.textContent?.includes(text),
     { selector, text },
   );
+}
+
+async function clearPromptEditor(selector) {
+  await page.locator(selector).click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.press("Backspace");
+}
+
+async function promptEditorText(selector) {
+  return page.locator(selector).evaluate((editor) => {
+    let text = "";
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.nodeValue || "";
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
+      if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "BR") {
+        if (!node.dataset.promptFiller) text += "\n";
+        return;
+      }
+      node.childNodes.forEach(walk);
+    };
+    editor.childNodes.forEach(walk);
+    return text.replace(/\u00a0/g, " ").replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n$/, "");
+  });
 }
 
 function expectedHeaders() {
@@ -938,6 +1037,20 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.waitForFunction(() => document.querySelector('.prompt-path-token[data-path="project/narushisuto-DK/assets/ルイ.png"]'));
   await tauriPage.locator('.prompt-path-token[data-path="project/narushisuto-DK/assets/ルイ.png"]').hover();
   await tauriPage.waitForFunction(() => document.querySelector(".prompt-hover-preview img"));
+  await tauriPage.click('[data-view="assets"]');
+  await dropFilesOnPage(tauriPage, ".assets-drop-zone", [
+    { name: "local-rui.png", type: "image/png", path: "C:\\Projects\\assets\\local-rui.png" },
+    { name: "external-rui.png", type: "image/png", path: "D:\\External\\external-rui.png" },
+    { name: "fallback-rui.png", type: "image/png" },
+  ]);
+  await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 3);
+  const tauriAssetPaths = await tauriPage.$$eval(".asset-card .prompt-media-card[data-path]", (cards) => cards.map((card) => card.dataset.path));
+  for (const expectedPath of ["assets/local-rui.png", "D:/External/external-rui.png", "assets/fallback-rui.png"]) {
+    if (!tauriAssetPaths.includes(expectedPath)) throw new Error(`Dropped asset path should preserve project-relative/external policy: ${expectedPath}`);
+  }
+  await tauriPage.locator(".asset-card").nth(1).locator(".asset-thumb").click();
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "D:/External/external-rui.png");
+  await tauriPage.locator('.asset-modal [data-asset-action="close"]').click();
   await tauriPage.click('[data-view="table"]');
   for (let index = 0; index < 11; index += 1) {
     tauriPage.once("dialog", (dialog) => dialog.accept());

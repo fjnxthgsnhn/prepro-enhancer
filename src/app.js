@@ -663,10 +663,19 @@ function loadAssetsFromEntries(entries, manifest) {
   try {
     const parsed = JSON.parse(text);
     const assets = Array.isArray(parsed.assets) ? parsed.assets : [];
-    return assets.map(normalizeAsset).filter((asset) => asset.alias || asset.path);
+    return normalizeAssets(assets).filter((asset) => asset.alias || asset.path);
   } catch {
     return [];
   }
+}
+
+function normalizeAssets(assets = []) {
+  const used = new Set();
+  return assets.map(normalizeAsset).map((asset) => {
+    if (!asset.id || used.has(asset.id)) asset.id = nextAssetId(used);
+    used.add(asset.id);
+    return asset;
+  });
 }
 
 function normalizeAsset(asset = {}) {
@@ -1926,7 +1935,7 @@ function renderPromptEdit() {
   el.promptEdit.querySelectorAll(".prompt-token-editor").forEach((editor) => {
     editor.addEventListener("focus", () => startPromptEditSession(editor));
     editor.addEventListener("input", () => handlePromptEditorInput(editor));
-    editor.addEventListener("keydown", (event) => handleAssetSuggestKeydown(event));
+    editor.addEventListener("keydown", handlePromptEditorKeydown);
     editor.addEventListener("compositionstart", () => startPromptEditorComposition(editor));
     editor.addEventListener("compositionend", () => finishPromptEditorComposition(editor));
     editor.addEventListener("blur", (event) => finishPromptEditSession(editor, event));
@@ -1973,7 +1982,9 @@ function renderAssets() {
   el.assetsView.querySelectorAll(".asset-thumb").forEach((thumb) => {
     thumb.addEventListener("click", (event) => {
       event.stopPropagation();
-      state.assetModalId = thumb.closest(".asset-card")?.dataset.assetId || "";
+      const id = thumb.closest(".asset-card")?.dataset.assetId || "";
+      if (!assetById(id)) return;
+      state.assetModalId = id;
       renderAssets();
     });
   });
@@ -2071,7 +2082,7 @@ function handleAssetDrop(event) {
 }
 
 function assetFromDroppedFile(file) {
-  const path = file.path || file.webkitRelativePath || file.name;
+  const path = assetPathFromDroppedFile(file);
   setSessionMediaUrl(path, file);
   const title = fileStem(path);
   return {
@@ -2082,6 +2093,33 @@ function assetFromDroppedFile(file) {
     title,
     note: "",
   };
+}
+
+function assetPathFromDroppedFile(file) {
+  const rawPath = normalizeAssetPathSeparators(file.path || "");
+  const relativeFromProject = rawPath ? relativeAssetPathFromProject(rawPath) : "";
+  if (relativeFromProject) return relativeFromProject;
+  if (rawPath && isAbsoluteAssetPath(rawPath)) return rawPath;
+  const webkitPath = normalizeAssetPathSeparators(file.webkitRelativePath || "");
+  if (webkitPath) return webkitPath;
+  return `assets/${normalizeAssetPathSeparators(file.name || "asset")}`;
+}
+
+function relativeAssetPathFromProject(path) {
+  if (!path || !state.projectPath || !isAbsoluteAssetPath(path)) return "";
+  const projectDir = normalizeAssetPathSeparators(state.projectPath).replace(/\/[^/]*$/, "");
+  if (!projectDir) return "";
+  const normalizedPath = normalizeAssetPathSeparators(path);
+  const prefix = projectDir.endsWith("/") ? projectDir : `${projectDir}/`;
+  return normalizedPath.toLowerCase().startsWith(prefix.toLowerCase()) ? normalizedPath.slice(prefix.length) : "";
+}
+
+function isAbsoluteAssetPath(path) {
+  return /^[A-Za-z]:\//.test(path) || path.startsWith("/");
+}
+
+function normalizeAssetPathSeparators(path) {
+  return String(path || "").replace(/\\/g, "/").replace(/^\/+/, (match) => match.length > 1 ? "/" : match);
 }
 
 async function handleAssetAction(action, id) {
@@ -2180,11 +2218,15 @@ function uniqueAssetAlias(base) {
   return alias;
 }
 
-function nextAssetId() {
-  const taken = new Set(state.assets.map((asset) => asset.id));
-  let index = state.assets.length + 1;
-  let id = `asset-${Date.now().toString(36)}-${index}`;
-  while (taken.has(id)) id = `asset-${Date.now().toString(36)}-${index++}`;
+let assetIdCounter = 0;
+
+function nextAssetId(extraTaken = new Set()) {
+  const taken = new Set([...state.assets.map((asset) => asset.id), ...extraTaken]);
+  let id = typeof crypto !== "undefined" && crypto.randomUUID ? `asset-${crypto.randomUUID()}` : "";
+  while (!id || taken.has(id)) {
+    assetIdCounter += 1;
+    id = `asset-${Date.now().toString(36)}-${assetIdCounter}-${Math.random().toString(36).slice(2, 8)}`;
+  }
   return id;
 }
 
@@ -2250,16 +2292,24 @@ function promptMediaCardHtml(path, compact = false) {
 
 function tokenizePromptText(text) {
   const matches = mediaPathMatches(text);
-  if (!matches.length) return escapeHtml(text).replace(/\n/g, "<br>");
+  if (!matches.length) return promptTextSegmentHtml(text) + promptTrailingBreakHtml(text);
   let html = "";
   let cursor = 0;
   matches.forEach((match) => {
-    html += escapeHtml(text.slice(cursor, match.index)).replace(/\n/g, "<br>");
+    html += promptTextSegmentHtml(text.slice(cursor, match.index));
     html += `<span class="prompt-path-token" data-path="${escapeAttr(match.path)}">${escapeHtml(match.path)}</span>`;
     cursor = match.end;
   });
-  html += escapeHtml(text.slice(cursor)).replace(/\n/g, "<br>");
+  html += promptTextSegmentHtml(text.slice(cursor)) + promptTrailingBreakHtml(text);
   return html;
+}
+
+function promptTextSegmentHtml(text) {
+  return escapeHtml(text).replace(/\n/g, "<br>");
+}
+
+function promptTrailingBreakHtml(text) {
+  return String(text || "").endsWith("\n") ? `<br data-prompt-filler="true">` : "";
 }
 
 function startPromptEditSession(editor) {
@@ -2302,6 +2352,14 @@ function finishPromptEditorComposition(editor) {
 
 function isPromptEditorComposing(editor) {
   return editor?.dataset?.composing === "true";
+}
+
+function handlePromptEditorKeydown(event) {
+  if (handleAssetSuggestKeydown(event)) return;
+  if (event.key === "Enter") {
+    event.preventDefault();
+    insertPromptEditorText(event.currentTarget, "\n");
+  }
 }
 
 function finishPromptEditSession(editor, event = {}) {
@@ -2350,7 +2408,62 @@ function retokenizePromptEditor(editor) {
 }
 
 function promptEditorText(editor) {
-  return editor.innerText.replace(/\r\n/g, "\n").replace(/\u00a0/g, " ").replace(/\n$/, "");
+  return normalizePromptEditorText(promptEditorPlainText(editor));
+}
+
+function promptEditorPlainText(root) {
+  let text = "";
+  const walk = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.nodeValue || "";
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
+    if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "BR") {
+      if (!node.dataset.promptFiller) text += "\n";
+      return;
+    }
+    const isBlock = node.nodeType === Node.ELEMENT_NODE && node !== root && /^(DIV|P|LI)$/i.test(node.tagName);
+    if (isBlock && text && !text.endsWith("\n")) text += "\n";
+    node.childNodes.forEach(walk);
+    if (isBlock && text && !text.endsWith("\n")) text += "\n";
+  };
+  root.childNodes.forEach(walk);
+  return text.replace(/\u00a0/g, " ");
+}
+
+function normalizePromptEditorText(text) {
+  return String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n$/, "");
+}
+
+function promptEditorOffsetForDomPosition(editor, node, offset) {
+  if (!node || !editor.contains(node)) return promptEditorText(editor).length;
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  range.setEnd(node, offset);
+  return promptEditorPlainText(range.cloneContents()).replace(/\r\n/g, "\n").replace(/\r/g, "\n").length;
+}
+
+function promptEditorSelectionOffsets(editor) {
+  const selection = window.getSelection();
+  const textLength = promptEditorText(editor).length;
+  if (!selection?.rangeCount || !editor.contains(selection.anchorNode)) return { start: textLength, end: textLength };
+  const range = selection.getRangeAt(0);
+  if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) return { start: textLength, end: textLength };
+  const start = promptEditorOffsetForDomPosition(editor, range.startContainer, range.startOffset);
+  const end = promptEditorOffsetForDomPosition(editor, range.endContainer, range.endOffset);
+  return { start: Math.min(start, end), end: Math.max(start, end) };
+}
+
+function insertPromptEditorText(editor, insertText) {
+  if (!editor) return;
+  const text = promptEditorText(editor);
+  const range = promptEditorSelectionOffsets(editor);
+  const next = `${text.slice(0, range.start)}${insertText}${text.slice(range.end)}`;
+  editor.innerHTML = tokenizePromptText(next);
+  bindPromptPathTokens(editor);
+  restorePromptEditorSelection(editor, range.start + insertText.length);
+  editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: insertText }));
 }
 
 function promptEditorKey(editor) {
@@ -2360,7 +2473,7 @@ function promptEditorKey(editor) {
 function pastePlainText(event) {
   event.preventDefault();
   const text = event.clipboardData?.getData("text/plain") || "";
-  document.execCommand("insertText", false, text);
+  insertPromptEditorText(event.currentTarget, text.replace(/\r\n/g, "\n"));
 }
 
 function extractPromptMediaPaths(text) {
@@ -2448,6 +2561,7 @@ function hidePromptHoverPreview() {
 function attachAssetAutocomplete(target) {
   if (!target) return;
   target.addEventListener("keydown", handleAssetSuggestKeydown);
+  if (target.isContentEditable) target.addEventListener("beforeinput", () => setTimeout(() => updateAssetSuggest(target), 0));
   target.addEventListener("input", () => updateAssetSuggest(target));
   target.addEventListener("keyup", () => updateAssetSuggest(target));
   target.addEventListener("blur", () => setTimeout(() => {
@@ -2465,13 +2579,19 @@ function updateAssetSuggest(target) {
 }
 
 function assetSuggestContext(target) {
-  const text = target.isContentEditable ? target.innerText : target.value;
+  const text = target.isContentEditable ? promptEditorText(target) : target.value;
   const cursor = target.isContentEditable ? promptEditorSelectionOffset(target) : target.selectionStart;
   if (cursor == null) return null;
   const before = text.slice(0, cursor);
-  const match = before.match(/(^|[\s"'`([{「『])@([\p{L}\p{N}_-]*)$/u);
+  const match = before.match(/@([\p{L}\p{N}_-]*)$/u);
   if (!match) return null;
-  return { text, start: cursor - match[2].length - 1, end: cursor, query: match[2] || "" };
+  const start = cursor - match[0].length;
+  if (start > 0 && !isAssetSuggestBoundary(text[start - 1])) return null;
+  return { text, start, end: cursor, query: match[1] || "" };
+}
+
+function isAssetSuggestBoundary(char) {
+  return /[\s"'`([{<>,.:;!?、。・「」『』【】（）]/u.test(char);
 }
 
 function assetSuggestionMatches(query) {
@@ -2492,7 +2612,7 @@ function renderAssetSuggest(target, context, matches) {
   closeAssetSuggest();
   const popup = document.createElement("div");
   popup.className = "asset-suggest";
-  const rect = target.getBoundingClientRect();
+  const rect = assetSuggestAnchorRect(target) || target.getBoundingClientRect();
   popup.style.left = `${Math.max(8, rect.left + 12)}px`;
   popup.style.top = `${Math.min(window.innerHeight - 180, rect.top + 30)}px`;
   popup.innerHTML = matches.map((asset, index) => `
@@ -2510,6 +2630,16 @@ function renderAssetSuggest(target, context, matches) {
   state.assetSuggest = { popup, target, context, matches, index: 0 };
 }
 
+function assetSuggestAnchorRect(target) {
+  if (!target?.isContentEditable) return null;
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !target.contains(selection.anchorNode)) return null;
+  const range = selection.getRangeAt(0).cloneRange();
+  range.collapse(true);
+  const rect = range.getBoundingClientRect?.();
+  return rect && (rect.width || rect.height) ? rect : null;
+}
+
 function handleAssetSuggestKeydown(event) {
   const suggest = state.assetSuggest;
   if (!suggest || suggest.target !== event.target) return false;
@@ -2525,7 +2655,9 @@ function handleAssetSuggestKeydown(event) {
     return true;
   }
   if (event.key === "Enter" || event.key === "Tab") {
-    applyAssetSuggestion(suggest.target, suggest.context, suggest.matches[suggest.index]);
+    const context = assetSuggestContext(suggest.target) || suggest.context;
+    const matches = assetSuggestionMatches(context.query);
+    applyAssetSuggestion(suggest.target, context, matches[suggest.index] || suggest.matches[suggest.index]);
     event.preventDefault();
     return true;
   }
@@ -2536,16 +2668,26 @@ function applyAssetSuggestion(target, context, asset) {
   if (!asset) return;
   if (target?.isContentEditable) delete target.dataset.composing;
   if (target.isContentEditable) {
-    const text = target.innerText;
-    target.innerText = `${text.slice(0, context.start)}${asset.path}${text.slice(context.end)}`;
+    const text = promptEditorText(target);
+    const end = assetSuggestReplacementEnd(text, context.end);
+    const next = `${text.slice(0, context.start)}${asset.path}${text.slice(end)}`;
+    target.innerHTML = tokenizePromptText(next);
+    bindPromptPathTokens(target);
     restorePromptEditorSelection(target, context.start + asset.path.length);
     target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText", data: asset.path }));
   } else {
-    target.value = `${context.text.slice(0, context.start)}${asset.path}${context.text.slice(context.end)}`;
+    const end = assetSuggestReplacementEnd(context.text, context.end);
+    target.value = `${context.text.slice(0, context.start)}${asset.path}${context.text.slice(end)}`;
     target.setSelectionRange(context.start + asset.path.length, context.start + asset.path.length);
     target.dispatchEvent(new Event("input", { bubbles: true }));
   }
   closeAssetSuggest();
+}
+
+function assetSuggestReplacementEnd(text, end) {
+  let cursor = end;
+  while (/[\p{L}\p{N}_-]/u.test(text[cursor] || "")) cursor += 1;
+  return cursor;
 }
 
 function closeAssetSuggest() {
@@ -2606,35 +2748,51 @@ function isBrowserSafeMediaPath(path) {
 
 function promptEditorSelectionOffset(editor) {
   const selection = window.getSelection();
-  if (!selection?.rangeCount || !editor.contains(selection.anchorNode)) return editor.innerText.length;
-  const range = selection.getRangeAt(0).cloneRange();
-  range.selectNodeContents(editor);
-  range.setEnd(selection.anchorNode, selection.anchorOffset);
-  return range.toString().length;
+  if (!selection?.rangeCount || !editor.contains(selection.anchorNode)) return promptEditorText(editor).length;
+  return promptEditorOffsetForDomPosition(editor, selection.anchorNode, selection.anchorOffset);
 }
 
 function restorePromptEditorSelection(editor, offset) {
-  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
-  let remaining = Math.max(0, offset);
-  let node;
-  while ((node = walker.nextNode())) {
-    if (remaining <= node.nodeValue.length) {
-      const range = document.createRange();
-      range.setStart(node, remaining);
-      range.collapse(true);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-      return;
-    }
-    remaining -= node.nodeValue.length;
-  }
   const range = document.createRange();
-  range.selectNodeContents(editor);
-  range.collapse(false);
+  const point = promptEditorDomPointForOffset(editor, offset);
+  range.setStart(point.node, point.offset);
+  range.collapse(true);
   const selection = window.getSelection();
   selection.removeAllRanges();
   selection.addRange(range);
+}
+
+function promptEditorDomPointForOffset(editor, offset) {
+  let remaining = Math.max(0, offset);
+  const childIndex = (node) => Array.prototype.indexOf.call(node.parentNode?.childNodes || [], node);
+  const walk = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const length = node.nodeValue?.length || 0;
+      if (remaining <= length) return { node, offset: remaining };
+      remaining -= length;
+      return null;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "BR") {
+      const parent = node.parentNode || editor;
+      const index = childIndex(node);
+      if (remaining <= 0) return { node: parent, offset: index };
+      remaining -= 1;
+      if (remaining <= 0) {
+        if (node.nextSibling?.nodeType === Node.TEXT_NODE) return { node: node.nextSibling, offset: 0 };
+        const textNode = document.createTextNode("");
+        parent.insertBefore(textNode, node.nextSibling);
+        return { node: textNode, offset: 0 };
+      }
+      return null;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return null;
+    for (const child of node.childNodes) {
+      const point = walk(child);
+      if (point) return point;
+    }
+    return null;
+  };
+  return walk(editor) || { node: editor, offset: editor.childNodes.length };
 }
 
 function renderValidation(issues) {
@@ -3716,7 +3874,7 @@ async function projectArchiveBytes(options = {}) {
     ["AGENTS.md", PROJECT_AGENTS_MD],
     ["timeline.json", JSON.stringify({ collapsed, activeId }, null, 2)],
     ["settings.json", JSON.stringify({ view }, null, 2)],
-    ["assets.json", JSON.stringify({ version: 1, assets: sourceAssets.map(normalizeAsset) }, null, 2)],
+    ["assets.json", JSON.stringify({ version: 1, assets: normalizeAssets(sourceAssets) }, null, 2)],
     ["media_index.json", JSON.stringify({ media: sourceRows.filter((row) => row.row_type === "cut").map((row) => ({ id: row.id, image: row.image, audio_file: row.audio_file })) }, null, 2)],
   ]);
   for (const [path, mediaBlob] of sourceMediaBlobs.entries()) {
