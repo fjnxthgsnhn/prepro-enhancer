@@ -87,6 +87,25 @@ fn read_media_file(project_path: String, media_path: String) -> Result<OpenedFil
     })
 }
 
+#[tauri::command]
+fn pick_asset_file(project_path: String) -> Result<Option<OpenedFile>, String> {
+    let Some(path) = rfd::FileDialog::new().pick_file() else {
+        return Ok(None);
+    };
+    let bytes = fs::read(&path).map_err(|error| error.to_string())?;
+    let project_path = PathBuf::from(project_path);
+    let parent = project_path.parent();
+    let display_path = parent
+        .and_then(|base| path.strip_prefix(base).ok())
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|| path.to_string_lossy().to_string());
+    Ok(Some(OpenedFile {
+        file_name: file_name(&path),
+        path: display_path,
+        bytes,
+    }))
+}
+
 fn resolve_relative_media_path(project_dir: &Path, media_path: &Path) -> PathBuf {
     let direct = project_dir.join(media_path);
     if direct.exists() {
@@ -275,6 +294,7 @@ fn main() {
             save_project_as,
             read_project_file,
             read_media_file,
+            pick_asset_file,
             save_project_backup,
             list_project_backups,
             read_project_backup,

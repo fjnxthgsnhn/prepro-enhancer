@@ -43,6 +43,8 @@ const newProjectBytes = await readFile(await newProjectDownload.path());
 const newProjectEntries = readZipEntries(newProjectBytes);
 const newCutlist = newProjectEntries.get("cutlist.tsv") || "";
 if (newCutlist.trim() !== expectedHeaders().join("\t")) throw new Error(`NewProject cutlist should contain only headers: ${newCutlist}`);
+const newAssets = JSON.parse(newProjectEntries.get("assets.json") || "{}");
+if (!Array.isArray(newAssets.assets) || newAssets.assets.length !== 0) throw new Error("NewProject should include an empty assets.json");
 expectAgentsMd(newProjectEntries.get("AGENTS.md"), "NewProject");
 await expectText("#counts", "scene 0 / multicut 0 / cut 0");
 await expectCount(".data-table tbody tr[data-id]", 0);
@@ -446,6 +448,22 @@ await expectCount(".prompt-edit-column", 2);
 await expectText('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor', "extreme close-up");
 await expectText('.prompt-edit-column[data-field="video_prompt"] .prompt-token-editor', "slow dolly");
 if (await page.locator(".prompt-media-card").count()) throw new Error("PromptEdit should preview only paths written in the editor, not image/audio_file columns");
+const imeEditor = page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor');
+await imeEditor.evaluate((editor) => {
+  editor.focus();
+  editor.innerText = "";
+  editor.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
+  editor.innerText = "テスト";
+  editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "テスト", isComposing: true }));
+  editor.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "テスト" }));
+});
+await page.waitForTimeout(250);
+const imeText = await imeEditor.evaluate((editor) => editor.innerText.trim());
+if (imeText !== "テスト") throw new Error(`IME composition text should not duplicate: ${imeText}`);
+await expectText("#saveState", "Unsaved");
+await page.click('[data-view="table"]');
+await expectText('tbody tr[data-id="ct001"] td[data-column="image_prompt"]', "テスト");
+await page.click('[data-view="promptEdit"]');
 await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill("media/images/cut001.jpg\nstill prompt revised");
 await page.waitForFunction(() => document.querySelector('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]'));
 await page.waitForFunction(() => document.querySelector('.prompt-path-token[data-path="media/images/cut001.jpg"]'));
@@ -457,11 +475,71 @@ await expectText('tbody tr[data-id="ct001"] td[data-column="video_prompt"]', "vi
 await page.click('[data-view="promptEdit"]');
 await page.locator('.prompt-path-token[data-path="media/images/cut001.jpg"]').hover();
 await page.waitForFunction(() => !document.querySelector(".prompt-hover-preview")?.hidden);
+
+await page.click('[data-view="assets"]');
+await expectText("#assetsView", "No assets registered.");
+await page.click("#addAssetBtn");
+await page.locator('[data-asset-field="alias"]').fill("rui");
+await page.locator('[data-asset-field="alias"]').press("Tab");
+await page.locator('[data-asset-field="path"]').fill("media/images/cut001.jpg");
+await page.locator('[data-asset-field="path"]').press("Tab");
+await page.locator('[data-asset-field="title"]').fill("Rui");
+await page.locator('[data-asset-field="title"]').press("Tab");
+await page.waitForFunction(() => document.querySelector('#assetsView .prompt-media-card[data-kind="image"]'));
+await page.click("#addAssetBtn");
+await page.locator('[data-asset-index="1"][data-asset-field="alias"]').fill("rui");
+await page.locator('[data-asset-index="1"][data-asset-field="alias"]').press("Tab");
+await expectText("#assetsView", "Duplicate aliases");
+await page.locator('[data-asset-index="1"][data-asset-action="delete"]').click();
+await page.click('[data-view="promptEdit"]');
+await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill("@rui");
+await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
+await page.keyboard.press("Tab");
+await expectText('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor', "media/images/cut001.jpg");
+await page.waitForFunction(() => document.querySelector('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]'));
+await page.click('[data-view="table"]');
+await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
+const detailImagePrompt = page.locator("#detailPanel textarea").nth(0);
+await detailImagePrompt.fill("@rui");
+await page.waitForFunction(() => (
+  document.querySelector(".asset-suggest")?.textContent?.includes("@rui") ||
+  document.querySelectorAll("#detailPanel textarea")[0]?.value.includes("media/images/cut001.jpg")
+));
+if (await page.locator(".asset-suggest").count()) await page.keyboard.press("Tab");
+await page.waitForFunction(() => document.querySelectorAll("#detailPanel textarea")[0]?.value.includes("media/images/cut001.jpg"));
+await page.click('[data-view="table"]');
+await page.waitForFunction(() => document.querySelector('tbody tr[data-id="ct002"]'));
+await page.locator("#tableView").evaluate((node) => {
+  node.scrollLeft = node.scrollWidth;
+});
+const tableImagePromptCell = page.locator('tbody tr[data-id="ct002"] td[data-column="image_prompt"]');
+await tableImagePromptCell.evaluate((node) => node.scrollIntoView({ block: "center", inline: "center" }));
+await tableImagePromptCell.click();
+if ((await page.locator('td[data-column="image_prompt"] input').count()) === 0) {
+  await tableImagePromptCell.click();
+}
+await page.locator('td[data-column="image_prompt"] input').click();
+await page.keyboard.press("Control+A");
+await page.keyboard.press("Backspace");
+await page.locator('td[data-column="image_prompt"] input').pressSequentially("@rui");
+await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
+await page.keyboard.press("Tab");
+await page.keyboard.press("Enter");
+await expectText('tbody tr[data-id="ct002"] td[data-column="image_prompt"]', "media/images/cut001.jpg");
+const [assetsProjectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
+const assetsProjectEntries = readZipEntries(await readFile(await assetsProjectDownload.path()));
+const savedAssets = JSON.parse(assetsProjectEntries.get("assets.json") || "{}");
+if (savedAssets.assets?.[0]?.alias !== "rui" || savedAssets.assets?.[0]?.path !== "media/images/cut001.jpg") {
+  throw new Error("assets.json should persist registered assets");
+}
 await page.click('[data-view="table"]');
 if ((await page.locator('td[data-column="title"] input').count()) !== 0) {
   throw new Error("First editable cell click should select the row without opening an input");
 }
 await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
+if ((await page.locator('td[data-column="title"] input').count()) === 0) {
+  await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
+}
 await page.locator('td[data-column="title"] input').fill("Edited Smoke Cut");
 await page.keyboard.press("Enter");
 await expectText('tbody tr[data-id="ct001"] td[data-column="title"]', "Edited Smoke Cut");
@@ -1010,6 +1088,11 @@ async function installTauriMock(targetPage, options = {}) {
             if (!resolved) throw new Error("media not found");
             const bytes = mediaFiles.get(resolved);
             return { path: resolved, file_name: resolved.split(/[\\/]/).pop(), bytes };
+          }
+          if (command === "pick_asset_file") {
+            const path = config.pickAssetPath || "C:\\Projects\\media\\picked-asset.png";
+            const bytes = mediaFiles.get(path) || new Uint8Array([137, 80, 78, 71]);
+            return { path: "media/picked-asset.png", file_name: path.split(/[\\/]/).pop(), bytes };
           }
           if (command === "save_project_backup") {
             const projectPath = args.projectPath || args.project_path;

@@ -94,6 +94,7 @@ const DEFAULT_MANIFEST = {
   appVersion: "0.1.0",
   projectName: "Untitled Project",
   mainCutlist: "cutlist.tsv",
+  assets: "assets.json",
   timeline: "timeline.json",
   settings: "settings.json",
   pathMode: "relative",
@@ -234,6 +235,8 @@ const state = {
   mediaUrls: new Map(),
   mediaBlobs: new Map(),
   promptPreviewUrls: new Map(),
+  assets: [],
+  assetSuggest: null,
   importWarnings: [],
   collapsed: new Set(),
   panelCollapsed: new Set(),
@@ -277,6 +280,7 @@ const el = {
   storyboard: document.querySelector("#storyboardView"),
   timeline: document.querySelector("#timelineView"),
   promptEdit: document.querySelector("#promptEditView"),
+  assetsView: document.querySelector("#assetsView"),
   welcome: document.querySelector("#welcomeView"),
   welcomeNew: document.querySelector("#welcomeNewProjectBtn"),
   welcomeOpen: document.querySelector("#welcomeOpenProjectBtn"),
@@ -380,9 +384,9 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     redo();
   }
-  if (event.altKey && ["1", "2", "3", "4"].includes(event.key)) {
+  if (event.altKey && ["1", "2", "3", "4", "5"].includes(event.key)) {
     event.preventDefault();
-    setView(["table", "storyboard", "timeline", "promptEdit"][Number(event.key) - 1]);
+    setView(["table", "storyboard", "timeline", "promptEdit", "assets"][Number(event.key) - 1]);
   }
   if (event.key === "Escape") {
     closeContextMenu();
@@ -397,6 +401,7 @@ document.addEventListener("keyup", (event) => {
 document.addEventListener("click", (event) => {
   if (!event.target.closest?.(".table-context-menu")) closeContextMenu();
   if (!event.target.closest?.(".file-menu")) closeFileMenu();
+  if (!event.target.closest?.(".asset-suggest")) closeAssetSuggest();
 });
 
 setInterval(() => {
@@ -501,7 +506,7 @@ async function newProject() {
   manifest.projectName = "Untitled Project";
   const rows = [];
   const defaultName = `${safeName(manifest.projectName)}.lctproj`;
-  const bytes = await projectArchiveBytes({ manifest, rows, mediaBlobs: new Map(), collapsed: [], activeId: "", view: "table" });
+  const bytes = await projectArchiveBytes({ manifest, rows, assets: [], mediaBlobs: new Map(), collapsed: [], activeId: "", view: "table" });
   if (tauriInvoke) {
     const saved = await tauriInvoke("save_project_as", { defaultName, bytes: [...bytes] });
     if (!saved) return;
@@ -557,6 +562,7 @@ function loadTsv(text, name) {
     projectName: name || "TSV Project",
   };
   state.rows = loadRowsFromTsv(text);
+  state.assets = [];
   state.mediaUrls = new Map();
   state.mediaBlobs = new Map();
   if (text === SAMPLE_TSV) seedSampleMedia();
@@ -616,6 +622,7 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
   revokeMediaUrls();
   state.manifest = manifest;
   state.rows = rows;
+  state.assets = loadAssetsFromEntries(entries, manifest);
   state.mediaUrls = new Map();
   state.mediaBlobs = new Map();
   entries.forEach((entry, name) => {
@@ -637,6 +644,30 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
   state.undo = [];
   state.redo = [];
   render();
+}
+
+function loadAssetsFromEntries(entries, manifest) {
+  const assetMatch = findZipEntry(entries, manifest.assets || "assets.json");
+  const text = decodeZipText(assetMatch?.entry);
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    const assets = Array.isArray(parsed.assets) ? parsed.assets : [];
+    return assets.map(normalizeAsset).filter((asset) => asset.alias || asset.path);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeAsset(asset = {}) {
+  const path = String(asset.path || "").trim();
+  return {
+    alias: String(asset.alias || "").replace(/^@+/, "").trim(),
+    path,
+    type: ["image", "audio", "other"].includes(asset.type) ? asset.type : assetTypeFromPath(path),
+    title: String(asset.title || "").trim(),
+    note: String(asset.note || "").trim(),
+  };
 }
 
 async function refreshTsvFromProject() {
@@ -712,6 +743,10 @@ function renderCurrentView() {
   }
   if (state.view === "promptEdit") {
     renderPromptEdit();
+    return;
+  }
+  if (state.view === "assets") {
+    renderAssets();
     return;
   }
   renderTable();
@@ -1114,6 +1149,7 @@ function render() {
   renderStoryboard();
   renderTimeline();
   renderPromptEdit();
+  renderAssets();
   renderDetail();
   renderPrompt();
   renderMedia();
@@ -1335,9 +1371,11 @@ function editCell(td, id, column) {
     else render();
   };
   input.addEventListener("keydown", (event) => {
+    if (handleAssetSuggestKeydown(event)) return;
     if (event.key === "Enter") finish(true);
     if (event.key === "Escape") finish(false);
   });
+  attachAssetAutocomplete(input);
   input.addEventListener("blur", () => finish(true));
 }
 
@@ -1809,6 +1847,7 @@ function renderDetail() {
     const input = wrapper.querySelector(tag);
     if (tag === "input") input.value = autoDuration ? displayDuration(row) : row[field] || "";
     if (!autoDuration) input.addEventListener("change", () => updateRow(row.id, { [field]: input.value }));
+    if (!autoDuration) attachAssetAutocomplete(input);
     form.appendChild(wrapper);
   });
   el.detail.replaceChildren(form);
@@ -1866,8 +1905,12 @@ function renderPromptEdit() {
   el.promptEdit.querySelectorAll(".prompt-token-editor").forEach((editor) => {
     editor.addEventListener("focus", () => startPromptEditSession(editor));
     editor.addEventListener("input", () => handlePromptEditorInput(editor));
+    editor.addEventListener("keydown", (event) => handleAssetSuggestKeydown(event));
+    editor.addEventListener("compositionstart", () => startPromptEditorComposition(editor));
+    editor.addEventListener("compositionend", () => finishPromptEditorComposition(editor));
     editor.addEventListener("blur", (event) => finishPromptEditSession(editor, event));
     editor.addEventListener("paste", pastePlainText);
+    attachAssetAutocomplete(editor);
   });
   el.promptEdit.querySelectorAll(".prompt-path-token").forEach((token) => {
     token.addEventListener("mouseenter", (event) => showPromptHoverPreview(event, token.dataset.path || ""));
@@ -1875,6 +1918,114 @@ function renderPromptEdit() {
     token.addEventListener("mouseleave", hidePromptHoverPreview);
   });
   resolvePromptMediaPreviews();
+}
+
+function renderAssets() {
+  if (!el.assetsView) return;
+  const duplicateAliases = duplicateAssetAliases();
+  el.assetsView.innerHTML = `
+    <div class="assets-view">
+      <div class="assets-toolbar">
+        <button id="addAssetBtn" type="button">${iconHtml("note_add")}<span class="icon-button-label">Add Asset</span></button>
+      </div>
+      ${duplicateAliases.size ? `<div class="asset-warning">Duplicate aliases: ${escapeHtml([...duplicateAliases].join(", "))}</div>` : ""}
+      <div class="assets-list">
+        ${state.assets.length ? state.assets.map((asset, index) => assetRowHtml(asset, index, duplicateAliases)).join("") : `<div class="empty-state">No assets registered.</div>`}
+      </div>
+    </div>`;
+  el.assetsView.querySelector("#addAssetBtn")?.addEventListener("click", addAsset);
+  el.assetsView.querySelectorAll("[data-asset-field]").forEach((input) => {
+    input.addEventListener("change", () => updateAsset(Number(input.dataset.assetIndex), input.dataset.assetField, input.value));
+    attachAssetAutocomplete(input);
+  });
+  el.assetsView.querySelectorAll("[data-asset-action]").forEach((button) => {
+    button.addEventListener("click", () => handleAssetAction(button.dataset.assetAction, Number(button.dataset.assetIndex)));
+  });
+  resolvePromptMediaPreviews(el.assetsView);
+}
+
+function assetRowHtml(asset, index, duplicateAliases) {
+  const duplicate = duplicateAliases.has(asset.alias);
+  return `
+    <article class="asset-row${duplicate ? " invalid" : ""}" data-asset-index="${index}">
+      <div class="asset-preview">${promptMediaCardHtml(asset.path || "", true)}</div>
+      <label>alias<input data-asset-index="${index}" data-asset-field="alias" value="${escapeAttr(asset.alias)}"></label>
+      <label>path<input data-asset-index="${index}" data-asset-field="path" value="${escapeAttr(asset.path)}"></label>
+      <label>type<select data-asset-index="${index}" data-asset-field="type">
+        ${["image", "audio", "other"].map((type) => `<option value="${type}"${asset.type === type ? " selected" : ""}>${type}</option>`).join("")}
+      </select></label>
+      <label>title<input data-asset-index="${index}" data-asset-field="title" value="${escapeAttr(asset.title)}"></label>
+      <label>note<input data-asset-index="${index}" data-asset-field="note" value="${escapeAttr(asset.note)}"></label>
+      <div class="asset-actions">
+        <button type="button" data-asset-action="browse" data-asset-index="${index}">${iconHtml("folder_open")}<span class="icon-button-label">Browse</span></button>
+        <button type="button" data-asset-action="duplicate" data-asset-index="${index}">${iconHtml("file_copy")}<span class="icon-button-label">Duplicate</span></button>
+        <button type="button" data-asset-action="delete" data-asset-index="${index}">${iconHtml("delete")}<span class="icon-button-label">Delete</span></button>
+      </div>
+    </article>`;
+}
+
+function addAsset() {
+  state.assets.push({ alias: uniqueAssetAlias("asset"), path: "", type: "other", title: "", note: "" });
+  markDirty();
+  renderAssets();
+}
+
+function updateAsset(index, field, value) {
+  const asset = state.assets[index];
+  if (!asset) return;
+  asset[field] = field === "alias" ? value.replace(/^@+/, "").trim() : value;
+  if (field === "path") asset.type = assetTypeFromPath(value);
+  markDirty();
+  renderAssets();
+  renderStatus(validate());
+}
+
+async function handleAssetAction(action, index) {
+  const asset = state.assets[index];
+  if (!asset) return;
+  if (action === "delete") {
+    state.assets.splice(index, 1);
+  }
+  if (action === "duplicate") {
+    state.assets.splice(index + 1, 0, { ...asset, alias: uniqueAssetAlias(asset.alias || "asset") });
+  }
+  if (action === "browse") {
+    if (!tauriInvoke || !state.projectPath) return alert("Open or save a .lctproj project before browsing assets.");
+    const picked = await tauriInvoke("pick_asset_file", { projectPath: state.projectPath, project_path: state.projectPath });
+    if (!picked) return;
+    const file = normalizeTauriFile(picked);
+    asset.path = file.path;
+    asset.type = assetTypeFromPath(file.path);
+    if (!asset.title) asset.title = file.fileName.replace(/\.[^.]+$/, "");
+  }
+  markDirty();
+  renderAssets();
+}
+
+function duplicateAssetAliases() {
+  const seen = new Set();
+  const duplicates = new Set();
+  state.assets.forEach((asset) => {
+    const alias = asset.alias?.toLowerCase();
+    if (!alias) return;
+    if (seen.has(alias)) duplicates.add(asset.alias);
+    seen.add(alias);
+  });
+  return duplicates;
+}
+
+function uniqueAssetAlias(base) {
+  const taken = new Set(state.assets.map((asset) => asset.alias?.toLowerCase()).filter(Boolean));
+  let alias = String(base || "asset").replace(/^@+/, "").trim() || "asset";
+  let index = 1;
+  while (taken.has(alias.toLowerCase())) alias = `${base}${index++}`;
+  return alias;
+}
+
+function assetTypeFromPath(path) {
+  if (/\.(png|jpe?g|webp|gif|svg)$/i.test(path)) return "image";
+  if (/\.(wav|mp3|m4a|aac|ogg|flac)$/i.test(path)) return "audio";
+  return "other";
 }
 
 function promptEditColumnHtml(field, label, value) {
@@ -1899,6 +2050,9 @@ function promptMediaPreviewHtml(paths) {
 }
 
 function promptMediaCardHtml(path, compact = false) {
+  if (!path) {
+    return `<article class="prompt-media-card${compact ? " compact" : ""} missing" data-kind="other"><div class="prompt-media-thumb"><span>No path</span></div><div class="prompt-media-path">No path</div></article>`;
+  }
   const kind = promptMediaKind(path);
   const resolved = promptMediaResolution(path);
   const url = resolved?.url || "";
@@ -1940,12 +2094,32 @@ function handlePromptEditorInput(editor) {
   const key = promptEditorKey(editor);
   const session = state.promptEditSessions.get(key) || { rowId: state.activeId, field: editor.dataset.field, historyPushed: false, timer: null };
   clearTimeout(session.timer);
+  state.promptEditSessions.set(key, session);
+  if (isPromptEditorComposing(editor)) return;
   session.timer = setTimeout(() => {
     commitPromptEditor(editor);
     retokenizePromptEditor(editor);
   }, 160);
-  state.promptEditSessions.set(key, session);
   renderPromptEditorPreview(editor.dataset.field, promptEditorText(editor));
+}
+
+function startPromptEditorComposition(editor) {
+  editor.dataset.composing = "true";
+  const key = promptEditorKey(editor);
+  const session = state.promptEditSessions.get(key) || { rowId: state.activeId, field: editor.dataset.field, historyPushed: false, timer: null };
+  if (session.timer) clearTimeout(session.timer);
+  state.promptEditSessions.set(key, session);
+  closeAssetSuggest();
+}
+
+function finishPromptEditorComposition(editor) {
+  delete editor.dataset.composing;
+  handlePromptEditorInput(editor);
+  updateAssetSuggest(editor);
+}
+
+function isPromptEditorComposing(editor) {
+  return editor?.dataset?.composing === "true";
 }
 
 function finishPromptEditSession(editor, event = {}) {
@@ -1985,7 +2159,7 @@ function renderPromptEditorPreview(field, text) {
 }
 
 function retokenizePromptEditor(editor) {
-  if (!editor?.isConnected || document.activeElement !== editor) return;
+  if (!editor?.isConnected || document.activeElement !== editor || isPromptEditorComposing(editor)) return;
   const text = promptEditorText(editor);
   const offset = promptEditorSelectionOffset(editor);
   editor.innerHTML = tokenizePromptText(text);
@@ -2087,6 +2261,114 @@ function positionPromptHoverPreview(event) {
 function hidePromptHoverPreview() {
   const preview = el.promptEdit?.querySelector(".prompt-hover-preview");
   if (preview) preview.hidden = true;
+}
+
+function attachAssetAutocomplete(target) {
+  if (!target) return;
+  target.addEventListener("keydown", handleAssetSuggestKeydown);
+  target.addEventListener("input", () => updateAssetSuggest(target));
+  target.addEventListener("keyup", () => updateAssetSuggest(target));
+  target.addEventListener("blur", () => setTimeout(() => {
+    if (state.assetSuggest?.target === target) closeAssetSuggest();
+  }, 120));
+}
+
+function updateAssetSuggest(target) {
+  if (target?.isContentEditable && isPromptEditorComposing(target)) return closeAssetSuggest();
+  const context = assetSuggestContext(target);
+  if (!context) return closeAssetSuggest();
+  const matches = assetSuggestionMatches(context.query);
+  if (!matches.length) return closeAssetSuggest();
+  renderAssetSuggest(target, context, matches);
+}
+
+function assetSuggestContext(target) {
+  const text = target.isContentEditable ? target.innerText : target.value;
+  const cursor = target.isContentEditable ? promptEditorSelectionOffset(target) : target.selectionStart;
+  if (cursor == null) return null;
+  const before = text.slice(0, cursor);
+  const match = before.match(/(^|[\s"'`([{「『])@([\p{L}\p{N}_-]*)$/u);
+  if (!match) return null;
+  return { text, start: cursor - match[2].length - 1, end: cursor, query: match[2] || "" };
+}
+
+function assetSuggestionMatches(query) {
+  const normalized = query.toLowerCase();
+  const seen = new Set();
+  return state.assets
+    .filter((asset) => asset.alias && asset.path)
+    .filter((asset) => {
+      const key = asset.alias.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return !normalized || key.startsWith(normalized) || asset.title?.toLowerCase().includes(normalized);
+    })
+    .slice(0, 8);
+}
+
+function renderAssetSuggest(target, context, matches) {
+  closeAssetSuggest();
+  const popup = document.createElement("div");
+  popup.className = "asset-suggest";
+  const rect = target.getBoundingClientRect();
+  popup.style.left = `${Math.max(8, rect.left + 12)}px`;
+  popup.style.top = `${Math.min(window.innerHeight - 180, rect.top + 30)}px`;
+  popup.innerHTML = matches.map((asset, index) => `
+    <button type="button" data-suggest-index="${index}"${index === 0 ? " class=\"active\"" : ""}>
+      <strong>@${escapeHtml(asset.alias)}</strong>
+      <span>${escapeHtml(asset.title || asset.path)}</span>
+    </button>`).join("");
+  popup.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      applyAssetSuggestion(target, context, matches[Number(button.dataset.suggestIndex)]);
+    });
+  });
+  document.body.appendChild(popup);
+  state.assetSuggest = { popup, target, context, matches, index: 0 };
+}
+
+function handleAssetSuggestKeydown(event) {
+  const suggest = state.assetSuggest;
+  if (!suggest || suggest.target !== event.target) return false;
+  if (event.key === "Escape") {
+    closeAssetSuggest();
+    event.preventDefault();
+    return true;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    suggest.index = (suggest.index + (event.key === "ArrowDown" ? 1 : -1) + suggest.matches.length) % suggest.matches.length;
+    suggest.popup.querySelectorAll("button").forEach((button, index) => button.classList.toggle("active", index === suggest.index));
+    event.preventDefault();
+    return true;
+  }
+  if (event.key === "Enter" || event.key === "Tab") {
+    applyAssetSuggestion(suggest.target, suggest.context, suggest.matches[suggest.index]);
+    event.preventDefault();
+    return true;
+  }
+  return false;
+}
+
+function applyAssetSuggestion(target, context, asset) {
+  if (!asset) return;
+  if (target?.isContentEditable) delete target.dataset.composing;
+  if (target.isContentEditable) {
+    const text = target.innerText;
+    target.innerText = `${text.slice(0, context.start)}${asset.path}${text.slice(context.end)}`;
+    restorePromptEditorSelection(target, context.start + asset.path.length);
+    target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText", data: asset.path }));
+  } else {
+    target.value = `${context.text.slice(0, context.start)}${asset.path}${context.text.slice(context.end)}`;
+    target.setSelectionRange(context.start + asset.path.length, context.start + asset.path.length);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  closeAssetSuggest();
+}
+
+function closeAssetSuggest() {
+  state.assetSuggest?.popup?.remove();
+  state.assetSuggest = null;
 }
 
 function bindPromptPathTokens(root = el.promptEdit) {
@@ -2961,6 +3243,14 @@ function validate() {
     if (row.row_type === "cut" && row.image && !mediaUrl(row.image)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: image may be missing (${row.image}).` });
     if (row.row_type === "cut" && row.audio_file && !mediaUrl(row.audio_file)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: audio may be missing (${row.audio_file}).` });
   });
+  const aliases = new Set();
+  state.assets.forEach((asset, index) => {
+    if (!asset.alias) issues.push(error(`Asset ${index + 1}: alias is required.`));
+    const key = asset.alias?.toLowerCase();
+    if (key && aliases.has(key)) issues.push(error(`Asset @${asset.alias}: duplicate alias.`));
+    if (key) aliases.add(key);
+    if (!asset.path) issues.push(warn(`Asset @${asset.alias || index + 1}: path is empty.`));
+  });
   return issues;
 }
 
@@ -3224,6 +3514,7 @@ function backupTimestamp(date = new Date()) {
 async function projectArchiveBytes(options = {}) {
   const sourceManifest = options.manifest || state.manifest;
   const sourceRows = options.rows || state.rows;
+  const sourceAssets = options.assets || state.assets;
   const sourceMediaBlobs = options.mediaBlobs || state.mediaBlobs;
   const collapsed = options.collapsed || [...state.collapsed];
   const activeId = options.activeId ?? state.activeId;
@@ -3235,6 +3526,7 @@ async function projectArchiveBytes(options = {}) {
     mainCutlist: "cutlist.tsv",
     timeline: "timeline.json",
     settings: "settings.json",
+    assets: "assets.json",
   };
   const files = new Map([
     ["manifest.json", JSON.stringify(manifest, null, 2)],
@@ -3242,6 +3534,7 @@ async function projectArchiveBytes(options = {}) {
     ["AGENTS.md", PROJECT_AGENTS_MD],
     ["timeline.json", JSON.stringify({ collapsed, activeId }, null, 2)],
     ["settings.json", JSON.stringify({ view }, null, 2)],
+    ["assets.json", JSON.stringify({ version: 1, assets: sourceAssets.map(normalizeAsset) }, null, 2)],
     ["media_index.json", JSON.stringify({ media: sourceRows.filter((row) => row.row_type === "cut").map((row) => ({ id: row.id, image: row.image, audio_file: row.audio_file })) }, null, 2)],
   ]);
   for (const [path, mediaBlob] of sourceMediaBlobs.entries()) {

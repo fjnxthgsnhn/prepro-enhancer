@@ -1513,6 +1513,99 @@ button.active {
   font-size: 22px;
 }
 
+.assets-view {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 10px;
+  height: 100%;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.assets-toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.asset-warning {
+  border-left: 3px solid var(--danger);
+  background: rgba(255, 107, 95, 0.08);
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.assets-list {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  overflow: auto;
+}
+
+.asset-row {
+  display: grid;
+  grid-template-columns: 140px 110px minmax(220px, 1fr) 90px 140px minmax(160px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.asset-row.invalid {
+  border-color: rgba(255, 107, 95, 0.45);
+}
+
+.asset-row label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.asset-row input,
+.asset-row select {
+  min-width: 0;
+}
+
+.asset-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.asset-suggest {
+  position: fixed;
+  z-index: 100;
+  width: 300px;
+  border: 1px solid var(--line);
+  background: #10140f;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.42);
+}
+
+.asset-suggest button {
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+}
+
+.asset-suggest button.active,
+.asset-suggest button:hover {
+  background: rgba(215, 255, 87, 0.12);
+  color: var(--text);
+}
+
+.asset-suggest span {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @keyframes moved-pulse {
   0% {
     filter: brightness(1.35);
