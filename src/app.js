@@ -236,6 +236,9 @@ const state = {
   mediaBlobs: new Map(),
   promptPreviewUrls: new Map(),
   assets: [],
+  assetSelectedIds: new Set(),
+  assetSelectionAnchorId: "",
+  assetModalId: "",
   assetSuggest: null,
   importWarnings: [],
   collapsed: new Set(),
@@ -370,6 +373,10 @@ document.addEventListener("keydown", (event) => {
   }
   if ((event.key === "Delete" || event.key === "Backspace") && !isTextEntryTarget(event.target)) {
     event.preventDefault();
+    if (state.view === "assets") {
+      deleteSelectedAssets();
+      return;
+    }
     deleteSelectedRows();
   }
   if (event.code === "Space" && !isTextEntryTarget(event.target)) {
@@ -389,6 +396,7 @@ document.addEventListener("keydown", (event) => {
     setView(["table", "storyboard", "timeline", "promptEdit", "assets"][Number(event.key) - 1]);
   }
   if (event.key === "Escape") {
+    if (state.assetModalId) closeAssetModal();
     closeContextMenu();
     closeFileMenu();
   }
@@ -563,6 +571,7 @@ function loadTsv(text, name) {
   };
   state.rows = loadRowsFromTsv(text);
   state.assets = [];
+  clearAssetSelection();
   state.mediaUrls = new Map();
   state.mediaBlobs = new Map();
   if (text === SAMPLE_TSV) seedSampleMedia();
@@ -623,6 +632,7 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
   state.manifest = manifest;
   state.rows = rows;
   state.assets = loadAssetsFromEntries(entries, manifest);
+  clearAssetSelection();
   state.mediaUrls = new Map();
   state.mediaBlobs = new Map();
   entries.forEach((entry, name) => {
@@ -661,13 +671,24 @@ function loadAssetsFromEntries(entries, manifest) {
 
 function normalizeAsset(asset = {}) {
   const path = String(asset.path || "").trim();
+  const alias = String(asset.alias || "").replace(/^@+/, "").trim();
   return {
-    alias: String(asset.alias || "").replace(/^@+/, "").trim(),
+    id: String(asset.id || assetIdFromParts(alias, path, asset.title || "")).trim(),
+    alias,
     path,
     type: ["image", "audio", "other"].includes(asset.type) ? asset.type : assetTypeFromPath(path),
     title: String(asset.title || "").trim(),
     note: String(asset.note || "").trim(),
   };
+}
+
+function assetIdFromParts(alias, path, title) {
+  const source = `${alias || "asset"}:${path || ""}:${title || ""}`;
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = ((hash << 5) - hash + source.charCodeAt(index)) | 0;
+  }
+  return `asset-${Math.abs(hash).toString(36)}`;
 }
 
 async function refreshTsvFromProject() {
@@ -1923,71 +1944,153 @@ function renderPromptEdit() {
 function renderAssets() {
   if (!el.assetsView) return;
   const duplicateAliases = duplicateAssetAliases();
+  const modalAsset = state.assets.find((asset) => asset.id === state.assetModalId);
   el.assetsView.innerHTML = `
     <div class="assets-view">
       <div class="assets-toolbar">
         <button id="addAssetBtn" type="button">${iconHtml("note_add")}<span class="icon-button-label">Add Asset</span></button>
       </div>
       ${duplicateAliases.size ? `<div class="asset-warning">Duplicate aliases: ${escapeHtml([...duplicateAliases].join(", "))}</div>` : ""}
-      <div class="assets-list">
-        ${state.assets.length ? state.assets.map((asset, index) => assetRowHtml(asset, index, duplicateAliases)).join("") : `<div class="empty-state">No assets registered.</div>`}
+      <div class="assets-drop-zone">
+        <div class="assets-grid">
+          ${state.assets.length ? state.assets.map((asset, index) => assetCardHtml(asset, index, duplicateAliases)).join("") : `<div class="empty-state">Drop asset files here or add one manually.</div>`}
+        </div>
       </div>
-    </div>`;
+    </div>
+    ${modalAsset ? assetModalHtml(modalAsset) : ""}`;
   el.assetsView.querySelector("#addAssetBtn")?.addEventListener("click", addAsset);
+  const dropZone = el.assetsView.querySelector(".assets-drop-zone");
+  dropZone?.addEventListener("dragover", (event) => {
+    if (!hasFilePayload(event.dataTransfer)) return;
+    event.preventDefault();
+    dropZone.classList.add("drag-over");
+  });
+  dropZone?.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone?.addEventListener("drop", handleAssetDrop);
+  el.assetsView.querySelectorAll(".asset-card").forEach((card) => {
+    card.addEventListener("click", (event) => selectAsset(card.dataset.assetId, event));
+  });
+  el.assetsView.querySelectorAll(".asset-thumb").forEach((thumb) => {
+    thumb.addEventListener("click", (event) => {
+      event.stopPropagation();
+      state.assetModalId = thumb.closest(".asset-card")?.dataset.assetId || "";
+      renderAssets();
+    });
+  });
   el.assetsView.querySelectorAll("[data-asset-field]").forEach((input) => {
-    input.addEventListener("change", () => updateAsset(Number(input.dataset.assetIndex), input.dataset.assetField, input.value));
+    input.addEventListener("click", (event) => event.stopPropagation());
+    input.addEventListener("change", () => updateAsset(input.dataset.assetId, input.dataset.assetField, input.value));
     attachAssetAutocomplete(input);
   });
   el.assetsView.querySelectorAll("[data-asset-action]").forEach((button) => {
-    button.addEventListener("click", () => handleAssetAction(button.dataset.assetAction, Number(button.dataset.assetIndex)));
+    button.addEventListener("click", () => handleAssetAction(button.dataset.assetAction, button.dataset.assetId));
+  });
+  el.assetsView.querySelector(".asset-modal-backdrop")?.addEventListener("click", (event) => {
+    if (event.target.classList.contains("asset-modal-backdrop")) closeAssetModal();
   });
   resolvePromptMediaPreviews(el.assetsView);
 }
 
-function assetRowHtml(asset, index, duplicateAliases) {
+function assetCardHtml(asset, index, duplicateAliases) {
   const duplicate = duplicateAliases.has(asset.alias);
   return `
-    <article class="asset-row${duplicate ? " invalid" : ""}" data-asset-index="${index}">
-      <div class="asset-preview">${promptMediaCardHtml(asset.path || "", true)}</div>
-      <label>alias<input data-asset-index="${index}" data-asset-field="alias" value="${escapeAttr(asset.alias)}"></label>
-      <label>path<input data-asset-index="${index}" data-asset-field="path" value="${escapeAttr(asset.path)}"></label>
-      <label>type<select data-asset-index="${index}" data-asset-field="type">
-        ${["image", "audio", "other"].map((type) => `<option value="${type}"${asset.type === type ? " selected" : ""}>${type}</option>`).join("")}
-      </select></label>
-      <label>title<input data-asset-index="${index}" data-asset-field="title" value="${escapeAttr(asset.title)}"></label>
-      <label>note<input data-asset-index="${index}" data-asset-field="note" value="${escapeAttr(asset.note)}"></label>
-      <div class="asset-actions">
-        <button type="button" data-asset-action="browse" data-asset-index="${index}">${iconHtml("folder_open")}<span class="icon-button-label">Browse</span></button>
-        <button type="button" data-asset-action="duplicate" data-asset-index="${index}">${iconHtml("file_copy")}<span class="icon-button-label">Duplicate</span></button>
-        <button type="button" data-asset-action="delete" data-asset-index="${index}">${iconHtml("delete")}<span class="icon-button-label">Delete</span></button>
-      </div>
+    <article class="asset-card${duplicate ? " invalid" : ""}${state.assetSelectedIds.has(asset.id) ? " selected" : ""}" data-asset-id="${escapeAttr(asset.id)}" data-asset-index="${index}">
+      <div class="asset-thumb" title="Open details">${assetPreviewHtml(asset)}</div>
+      <label>alias<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="alias" value="${escapeAttr(asset.alias)}"></label>
+      <label>title<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="title" value="${escapeAttr(asset.title)}"></label>
     </article>`;
 }
 
+function assetModalHtml(asset) {
+  return `
+    <div class="asset-modal-backdrop">
+      <section class="asset-modal" role="dialog" aria-modal="true">
+        <header>
+          <h2>${iconHtml("inventory_2")}<span>Asset</span></h2>
+          <button type="button" data-asset-action="close" data-asset-id="${escapeAttr(asset.id)}">${iconHtml("close")}<span class="icon-button-label">Close</span></button>
+        </header>
+        <div class="asset-modal-body">
+          <div class="asset-modal-preview">${assetPreviewHtml(asset)}</div>
+          <div class="asset-modal-fields">
+            <label>alias<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="alias" value="${escapeAttr(asset.alias)}"></label>
+            <label>path<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="path" value="${escapeAttr(asset.path)}"></label>
+            <label>type<select data-asset-id="${escapeAttr(asset.id)}" data-asset-field="type">
+        ${["image", "audio", "other"].map((type) => `<option value="${type}"${asset.type === type ? " selected" : ""}>${type}</option>`).join("")}
+            </select></label>
+            <label>title<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="title" value="${escapeAttr(asset.title)}"></label>
+            <label>note<textarea data-asset-id="${escapeAttr(asset.id)}" data-asset-field="note">${escapeHtml(asset.note)}</textarea></label>
+          </div>
+        </div>
+        <footer class="asset-actions">
+          <button type="button" data-asset-action="browse" data-asset-id="${escapeAttr(asset.id)}">${iconHtml("folder_open")}<span class="icon-button-label">Browse</span></button>
+          <button type="button" data-asset-action="delete" data-asset-id="${escapeAttr(asset.id)}">${iconHtml("delete")}<span class="icon-button-label">Delete</span></button>
+        </footer>
+      </section>
+    </div>`;
+}
+
+function assetPreviewHtml(asset) {
+  if (asset.type === "other") {
+    return `<article class="prompt-media-card compact" data-kind="other"><div class="prompt-media-thumb">${iconHtml("folder", "empty-icon")}<span>${escapeHtml(asset.path || "No path")}</span></div><div class="prompt-media-path" title="${escapeAttr(asset.path || "")}">${escapeHtml(asset.path || "No path")}</div></article>`;
+  }
+  return promptMediaCardHtml(asset.path || "", true);
+}
+
 function addAsset() {
-  state.assets.push({ alias: uniqueAssetAlias("asset"), path: "", type: "other", title: "", note: "" });
+  const asset = { id: nextAssetId(), alias: uniqueAssetAlias("asset"), path: "", type: "other", title: "", note: "" };
+  state.assets.push(asset);
+  state.assetSelectedIds = new Set([asset.id]);
+  state.assetSelectionAnchorId = asset.id;
   markDirty();
   renderAssets();
 }
 
-function updateAsset(index, field, value) {
-  const asset = state.assets[index];
+function updateAsset(id, field, value) {
+  const asset = assetById(id);
   if (!asset) return;
   asset[field] = field === "alias" ? value.replace(/^@+/, "").trim() : value;
   if (field === "path") asset.type = assetTypeFromPath(value);
+  if (field === "path" && !asset.title) asset.title = fileStem(value);
   markDirty();
   renderAssets();
   renderStatus(validate());
 }
 
-async function handleAssetAction(action, index) {
-  const asset = state.assets[index];
+function handleAssetDrop(event) {
+  event.preventDefault();
+  event.currentTarget?.classList?.remove("drag-over");
+  const files = [...(event.dataTransfer?.files || [])];
+  if (!files.length) return;
+  const added = files.map(assetFromDroppedFile);
+  state.assets.push(...added);
+  state.assetSelectedIds = new Set(added.map((asset) => asset.id));
+  state.assetSelectionAnchorId = added[0]?.id || "";
+  markDirty();
+  renderAssets();
+  renderStatus(validate());
+}
+
+function assetFromDroppedFile(file) {
+  const path = file.path || file.webkitRelativePath || file.name;
+  setSessionMediaUrl(path, file);
+  const title = fileStem(path);
+  return {
+    id: nextAssetId(),
+    alias: uniqueAssetAlias(safeAssetAlias(title)),
+    path,
+    type: assetTypeFromPath(path),
+    title,
+    note: "",
+  };
+}
+
+async function handleAssetAction(action, id) {
+  const asset = assetById(id);
+  if (action === "close") return closeAssetModal();
   if (!asset) return;
   if (action === "delete") {
-    state.assets.splice(index, 1);
-  }
-  if (action === "duplicate") {
-    state.assets.splice(index + 1, 0, { ...asset, alias: uniqueAssetAlias(asset.alias || "asset") });
+    deleteAssetsByIds(new Set([asset.id]));
+    return;
   }
   if (action === "browse") {
     if (!tauriInvoke || !state.projectPath) return alert("Open or save a .lctproj project before browsing assets.");
@@ -2000,6 +2103,60 @@ async function handleAssetAction(action, index) {
   }
   markDirty();
   renderAssets();
+}
+
+function selectAsset(id, event = {}) {
+  if (!id) return;
+  const ids = state.assets.map((asset) => asset.id);
+  if (event.shiftKey && state.assetSelectionAnchorId) {
+    const anchorIndex = ids.indexOf(state.assetSelectionAnchorId);
+    const targetIndex = ids.indexOf(id);
+    if (anchorIndex >= 0 && targetIndex >= 0) {
+      const [start, end] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+      state.assetSelectedIds = new Set(ids.slice(start, end + 1));
+    } else {
+      state.assetSelectedIds = new Set([id]);
+      state.assetSelectionAnchorId = id;
+    }
+  } else if (event.ctrlKey || event.metaKey) {
+    if (state.assetSelectedIds.has(id)) state.assetSelectedIds.delete(id);
+    else state.assetSelectedIds.add(id);
+    if (!state.assetSelectionAnchorId) state.assetSelectionAnchorId = id;
+  } else {
+    state.assetSelectedIds = new Set([id]);
+    state.assetSelectionAnchorId = id;
+  }
+  renderAssets();
+}
+
+function deleteSelectedAssets() {
+  if (!state.assetSelectedIds.size) return;
+  deleteAssetsByIds(state.assetSelectedIds);
+}
+
+function deleteAssetsByIds(ids) {
+  state.assets = state.assets.filter((asset) => !ids.has(asset.id));
+  state.assetSelectedIds = new Set([...state.assetSelectedIds].filter((id) => !ids.has(id)));
+  if (ids.has(state.assetSelectionAnchorId)) state.assetSelectionAnchorId = "";
+  if (ids.has(state.assetModalId)) state.assetModalId = "";
+  markDirty();
+  renderAssets();
+  renderStatus(validate());
+}
+
+function closeAssetModal() {
+  state.assetModalId = "";
+  renderAssets();
+}
+
+function clearAssetSelection() {
+  state.assetSelectedIds = new Set();
+  state.assetSelectionAnchorId = "";
+  state.assetModalId = "";
+}
+
+function assetById(id) {
+  return state.assets.find((asset) => asset.id === id);
 }
 
 function duplicateAssetAliases() {
@@ -2016,10 +2173,35 @@ function duplicateAssetAliases() {
 
 function uniqueAssetAlias(base) {
   const taken = new Set(state.assets.map((asset) => asset.alias?.toLowerCase()).filter(Boolean));
-  let alias = String(base || "asset").replace(/^@+/, "").trim() || "asset";
-  let index = 1;
-  while (taken.has(alias.toLowerCase())) alias = `${base}${index++}`;
+  const root = safeAssetAlias(base);
+  let alias = root;
+  let index = 2;
+  while (taken.has(alias.toLowerCase())) alias = `${root}${index++}`;
   return alias;
+}
+
+function nextAssetId() {
+  const taken = new Set(state.assets.map((asset) => asset.id));
+  let index = state.assets.length + 1;
+  let id = `asset-${Date.now().toString(36)}-${index}`;
+  while (taken.has(id)) id = `asset-${Date.now().toString(36)}-${index++}`;
+  return id;
+}
+
+function safeAssetAlias(value) {
+  return String(value || "asset")
+    .replace(/^@+/, "")
+    .trim()
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^\p{L}\p{N}_-]+/gu, "_")
+    .replace(/^_+|_+$/g, "") || "asset";
+}
+
+function fileStem(path) {
+  return String(path || "")
+    .split(/[\\/]/)
+    .pop()
+    .replace(/\.[^.]+$/, "");
 }
 
 function assetTypeFromPath(path) {

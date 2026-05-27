@@ -1527,6 +1527,10 @@ button.active {
   gap: 8px;
 }
 
+.assets-toolbar button {
+  min-height: 32px;
+}
+
 .asset-warning {
   border-left: 3px solid var(--danger);
   background: rgba(255, 107, 95, 0.08);
@@ -1535,37 +1539,132 @@ button.active {
   font-size: 12px;
 }
 
-.assets-list {
-  display: grid;
-  gap: 8px;
-  align-content: start;
+.assets-drop-zone {
+  min-height: 0;
+  border: 1px dashed transparent;
   overflow: auto;
 }
 
-.asset-row {
+.assets-drop-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(215, 255, 87, 0.06);
+}
+
+.assets-grid {
   display: grid;
-  grid-template-columns: 140px 110px minmax(220px, 1fr) 90px 140px minmax(160px, 1fr) auto;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  align-content: start;
+  padding: 2px;
+}
+
+.asset-card {
+  display: grid;
+  grid-template-rows: 128px auto auto;
   gap: 8px;
-  align-items: end;
   padding: 10px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
 }
 
-.asset-row.invalid {
+.asset-card.invalid {
   border-color: rgba(255, 107, 95, 0.45);
 }
 
-.asset-row label {
+.asset-card.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 1px rgba(215, 255, 87, 0.18), 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.asset-card:hover {
+  border-color: rgba(215, 255, 87, 0.32);
+}
+
+.asset-thumb {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.asset-thumb .prompt-media-card {
+  height: 100%;
+}
+
+.asset-card label,
+.asset-modal-fields label {
   display: grid;
   gap: 4px;
   color: var(--muted);
   font-size: 11px;
 }
 
-.asset-row input,
-.asset-row select {
+.asset-card input,
+.asset-modal-fields input,
+.asset-modal-fields select,
+.asset-modal-fields textarea {
   min-width: 0;
+}
+
+.asset-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.58);
+  padding: 24px;
+}
+
+.asset-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  width: min(760px, 100%);
+  max-height: min(720px, 100%);
+  border: 1px solid var(--line);
+  background: #10140f;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  padding: 14px;
+}
+
+.asset-modal header,
+.asset-modal footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.asset-modal h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+}
+
+.asset-modal-body {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.asset-modal-preview {
+  min-height: 180px;
+}
+
+.asset-modal-fields {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.asset-modal-fields textarea {
+  min-height: 96px;
+  resize: vertical;
 }
 
 .asset-actions {

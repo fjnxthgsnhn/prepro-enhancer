@@ -477,20 +477,39 @@ await page.locator('.prompt-path-token[data-path="media/images/cut001.jpg"]').ho
 await page.waitForFunction(() => !document.querySelector(".prompt-hover-preview")?.hidden);
 
 await page.click('[data-view="assets"]');
-await expectText("#assetsView", "No assets registered.");
+await expectText("#assetsView", "Drop asset files here");
+await dropFiles(".assets-drop-zone", [
+  { name: "rui.png", type: "image/png" },
+  { name: "voice.wav", type: "audio/wav" },
+]);
+await expectCount(".asset-card", 2);
+await page.waitForFunction(() => document.querySelector('.asset-card input[data-asset-field="alias"]')?.value === "rui");
+await page.locator('.asset-card').first().click({ position: { x: 20, y: 150 } });
+await page.locator('.asset-card').nth(1).click({ modifiers: ["Shift"], position: { x: 20, y: 150 } });
+await page.waitForFunction(() => document.querySelectorAll(".asset-card.selected").length === 2);
+await page.keyboard.press("Delete");
+await expectCount(".asset-card", 0);
 await page.click("#addAssetBtn");
-await page.locator('[data-asset-field="alias"]').fill("rui");
-await page.locator('[data-asset-field="alias"]').press("Tab");
-await page.locator('[data-asset-field="path"]').fill("media/images/cut001.jpg");
-await page.locator('[data-asset-field="path"]').press("Tab");
-await page.locator('[data-asset-field="title"]').fill("Rui");
-await page.locator('[data-asset-field="title"]').press("Tab");
+await page.locator('.asset-card [data-asset-field="alias"]').fill("rui");
+await page.locator('.asset-card [data-asset-field="alias"]').press("Tab");
+await page.locator('.asset-card [data-asset-field="title"]').fill("Rui");
+await page.locator('.asset-card [data-asset-field="title"]').press("Tab");
+await page.locator(".asset-card .asset-thumb").click();
+await expectText(".asset-modal", "Asset");
+await page.locator('.asset-modal [data-asset-field="path"]').fill("media/images/cut001.jpg");
+await page.locator('.asset-modal [data-asset-field="path"]').press("Tab");
+await page.locator('.asset-modal [data-asset-field="note"]').fill("Reusable Rui asset");
+await page.locator('.asset-modal [data-asset-field="note"]').press("Tab");
+await page.locator('.asset-modal [data-asset-action="close"]').click();
 await page.waitForFunction(() => document.querySelector('#assetsView .prompt-media-card[data-kind="image"]'));
 await page.click("#addAssetBtn");
-await page.locator('[data-asset-index="1"][data-asset-field="alias"]').fill("rui");
-await page.locator('[data-asset-index="1"][data-asset-field="alias"]').press("Tab");
+await page.locator('.asset-card').nth(1).locator('[data-asset-field="alias"]').fill("rui");
+await page.locator('.asset-card').nth(1).locator('[data-asset-field="alias"]').press("Tab");
 await expectText("#assetsView", "Duplicate aliases");
-await page.locator('[data-asset-index="1"][data-asset-action="delete"]').click();
+if (await page.locator('[data-asset-action="duplicate"]').count()) throw new Error("Assets view should not expose Duplicate");
+await page.locator(".asset-card").nth(1).click();
+await page.keyboard.press("Backspace");
+await expectCount(".asset-card", 1);
 await page.click('[data-view="promptEdit"]');
 await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill("@rui");
 await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
