@@ -441,6 +441,21 @@ const detailLabels = await page.$$eval("#detailPanel label", (nodes) => nodes.ma
 for (const hiddenDetail of ["row_type", "id", "parent_id", "order"]) {
   if (detailLabels.includes(hiddenDetail)) throw new Error(`${hiddenDetail} should be hidden in Detail panel`);
 }
+await page.click('[data-view="promptEdit"]');
+await expectCount(".prompt-edit-column", 2);
+await expectText('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor', "extreme close-up");
+await expectText('.prompt-edit-column[data-field="video_prompt"] .prompt-token-editor', "slow dolly");
+await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill("media/images/cut001.jpg\nstill prompt revised");
+await page.waitForFunction(() => document.querySelector('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]'));
+await page.locator('.prompt-edit-column[data-field="video_prompt"] .prompt-token-editor').fill("media/audio/cut001.wav\nvideo prompt revised");
+await page.waitForFunction(() => document.querySelector('[data-preview-field="video_prompt"] .prompt-media-card[data-kind="audio"]'));
+await page.click('[data-view="table"]');
+await expectText('tbody tr[data-id="ct001"] td[data-column="image_prompt"]', "still prompt revised");
+await expectText('tbody tr[data-id="ct001"] td[data-column="video_prompt"]', "video prompt revised");
+await page.click('[data-view="promptEdit"]');
+await page.locator('.prompt-path-token[data-path="media/images/cut001.jpg"]').hover();
+await page.waitForFunction(() => !document.querySelector(".prompt-hover-preview")?.hidden);
+await page.click('[data-view="table"]');
 if ((await page.locator('td[data-column="title"] input').count()) !== 0) {
   throw new Error("First editable cell click should select the row without opening an input");
 }
@@ -636,7 +651,7 @@ await browser.close();
 
 async function clickFileAction(action) {
   await page.click("#fileMenuBtn");
-  if (action.startsWith("export")) await page.hover(".submenu");
+  if (action.startsWith("export")) await page.locator(".submenu", { hasText: "Export" }).hover();
   await page.click(`[data-file-action="${action}"]`);
 }
 
@@ -812,6 +827,47 @@ async function runTauriWelcomeSmoke(browser) {
   });
   await tauriPage.click("#refreshTsvBtn");
   await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "LLM Updated Scene");
+  for (let index = 0; index < 11; index += 1) {
+    tauriPage.once("dialog", (dialog) => dialog.accept());
+    await tauriPage.evaluate(() => document.querySelector('[data-file-action="createBackup"]')?.click());
+  }
+  const backupPaths = await tauriPage.evaluate(() => [...window.__tauriMockFiles.keys()].filter((path) => path.includes("\\.prepro-backups\\Recent Project\\")));
+  if (backupPaths.length !== 10) throw new Error(`External backup rotation should keep 10 backups, saw ${backupPaths.length}`);
+  const backupEntries = readZipEntries(Buffer.from(await tauriPage.evaluate((path) => window.__tauriMockFiles.get(path), backupPaths[0])));
+  if (!backupEntries.has("cutlist.tsv") || [...backupEntries.keys()].some((name) => name.startsWith(".backups/"))) throw new Error("External backup should store a full lctproj without internal .backups");
+  await tauriPage.click('tbody tr[data-id="sc777"] td[data-column="title"]');
+  await tauriPage.click('tbody tr[data-id="sc777"] td[data-column="title"]');
+  await tauriPage.locator('tbody tr[data-id="sc777"] td[data-column="title"] input').fill("Backup Restore Source");
+  await tauriPage.keyboard.press("Enter");
+  tauriPage.once("dialog", (dialog) => dialog.accept());
+  await tauriPage.evaluate(() => document.querySelector('[data-file-action="createBackup"]')?.click());
+  await tauriPage.click('tbody tr[data-id="sc777"] td[data-column="title"]');
+  await tauriPage.click('tbody tr[data-id="sc777"] td[data-column="title"]');
+  await tauriPage.locator('tbody tr[data-id="sc777"] td[data-column="title"] input').fill("After Backup Edit");
+  await tauriPage.keyboard.press("Enter");
+  tauriPage.once("dialog", (dialog) => dialog.accept());
+  await tauriPage.evaluate(() => {
+    window.prompt = () => "1";
+    document.querySelector('[data-file-action="restoreBackup"]')?.click();
+  });
+  await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "Backup Restore Source");
+  await expectPageText(tauriPage, "#saveState", "Unsaved");
+  await tauriPage.evaluate(() => {
+    const repaired = window.__makeStoredZip(new Map([
+      ["manifest.json", JSON.stringify({ projectName: "Broken Project", mainCutlist: "cutlist.tsv" })],
+      ["cutlist.tsv", `row_type\tid\tparent_id\torder\ttitle\n\"weird\tdup\tmissing\t\tBroken Row\ncut\tdup\tmissing\t\tDuplicate Row`],
+    ]));
+    window.__tauriMockFiles.set("C:\\Projects\\Recent Project.lctproj", Array.from(repaired));
+  });
+  let repairDialogCount = 0;
+  const repairDialogHandler = async (dialog) => {
+    repairDialogCount += 1;
+    await dialog.accept();
+    if (repairDialogCount >= 2) tauriPage.off("dialog", repairDialogHandler);
+  };
+  tauriPage.on("dialog", repairDialogHandler);
+  await tauriPage.click("#refreshTsvBtn");
+  await expectPageText(tauriPage, "#validationPanel", "duplicate id");
   await tauriPage.close();
 
   const newPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
@@ -922,6 +978,36 @@ async function installTauriMock(targetPage, options = {}) {
           if (command === "read_project_file") {
             if (!files.has(args.path)) throw new Error("file not found");
             return { path: args.path, file_name: args.path.split("\\").pop(), bytes: files.get(args.path) };
+          }
+          if (command === "save_project_backup") {
+            const projectPath = args.projectPath || args.project_path;
+            const backupName = args.backupName || args.backup_name;
+            const projectName = projectPath.split("\\").pop().replace(/\.lctproj$/i, "");
+            const backupPath = projectPath.replace(/\\[^\\]+$/, `\\.prepro-backups\\${projectName}\\${backupName}`);
+            files.set(backupPath, args.bytes || []);
+            const backupPrefix = projectPath.replace(/\\[^\\]+$/, `\\.prepro-backups\\${projectName}\\`);
+            const maxBackups = args.maxBackups || args.max_backups || 10;
+            const names = [...files.keys()].filter((path) => path.startsWith(backupPrefix)).sort().reverse();
+            names.slice(maxBackups).forEach((path) => files.delete(path));
+            return { path: backupPath, file_name: backupName };
+          }
+          if (command === "list_project_backups") {
+            const projectPath = args.projectPath || args.project_path;
+            const projectName = projectPath.split("\\").pop().replace(/\.lctproj$/i, "");
+            const backupPrefix = projectPath.replace(/\\[^\\]+$/, `\\.prepro-backups\\${projectName}\\`);
+            return [...files.keys()]
+              .filter((path) => path.startsWith(backupPrefix))
+              .sort()
+              .reverse()
+              .map((path, index) => ({ name: path.split("\\").pop(), path, timestamp: Date.now() - index }));
+          }
+          if (command === "read_project_backup") {
+            const projectPath = args.projectPath || args.project_path;
+            const backupName = args.backupName || args.backup_name;
+            const projectName = projectPath.split("\\").pop().replace(/\.lctproj$/i, "");
+            const backupPath = projectPath.replace(/\\[^\\]+$/, `\\.prepro-backups\\${projectName}\\${backupName}`);
+            if (!files.has(backupPath)) throw new Error("backup not found");
+            return { path: backupPath, file_name: backupName, bytes: files.get(backupPath) };
           }
           if (command === "open_project") return null;
           if (command === "export_file") return null;

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prepro Enhancer</title>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&amp;icon_names=account_tree,call_split,cloud_done,content_copy,content_cut,dashboard,delete,dock_to_right,dynamic_feed,fact_check,file_copy,folder,folder_open,image_not_supported,ios_share,movie,movie_creation,note_add,perm_media,play_arrow,refresh,save,save_as,schedule,search,smart_toy,stop,subject,table_chart,table_view,tag,terminal,timeline&amp;display=block" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&amp;icon_names=account_tree,build,call_split,cloud_done,content_copy,content_cut,dashboard,delete,dock_to_right,dynamic_feed,edit_note,fact_check,file_copy,folder,folder_open,history,image_not_supported,ios_share,movie,movie_creation,note_add,perm_media,play_arrow,refresh,restore,save,save_as,schedule,search,smart_toy,stop,subject,table_chart,table_view,tag,terminal,timeline&amp;display=block" rel="stylesheet" />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
@@ -25,6 +25,15 @@
             <button type="button" data-file-action="save" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save</span><span class="icon-button-label">Save</span></button>
             <button type="button" data-file-action="saveAs" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save_as</span><span class="icon-button-label">Save as</span></button>
             <div class="submenu" role="none">
+              <button type="button" class="submenu-trigger" role="menuitem" aria-haspopup="true"><span class="material-symbols-outlined app-icon" aria-hidden="true">history</span><span class="icon-button-label">Recovery</span></button>
+              <div class="submenu-panel" role="menu">
+                <button type="button" data-file-action="createBackup" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save</span><span class="icon-button-label">Create Backup Now</span></button>
+                <button type="button" data-file-action="restoreBackup" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">restore</span><span class="icon-button-label">Restore Backup</span></button>
+                <button type="button" data-file-action="repairCurrentTsv" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">build</span><span class="icon-button-label">Repair Current TSV</span></button>
+                <button type="button" data-file-action="repairTsvFile" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">fact_check</span><span class="icon-button-label">Repair TSV File</span></button>
+              </div>
+            </div>
+            <div class="submenu" role="none">
               <button type="button" class="submenu-trigger" role="menuitem" aria-haspopup="true"><span class="material-symbols-outlined app-icon" aria-hidden="true">ios_share</span><span class="icon-button-label">Export</span></button>
               <div class="submenu-panel" role="menu">
                 <button type="button" data-file-action="exportTsv" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">table_chart</span><span class="icon-button-label">TSV</span></button>
@@ -41,6 +50,7 @@
           <button class="view-btn active" data-view="table"><span class="material-symbols-outlined app-icon" aria-hidden="true">table_view</span><span class="icon-button-label">Table</span></button>
           <button class="view-btn" data-view="storyboard"><span class="material-symbols-outlined app-icon" aria-hidden="true">dashboard</span><span class="icon-button-label">Storyboard</span></button>
           <button class="view-btn" data-view="timeline"><span class="material-symbols-outlined app-icon" aria-hidden="true">timeline</span><span class="icon-button-label">Timeline</span></button>
+          <button class="view-btn" data-view="promptEdit"><span class="material-symbols-outlined app-icon" aria-hidden="true">edit_note</span><span class="icon-button-label">PromptEdit</span></button>
         </div>
         <label class="search-box">
           <span class="material-symbols-outlined app-icon" aria-hidden="true">search</span><span>Search</span>
@@ -69,6 +79,7 @@
         <section id="tableView" class="view-pane active"></section>
         <section id="storyboardView" class="view-pane"></section>
         <section id="timelineView" class="view-pane"></section>
+        <section id="promptEditView" class="view-pane"></section>
       </main>
 
       <aside class="right-panel">

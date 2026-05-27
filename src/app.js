@@ -253,11 +253,15 @@ const state = {
   shiftDown: false,
   isWelcomeVisible: false,
   recentProjects: [],
+  promptEditSessions: new Map(),
+  pendingRepairTsvFile: false,
 };
 
 const tauriInvoke = window.__TAURI__?.core?.invoke || null;
 const RECENT_PROJECTS_KEY = "preproEnhancer.recentProjects.v1";
 const MAX_RECENT_PROJECTS = 10;
+const BACKUP_INTERVAL_MS = 10 * 60 * 1000;
+const MAX_PROJECT_BACKUPS = 10;
 
 const el = {
   projectName: document.querySelector("#projectName"),
@@ -271,6 +275,7 @@ const el = {
   table: document.querySelector("#tableView"),
   storyboard: document.querySelector("#storyboardView"),
   timeline: document.querySelector("#timelineView"),
+  promptEdit: document.querySelector("#promptEditView"),
   welcome: document.querySelector("#welcomeView"),
   welcomeNew: document.querySelector("#welcomeNewProjectBtn"),
   welcomeOpen: document.querySelector("#welcomeOpenProjectBtn"),
@@ -319,10 +324,17 @@ document.querySelectorAll(".view-btn").forEach((button) => {
 el.input.addEventListener("change", async (event) => {
   const file = event.target.files[0];
   if (!file) return;
+  if (state.pendingRepairTsvFile) {
+    state.pendingRepairTsvFile = false;
+    const decoded = decodeTsvBytes(new Uint8Array(await file.arrayBuffer()));
+    await repairTsvTextIntoState(decoded.text, file.name.replace(/\.[^.]+$/, ""), "Repair TSV File");
+    el.input.value = "";
+    return;
+  }
   if (isProjectFile(file.name, "")) {
     await loadProjectFromBytes(new Uint8Array(await file.arrayBuffer()), file.name, "");
   } else {
-    loadTsvBytes(new Uint8Array(await file.arrayBuffer()), file.name.replace(/\.[^.]+$/, ""));
+    await loadTsvBytes(new Uint8Array(await file.arrayBuffer()), file.name.replace(/\.[^.]+$/, ""));
   }
   el.input.value = "";
 });
@@ -367,9 +379,9 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     redo();
   }
-  if (event.altKey && ["1", "2", "3"].includes(event.key)) {
+  if (event.altKey && ["1", "2", "3", "4"].includes(event.key)) {
     event.preventDefault();
-    setView(["table", "storyboard", "timeline"][Number(event.key) - 1]);
+    setView(["table", "storyboard", "timeline", "promptEdit"][Number(event.key) - 1]);
   }
   if (event.key === "Escape") {
     closeContextMenu();
@@ -385,6 +397,10 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest?.(".table-context-menu")) closeContextMenu();
   if (!event.target.closest?.(".file-menu")) closeFileMenu();
 });
+
+setInterval(() => {
+  createProjectBackup("auto").catch((error) => console.warn("Auto backup failed", error));
+}, BACKUP_INTERVAL_MS);
 
 function toggleFileMenu() {
   const menu = document.querySelector("#fileMenu");
@@ -406,6 +422,10 @@ async function handleFileAction(action) {
   if (action === "open") return openProject();
   if (action === "save") return saveProject();
   if (action === "saveAs") return saveProjectAs();
+  if (action === "createBackup") return createProjectBackup("manual");
+  if (action === "restoreBackup") return restoreProjectBackup();
+  if (action === "repairCurrentTsv") return repairCurrentTsv();
+  if (action === "repairTsvFile") return repairTsvFile();
   if (action === "exportTsv") return exportTsv();
   if (action === "exportLlmTsv") return exportLlmTsv();
   if (action === "exportXml") return exportPremiereXml();
@@ -518,12 +538,14 @@ async function openProject() {
   }
 }
 
-function loadTsvBytes(bytes, name) {
+async function loadTsvBytes(bytes, name) {
   const decoded = decodeTsvBytes(bytes);
   try {
     loadTsv(decoded.text, name);
   } catch (error) {
-    alert(error.message || String(error));
+    if (confirm(`${error.message || "TSV could not be loaded."}\n\nRepair and load this TSV?`)) {
+      await repairTsvTextIntoState(decoded.text, name || "Repaired TSV", "Load Repair");
+    }
   }
 }
 
@@ -577,7 +599,14 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
     const cutlistEntry = cutlistMatch?.entry;
     if (!cutlistEntry) throw new Error(`${manifest.mainCutlist || "cutlist.tsv"} was not found.`);
     const decoded = decodeTsvBytes(cutlistEntry.data);
-    rows = loadRowsFromTsv(decoded.text);
+    try {
+      rows = loadRowsFromTsv(decoded.text);
+    } catch (error) {
+      if (!confirm(`${error.message || "cutlist.tsv could not be loaded."}\n\nRepair and load this project?`)) throw error;
+      const repaired = repairTsvText(decoded.text);
+      rows = repaired.rows;
+      state.importWarnings = repaired.warnings;
+    }
   } catch (error) {
     alert(error.message || "cutlist.tsv could not be loaded.");
     return;
@@ -615,6 +644,7 @@ async function refreshTsvFromProject() {
     return;
   }
   if (state.dirty && !confirm("Discard unsaved changes and refresh cutlist.tsv from disk?")) return;
+  await createProjectBackup("before-refresh", { silent: true });
   let rows;
   try {
     const opened = normalizeTauriFile(await tauriInvoke("read_project_file", { path: state.projectPath }));
@@ -627,7 +657,15 @@ async function refreshTsvFromProject() {
     const cutlistMatch = findZipEntry(entries, diskManifest.mainCutlist || "cutlist.tsv");
     const cutlistEntry = cutlistMatch?.entry;
     if (!cutlistEntry) throw new Error(`${diskManifest.mainCutlist || "cutlist.tsv"} was not found.`);
-    rows = loadRowsFromTsv(decodeTsvBytes(cutlistEntry.data).text);
+    const tsvText = decodeTsvBytes(cutlistEntry.data).text;
+    try {
+      rows = loadRowsFromTsv(tsvText);
+    } catch (error) {
+      if (!confirm(`${error.message || "cutlist.tsv could not be refreshed."}\n\nRepair and refresh from disk?`)) throw error;
+      const repaired = repairTsvText(tsvText);
+      rows = repaired.rows;
+      state.importWarnings = repaired.warnings;
+    }
   } catch (error) {
     alert(error.message || "cutlist.tsv could not be refreshed.");
     return;
@@ -671,6 +709,10 @@ function renderCurrentView() {
     renderTimeline();
     return;
   }
+  if (state.view === "promptEdit") {
+    renderPromptEdit();
+    return;
+  }
   renderTable();
 }
 
@@ -710,6 +752,70 @@ function loadRowsFromTsv(text) {
   const { rows, warnings } = normalizeImportedRows(parsed.rows);
   state.importWarnings = warnings;
   return rows;
+}
+
+function repairTsvText(text) {
+  const warnings = [];
+  let records;
+  try {
+    records = parseDelimitedText(String(text || "").replace(/^\uFEFF/, ""), "\t");
+  } catch (error) {
+    warnings.push(`Strict TSV parse failed: ${error.message || error}. Falling back to line repair.`);
+    records = String(text || "")
+      .replace(/^\uFEFF/, "")
+      .split(/\r?\n/)
+      .map((line) => line.split("\t"));
+  }
+  records = records.filter((record) => record.some((cell) => String(cell || "").trim()));
+  if (!records.length) {
+    return { rows: [], warnings: ["Empty TSV was repaired to an empty project."] };
+  }
+
+  const firstHeaders = records[0].map(normalizeTsvHeader);
+  const hasHeader = firstHeaders.includes("row_type") || firstHeaders.includes("id") || firstHeaders.some((header) => COLUMNS.includes(header));
+  const headers = hasHeader ? firstHeaders : COLUMNS;
+  const dataRecords = hasHeader ? records.slice(1) : records;
+  if (!hasHeader) warnings.push("Missing header row: standard Prepro columns were assumed.");
+  COLUMNS.forEach((column) => {
+    if (!headers.includes(column)) warnings.push(`Missing column ${column}: empty values were added.`);
+  });
+
+  const usedIds = new Set();
+  const repairedRows = dataRecords.map((values, index) => {
+    const row = emptyRow("cut");
+    COLUMNS.forEach((column, columnIndex) => {
+      const headerIndex = headers.includes(column) ? headers.indexOf(column) : columnIndex;
+      row[column] = decodeCell(values[headerIndex] || "");
+    });
+    row.row_type = normalizeRowType(row.row_type);
+    if (!["scene", "multicut", "cut"].includes(row.row_type)) {
+      warnings.push(`Line ${index + 2}: invalid row_type was changed to cut.`);
+      row.row_type = "cut";
+    }
+    const prefix = { scene: "sc", multicut: "mc", cut: "ct" }[row.row_type] || "row";
+    const preferred = String(row.id || `${prefix}_recovered_${index + 1}`).trim();
+    row.id = uniqueRepairId(preferred, usedIds);
+    if (row.id !== preferred) warnings.push(`Line ${index + 2}: duplicate id ${preferred} was changed to ${row.id}.`);
+    row.parent_id = String(row.parent_id || "").trim();
+    row.order = String(row.order || index + 1).trim();
+    if (values.length !== headers.length) warnings.push(`Line ${index + 2}: column count was repaired (${values.length} -> ${headers.length}).`);
+    return row;
+  });
+
+  const normalized = normalizeImportedRows(repairedRows);
+  return { rows: normalized.rows, warnings: [...warnings, ...normalized.warnings] };
+}
+
+function uniqueRepairId(preferred, usedIds) {
+  if (!usedIds.has(preferred)) {
+    usedIds.add(preferred);
+    return preferred;
+  }
+  let index = 1;
+  while (usedIds.has(`${preferred}_${index}`)) index += 1;
+  const id = `${preferred}_${index}`;
+  usedIds.add(id);
+  return id;
 }
 
 function parseTsv(text) {
@@ -1006,6 +1112,7 @@ function render() {
   renderTable();
   renderStoryboard();
   renderTimeline();
+  renderPromptEdit();
   renderDetail();
   renderPrompt();
   renderMedia();
@@ -1738,6 +1845,196 @@ function renderMedia() {
     </div>`;
 }
 
+function renderPromptEdit() {
+  if (!el.promptEdit) return;
+  const row = getRow(state.activeId);
+  if (!row) {
+    el.promptEdit.innerHTML = `
+      <div class="prompt-edit-empty">
+        ${iconHtml("edit_note", "empty-icon")}
+        <span>Select a row to edit prompts.</span>
+      </div>`;
+    return;
+  }
+  el.promptEdit.innerHTML = `
+    <div class="prompt-edit-layout" data-row-id="${escapeAttr(row.id)}">
+      ${promptEditColumnHtml("image_prompt", "Still Image", row.image_prompt || "")}
+      ${promptEditColumnHtml("video_prompt", "Video", row.video_prompt || "")}
+    </div>
+    <div class="prompt-hover-preview" hidden></div>`;
+  el.promptEdit.querySelectorAll(".prompt-token-editor").forEach((editor) => {
+    editor.addEventListener("focus", () => startPromptEditSession(editor));
+    editor.addEventListener("input", () => handlePromptEditorInput(editor));
+    editor.addEventListener("blur", (event) => finishPromptEditSession(editor, event));
+    editor.addEventListener("paste", pastePlainText);
+  });
+  el.promptEdit.querySelectorAll(".prompt-path-token").forEach((token) => {
+    token.addEventListener("mouseenter", (event) => showPromptHoverPreview(event, token.dataset.path || ""));
+    token.addEventListener("mousemove", (event) => positionPromptHoverPreview(event));
+    token.addEventListener("mouseleave", hidePromptHoverPreview);
+  });
+}
+
+function promptEditColumnHtml(field, label, value) {
+  const paths = extractPromptMediaPaths(value);
+  return `
+    <section class="prompt-edit-column" data-field="${field}">
+      <header class="prompt-edit-header">
+        ${iconHtml(field === "image_prompt" ? "perm_media" : "movie", "small-icon")}
+        <span>${escapeHtml(label)}</span>
+        <code>${escapeHtml(field)}</code>
+      </header>
+      <div class="prompt-media-strip" data-preview-field="${field}">
+        ${promptMediaPreviewHtml(paths)}
+      </div>
+      <div class="prompt-token-editor" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" data-field="${field}">${tokenizePromptText(value)}</div>
+    </section>`;
+}
+
+function promptMediaPreviewHtml(paths) {
+  if (!paths.length) return `<div class="prompt-preview-empty">No media paths in this prompt.</div>`;
+  return paths.map((path) => promptMediaCardHtml(path)).join("");
+}
+
+function promptMediaCardHtml(path, compact = false) {
+  const kind = promptMediaKind(path);
+  const url = displayMediaUrl(path);
+  const label = escapeHtml(path);
+  const body = kind === "image"
+    ? `<div class="prompt-media-thumb">${url ? `<img src="${escapeAttr(url)}" alt="">` : `<span>Missing image</span>`}</div>`
+    : `<div class="prompt-media-audio">${url ? `<audio controls src="${escapeAttr(url)}"></audio>` : `<span>Missing audio</span>`}</div>`;
+  return `<article class="prompt-media-card${compact ? " compact" : ""}" data-kind="${kind}">${body}<div class="prompt-media-path" title="${escapeAttr(path)}">${label}</div></article>`;
+}
+
+function tokenizePromptText(text) {
+  const matches = mediaPathMatches(text);
+  if (!matches.length) return escapeHtml(text).replace(/\n/g, "<br>");
+  let html = "";
+  let cursor = 0;
+  matches.forEach((match) => {
+    html += escapeHtml(text.slice(cursor, match.index)).replace(/\n/g, "<br>");
+    html += `<span class="prompt-path-token" data-path="${escapeAttr(match.path)}">${escapeHtml(match.path)}</span>`;
+    cursor = match.index + match.path.length;
+  });
+  html += escapeHtml(text.slice(cursor)).replace(/\n/g, "<br>");
+  return html;
+}
+
+function startPromptEditSession(editor) {
+  const key = promptEditorKey(editor);
+  state.promptEditSessions.set(key, {
+    rowId: state.activeId,
+    field: editor.dataset.field,
+    historyPushed: false,
+    timer: null,
+  });
+}
+
+function handlePromptEditorInput(editor) {
+  const key = promptEditorKey(editor);
+  const session = state.promptEditSessions.get(key) || { rowId: state.activeId, field: editor.dataset.field, historyPushed: false, timer: null };
+  clearTimeout(session.timer);
+  session.timer = setTimeout(() => commitPromptEditor(editor), 120);
+  state.promptEditSessions.set(key, session);
+  renderPromptEditorPreview(editor.dataset.field, promptEditorText(editor));
+}
+
+function finishPromptEditSession(editor, event = {}) {
+  const key = promptEditorKey(editor);
+  const session = state.promptEditSessions.get(key);
+  if (session?.timer) clearTimeout(session.timer);
+  commitPromptEditor(editor);
+  state.promptEditSessions.delete(key);
+  const row = getRow(state.activeId);
+  if (row && state.view === "promptEdit" && !event.relatedTarget?.closest?.("#promptEditView")) renderPromptEdit();
+}
+
+function commitPromptEditor(editor) {
+  const row = getRow(state.activeId);
+  const field = editor.dataset.field;
+  if (!row || !EDITABLE_COLUMNS.has(field)) return;
+  const value = promptEditorText(editor);
+  if ((row[field] || "") === value) return;
+  const key = promptEditorKey(editor);
+  const session = state.promptEditSessions.get(key);
+  if (!session?.historyPushed) {
+    pushHistory();
+    if (session) session.historyPushed = true;
+  }
+  row[field] = value;
+  markDirty();
+  renderStatus(validate());
+  renderPrompt();
+}
+
+function renderPromptEditorPreview(field, text) {
+  const preview = el.promptEdit?.querySelector(`[data-preview-field="${field}"]`);
+  if (preview) preview.innerHTML = promptMediaPreviewHtml(extractPromptMediaPaths(text));
+}
+
+function promptEditorText(editor) {
+  return editor.innerText.replace(/\r\n/g, "\n").replace(/\u00a0/g, " ").replace(/\n$/, "");
+}
+
+function promptEditorKey(editor) {
+  return `${state.activeId}:${editor.dataset.field || ""}`;
+}
+
+function pastePlainText(event) {
+  event.preventDefault();
+  const text = event.clipboardData?.getData("text/plain") || "";
+  document.execCommand("insertText", false, text);
+}
+
+function extractPromptMediaPaths(text) {
+  const seen = new Set();
+  return mediaPathMatches(text)
+    .map((match) => match.path)
+    .filter((path) => {
+      const key = path.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function mediaPathMatches(text) {
+  const pattern = /(?:[A-Za-z]:[^\s"'<>|]+\.(?:png|jpe?g|webp|gif|svg|wav|mp3|m4a|aac|ogg|flac)|(?:\.{1,2}\/|\/)?[A-Za-z0-9_@./\\-]+\.(?:png|jpe?g|webp|gif|svg|wav|mp3|m4a|aac|ogg|flac))/gi;
+  const matches = [];
+  let match;
+  while ((match = pattern.exec(text || ""))) {
+    matches.push({ path: match[0], index: match.index });
+  }
+  return matches;
+}
+
+function promptMediaKind(path) {
+  return /\.(png|jpe?g|webp|gif|svg)$/i.test(path) ? "image" : "audio";
+}
+
+function showPromptHoverPreview(event, path) {
+  const preview = el.promptEdit?.querySelector(".prompt-hover-preview");
+  if (!preview || !path) return;
+  preview.innerHTML = promptMediaCardHtml(path, true);
+  preview.hidden = false;
+  positionPromptHoverPreview(event);
+}
+
+function positionPromptHoverPreview(event) {
+  const preview = el.promptEdit?.querySelector(".prompt-hover-preview");
+  if (!preview || preview.hidden) return;
+  const bounds = el.promptEdit.getBoundingClientRect();
+  const x = Math.min(event.clientX - bounds.left + 14, bounds.width - 230);
+  const y = Math.min(event.clientY - bounds.top + 14, bounds.height - 180);
+  preview.style.left = `${Math.max(10, x)}px`;
+  preview.style.top = `${Math.max(10, y)}px`;
+}
+
+function hidePromptHoverPreview() {
+  const preview = el.promptEdit?.querySelector(".prompt-hover-preview");
+  if (preview) preview.hidden = true;
+}
+
 function renderValidation(issues) {
   if (!issues.length) {
     el.validation.innerHTML = `<div class="issue">${iconHtml("fact_check")}<span>No validation issues.</span></div>`;
@@ -1840,6 +2137,7 @@ function toggleCollapse(id) {
 function setView(view) {
   const previousView = state.view;
   state.view = view;
+  if (previousView !== view) renderCurrentView();
   document.querySelectorAll(".view-btn").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   document.querySelectorAll(".view-pane").forEach((pane) => pane.classList.remove("active"));
   document.querySelector(`#${view}View`).classList.add("active");
@@ -2704,9 +3002,88 @@ async function exportFile(defaultName, content, kind) {
   render();
 }
 
+async function createProjectBackup(reason = "manual", options = {}) {
+  if (!tauriInvoke || !state.projectPath) {
+    if (!options.silent) alert("Open or save a .lctproj project before creating a backup.");
+    return null;
+  }
+  const stamp = backupTimestamp();
+  const backupName = `${safeName(state.manifest.projectName || state.projectFileName || "Project")}_${stamp}_${reason}.lctproj`;
+  const bytes = await projectArchiveBytes();
+  const saved = await tauriInvoke("save_project_backup", {
+    projectPath: state.projectPath,
+    project_path: state.projectPath,
+    backupName,
+    backup_name: backupName,
+    bytes: [...bytes],
+    maxBackups: MAX_PROJECT_BACKUPS,
+    max_backups: MAX_PROJECT_BACKUPS,
+  });
+  if (!options.silent) alert(`Backup created: ${normalizeTauriFile(saved).fileName || backupName}`);
+  return saved;
+}
+
+async function restoreProjectBackup() {
+  if (!tauriInvoke || !state.projectPath) {
+    alert("Open or save a .lctproj project before restoring a backup.");
+    return;
+  }
+  const backups = await tauriInvoke("list_project_backups", { projectPath: state.projectPath, project_path: state.projectPath });
+  if (!backups?.length) {
+    alert("No backups found.");
+    return;
+  }
+  const list = backups.map((backup, index) => `${index + 1}. ${backup.name || backup.file_name}`).join("\n");
+  const choice = prompt(`Select backup number to restore:\n\n${list}`, "1");
+  const index = Number(choice) - 1;
+  const backup = backups[index];
+  if (!backup) return;
+  if (!confirm(`Restore ${backup.name || backup.file_name}? Current project state will be backed up first.`)) return;
+  await createProjectBackup("before-restore", { silent: true });
+  const opened = normalizeTauriFile(await tauriInvoke("read_project_backup", {
+    projectPath: state.projectPath,
+    project_path: state.projectPath,
+    backupName: backup.name || backup.file_name,
+    backup_name: backup.name || backup.file_name,
+  }));
+  await loadProjectFromBytes(new Uint8Array(opened.bytes || []), state.projectFileName || opened.fileName, state.projectPath);
+  state.dirty = true;
+  render();
+}
+
+async function repairCurrentTsv() {
+  await createProjectBackup("before-repair", { silent: true });
+  await repairTsvTextIntoState(serializeTsv(), state.manifest.projectName || "Repaired TSV", "Repair Current TSV");
+}
+
+function repairTsvFile() {
+  state.pendingRepairTsvFile = true;
+  el.input.accept = ".tsv,.txt";
+  el.input.click();
+  el.input.accept = ".lctproj,.tsv,.txt";
+}
+
+async function repairTsvTextIntoState(text, name, label) {
+  await createProjectBackup("before-repair", { silent: true });
+  const repaired = repairTsvText(text);
+  pushHistory();
+  state.rows = repaired.rows;
+  state.importWarnings = repaired.warnings;
+  state.manifest = {
+    ...state.manifest,
+    projectName: state.projectPath ? state.manifest.projectName : name || state.manifest.projectName,
+  };
+  preserveSelectionAfterRowsRefresh();
+  state.dirty = true;
+  renderAfterRowsRefresh();
+  alert(`${label}: repaired ${state.rows.length} rows with ${repaired.warnings.length} warning(s).`);
+}
+
+function backupTimestamp(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}_${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}${String(date.getSeconds()).padStart(2, "0")}${String(date.getMilliseconds()).padStart(3, "0")}`;
+}
+
 async function projectArchiveBytes(options = {}) {
-  const now = new Date();
-  const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
   const sourceManifest = options.manifest || state.manifest;
   const sourceRows = options.rows || state.rows;
   const sourceMediaBlobs = options.mediaBlobs || state.mediaBlobs;
@@ -2728,10 +3105,6 @@ async function projectArchiveBytes(options = {}) {
     ["timeline.json", JSON.stringify({ collapsed, activeId }, null, 2)],
     ["settings.json", JSON.stringify({ view }, null, 2)],
     ["media_index.json", JSON.stringify({ media: sourceRows.filter((row) => row.row_type === "cut").map((row) => ({ id: row.id, image: row.image, audio_file: row.audio_file })) }, null, 2)],
-    [`.backups/${stamp}/manifest.json`, JSON.stringify(manifest, null, 2)],
-    [`.backups/${stamp}/cutlist.tsv`, cutlist],
-    [`.backups/${stamp}/timeline.json`, JSON.stringify({ collapsed, activeId }, null, 2)],
-    [`.backups/${stamp}/settings.json`, JSON.stringify({ view }, null, 2)],
   ]);
   for (const [path, mediaBlob] of sourceMediaBlobs.entries()) {
     files.set(path, new Uint8Array(await mediaBlob.arrayBuffer()));
