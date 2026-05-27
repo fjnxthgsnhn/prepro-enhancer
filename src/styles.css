@@ -1405,6 +1405,15 @@ button.active {
   background: var(--panel);
 }
 
+.prompt-media-card.missing {
+  border-color: rgba(255, 107, 95, 0.34);
+  background: rgba(255, 107, 95, 0.06);
+}
+
+.prompt-media-card.loading {
+  opacity: 0.78;
+}
+
 .prompt-media-thumb {
   display: grid;
   place-items: center;

@@ -70,6 +70,40 @@ fn read_project_file(path: String) -> Result<OpenedFile, String> {
 }
 
 #[tauri::command]
+fn read_media_file(project_path: String, media_path: String) -> Result<OpenedFile, String> {
+    let media_path = PathBuf::from(&media_path);
+    let path = if media_path.is_absolute() {
+        media_path.clone()
+    } else {
+        let project_path = PathBuf::from(project_path);
+        let parent = project_path.parent().ok_or_else(|| "Project path has no parent directory.".to_string())?;
+        resolve_relative_media_path(parent, &media_path)
+    };
+    let bytes = fs::read(&path).map_err(|error| error.to_string())?;
+    Ok(OpenedFile {
+        file_name: file_name(&path),
+        path: path.to_string_lossy().to_string(),
+        bytes,
+    })
+}
+
+fn resolve_relative_media_path(project_dir: &Path, media_path: &Path) -> PathBuf {
+    let direct = project_dir.join(media_path);
+    if direct.exists() {
+        return direct;
+    }
+    let mut current = Some(project_dir);
+    while let Some(dir) = current {
+        let candidate = dir.join(media_path);
+        if candidate.exists() {
+            return candidate;
+        }
+        current = dir.parent();
+    }
+    direct
+}
+
+#[tauri::command]
 fn save_project_backup(project_path: String, backup_name: String, bytes: Vec<u8>, max_backups: usize) -> Result<SavedFile, String> {
     let project_path = PathBuf::from(project_path);
     let backup_dir = backup_dir_for_project(&project_path)?;
@@ -240,6 +274,7 @@ fn main() {
             save_project,
             save_project_as,
             read_project_file,
+            read_media_file,
             save_project_backup,
             list_project_backups,
             read_project_backup,

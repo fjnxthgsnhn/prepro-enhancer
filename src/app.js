@@ -233,6 +233,7 @@ const state = {
   projectPath: "",
   mediaUrls: new Map(),
   mediaBlobs: new Map(),
+  promptPreviewUrls: new Map(),
   importWarnings: [],
   collapsed: new Set(),
   panelCollapsed: new Set(),
@@ -1873,6 +1874,7 @@ function renderPromptEdit() {
     token.addEventListener("mousemove", (event) => positionPromptHoverPreview(event));
     token.addEventListener("mouseleave", hidePromptHoverPreview);
   });
+  resolvePromptMediaPreviews();
 }
 
 function promptEditColumnHtml(field, label, value) {
@@ -1898,12 +1900,16 @@ function promptMediaPreviewHtml(paths) {
 
 function promptMediaCardHtml(path, compact = false) {
   const kind = promptMediaKind(path);
-  const url = displayMediaUrl(path);
+  const resolved = promptMediaResolution(path);
+  const url = resolved?.url || "";
   const label = escapeHtml(path);
+  const missing = resolved?.status === "missing";
+  const loading = !resolved && !isBrowserSafeMediaPath(path) && !state.mediaUrls.has(path);
+  const placeholder = missing ? "Missing / not readable" : "Loading preview...";
   const body = kind === "image"
-    ? `<div class="prompt-media-thumb">${url ? `<img src="${escapeAttr(url)}" alt="">` : `<span>Missing image</span>`}</div>`
-    : `<div class="prompt-media-audio">${url ? `<audio controls src="${escapeAttr(url)}"></audio>` : `<span>Missing audio</span>`}</div>`;
-  return `<article class="prompt-media-card${compact ? " compact" : ""}" data-kind="${kind}">${body}<div class="prompt-media-path" title="${escapeAttr(path)}">${label}</div></article>`;
+    ? `<div class="prompt-media-thumb">${url ? `<img src="${escapeAttr(url)}" alt="">` : `<span>${placeholder}</span>`}</div>`
+    : `<div class="prompt-media-audio">${url ? `<audio controls src="${escapeAttr(url)}"></audio>` : `<span>${placeholder}</span>`}</div>`;
+  return `<article class="prompt-media-card${compact ? " compact" : ""}${missing ? " missing" : ""}${loading ? " loading" : ""}" data-kind="${kind}" data-path="${escapeAttr(path)}">${body}<div class="prompt-media-path" title="${escapeAttr(path)}">${label}</div></article>`;
 }
 
 function tokenizePromptText(text) {
@@ -1914,7 +1920,7 @@ function tokenizePromptText(text) {
   matches.forEach((match) => {
     html += escapeHtml(text.slice(cursor, match.index)).replace(/\n/g, "<br>");
     html += `<span class="prompt-path-token" data-path="${escapeAttr(match.path)}">${escapeHtml(match.path)}</span>`;
-    cursor = match.index + match.path.length;
+    cursor = match.end;
   });
   html += escapeHtml(text.slice(cursor)).replace(/\n/g, "<br>");
   return html;
@@ -1934,7 +1940,10 @@ function handlePromptEditorInput(editor) {
   const key = promptEditorKey(editor);
   const session = state.promptEditSessions.get(key) || { rowId: state.activeId, field: editor.dataset.field, historyPushed: false, timer: null };
   clearTimeout(session.timer);
-  session.timer = setTimeout(() => commitPromptEditor(editor), 120);
+  session.timer = setTimeout(() => {
+    commitPromptEditor(editor);
+    retokenizePromptEditor(editor);
+  }, 160);
   state.promptEditSessions.set(key, session);
   renderPromptEditorPreview(editor.dataset.field, promptEditorText(editor));
 }
@@ -1969,7 +1978,19 @@ function commitPromptEditor(editor) {
 
 function renderPromptEditorPreview(field, text) {
   const preview = el.promptEdit?.querySelector(`[data-preview-field="${field}"]`);
-  if (preview) preview.innerHTML = promptMediaPreviewHtml(extractPromptMediaPaths(text));
+  if (preview) {
+    preview.innerHTML = promptMediaPreviewHtml(extractPromptMediaPaths(text));
+    resolvePromptMediaPreviews(preview);
+  }
+}
+
+function retokenizePromptEditor(editor) {
+  if (!editor?.isConnected || document.activeElement !== editor) return;
+  const text = promptEditorText(editor);
+  const offset = promptEditorSelectionOffset(editor);
+  editor.innerHTML = tokenizePromptText(text);
+  bindPromptPathTokens(editor);
+  restorePromptEditorSelection(editor, offset);
 }
 
 function promptEditorText(editor) {
@@ -1999,16 +2020,46 @@ function extractPromptMediaPaths(text) {
 }
 
 function mediaPathMatches(text) {
-  const pattern = /(?:[A-Za-z]:[^\s"'<>|]+\.(?:png|jpe?g|webp|gif|svg|wav|mp3|m4a|aac|ogg|flac)|(?:\.{1,2}\/|\/)?[A-Za-z0-9_@./\\-]+\.(?:png|jpe?g|webp|gif|svg|wav|mp3|m4a|aac|ogg|flac))/gi;
+  const source = String(text || "");
+  const mediaExt = /\.(png|jpe?g|webp|gif|svg|wav|mp3|m4a|aac|ogg|flac)(?:$|[?#])/i;
   const matches = [];
-  let match;
-  while ((match = pattern.exec(text || ""))) {
-    matches.push({ path: match[0], index: match.index });
+  let token = "";
+  let tokenStart = 0;
+  const flush = (end) => {
+    if (!token) return;
+    const trimmed = trimPromptMediaPath(token);
+    const path = trimmed.path;
+    if (path && (mediaExt.test(path) || /^data:(image|audio)\//i.test(path) || /^blob:/i.test(path))) {
+      matches.push({ path, index: tokenStart + trimmed.offset, end: tokenStart + trimmed.offset + path.length });
+    }
+    token = "";
+  };
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (isPromptPathBoundary(char)) {
+      flush(index);
+      continue;
+    }
+    if (!token) tokenStart = index;
+    token += char;
   }
+  flush(source.length);
   return matches;
 }
 
+function trimPromptMediaPath(path) {
+  const leading = path.match(/^[([{「『"'`]+/)?.[0] || "";
+  const trailing = path.match(/[)\]}」』"',.;:!?。、`]+$/)?.[0] || "";
+  return { path: path.slice(leading.length, path.length - trailing.length), offset: leading.length };
+}
+
+function isPromptPathBoundary(char) {
+  return /[\s<>]/u.test(char);
+}
+
 function promptMediaKind(path) {
+  if (/^data:image\//i.test(path)) return "image";
+  if (/^data:audio\//i.test(path)) return "audio";
   return /\.(png|jpe?g|webp|gif|svg)$/i.test(path) ? "image" : "audio";
 }
 
@@ -2018,6 +2069,9 @@ function showPromptHoverPreview(event, path) {
   preview.innerHTML = promptMediaCardHtml(path, true);
   preview.hidden = false;
   positionPromptHoverPreview(event);
+  resolvePromptMediaPath(path).then(() => {
+    if (!preview.hidden) preview.innerHTML = promptMediaCardHtml(path, true);
+  });
 }
 
 function positionPromptHoverPreview(event) {
@@ -2033,6 +2087,90 @@ function positionPromptHoverPreview(event) {
 function hidePromptHoverPreview() {
   const preview = el.promptEdit?.querySelector(".prompt-hover-preview");
   if (preview) preview.hidden = true;
+}
+
+function bindPromptPathTokens(root = el.promptEdit) {
+  root?.querySelectorAll(".prompt-path-token").forEach((token) => {
+    token.addEventListener("mouseenter", (event) => showPromptHoverPreview(event, token.dataset.path || ""));
+    token.addEventListener("mousemove", (event) => positionPromptHoverPreview(event));
+    token.addEventListener("mouseleave", hidePromptHoverPreview);
+  });
+}
+
+function promptMediaResolution(path) {
+  if (!path) return null;
+  if (state.promptPreviewUrls.has(path)) return state.promptPreviewUrls.get(path);
+  if (state.mediaUrls.has(path)) return { status: "ready", url: state.mediaUrls.get(path), kind: promptMediaKind(path) };
+  if (isBrowserSafeMediaPath(path)) return { status: "ready", url: path, kind: promptMediaKind(path) };
+  return null;
+}
+
+async function resolvePromptMediaPreviews(root = el.promptEdit) {
+  const cards = [...(root?.querySelectorAll?.(".prompt-media-card[data-path]") || [])];
+  await Promise.all(cards.map((card) => resolvePromptMediaPath(card.dataset.path || "")));
+  cards.forEach((card) => {
+    const path = card.dataset.path || "";
+    card.outerHTML = promptMediaCardHtml(path, card.classList.contains("compact"));
+  });
+}
+
+async function resolvePromptMediaPath(path) {
+  if (!path || state.promptPreviewUrls.has(path) || state.mediaUrls.has(path) || isBrowserSafeMediaPath(path)) return promptMediaResolution(path);
+  if (!tauriInvoke || !state.projectPath) {
+    state.promptPreviewUrls.set(path, { status: "missing", url: "", kind: promptMediaKind(path) });
+    return state.promptPreviewUrls.get(path);
+  }
+  try {
+    const opened = normalizeTauriFile(await tauriInvoke("read_media_file", {
+      projectPath: state.projectPath,
+      project_path: state.projectPath,
+      mediaPath: path,
+      media_path: path,
+    }));
+    const blob = new Blob([new Uint8Array(opened.bytes || [])], { type: mimeFromPath(path) });
+    const url = URL.createObjectURL(blob);
+    state.promptPreviewUrls.set(path, { status: "ready", url, kind: promptMediaKind(path) });
+  } catch {
+    state.promptPreviewUrls.set(path, { status: "missing", url: "", kind: promptMediaKind(path) });
+  }
+  return state.promptPreviewUrls.get(path);
+}
+
+function isBrowserSafeMediaPath(path) {
+  return /^(https?:|blob:|data:)/i.test(path);
+}
+
+function promptEditorSelectionOffset(editor) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !editor.contains(selection.anchorNode)) return editor.innerText.length;
+  const range = selection.getRangeAt(0).cloneRange();
+  range.selectNodeContents(editor);
+  range.setEnd(selection.anchorNode, selection.anchorOffset);
+  return range.toString().length;
+}
+
+function restorePromptEditorSelection(editor, offset) {
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let remaining = Math.max(0, offset);
+  let node;
+  while ((node = walker.nextNode())) {
+    if (remaining <= node.nodeValue.length) {
+      const range = document.createRange();
+      range.setStart(node, remaining);
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+    remaining -= node.nodeValue.length;
+  }
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
 }
 
 function renderValidation(issues) {
@@ -3422,6 +3560,10 @@ function revokeMediaUrls() {
   state.mediaUrls.forEach((url) => {
     if (url.startsWith("blob:")) URL.revokeObjectURL(url);
   });
+  state.promptPreviewUrls.forEach((item) => {
+    if (item?.url?.startsWith("blob:")) URL.revokeObjectURL(item.url);
+  });
+  state.promptPreviewUrls.clear();
 }
 
 function sampleSvg(color, label) {

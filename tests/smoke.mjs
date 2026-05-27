@@ -445,8 +445,10 @@ await page.click('[data-view="promptEdit"]');
 await expectCount(".prompt-edit-column", 2);
 await expectText('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor', "extreme close-up");
 await expectText('.prompt-edit-column[data-field="video_prompt"] .prompt-token-editor', "slow dolly");
+if (await page.locator(".prompt-media-card").count()) throw new Error("PromptEdit should preview only paths written in the editor, not image/audio_file columns");
 await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill("media/images/cut001.jpg\nstill prompt revised");
 await page.waitForFunction(() => document.querySelector('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]'));
+await page.waitForFunction(() => document.querySelector('.prompt-path-token[data-path="media/images/cut001.jpg"]'));
 await page.locator('.prompt-edit-column[data-field="video_prompt"] .prompt-token-editor').fill("media/audio/cut001.wav\nvideo prompt revised");
 await page.waitForFunction(() => document.querySelector('[data-preview-field="video_prompt"] .prompt-media-card[data-kind="audio"]'));
 await page.click('[data-view="table"]');
@@ -787,6 +789,11 @@ async function runTauriWelcomeSmoke(browser) {
   const tauriPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
   await installTauriMock(tauriPage, {
     files: [[recentPath, Array.from(recentProject)]],
+    mediaFiles: [
+      ["C:\\Projects\\media\\absolute-preview.svg", Array.from(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect width="100" height="60" fill="#6fd2ff"/></svg>`))],
+      ["C:\\Projects\\media\\relative-preview.svg", Array.from(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect width="100" height="60" fill="#d7ff57"/></svg>`))],
+      ["C:\\project\\narushisuto-DK\\assets\\ルイ.png", Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64"))],
+    ],
     recent: [{ fileName: "Recent Project.lctproj", path: recentPath, timestamp: "2026-05-24T00:00:00.000Z" }],
   });
   await tauriPage.goto(pathToFileURL(resolve("index.html")).href);
@@ -827,6 +834,14 @@ async function runTauriWelcomeSmoke(browser) {
   });
   await tauriPage.click("#refreshTsvBtn");
   await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "LLM Updated Scene");
+  await tauriPage.evaluate(() => document.querySelector('tbody tr[data-id="ct778"] td[data-column="title"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  await tauriPage.click('[data-view="promptEdit"]');
+  await tauriPage.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill("C:\\Projects\\media\\absolute-preview.svg\nmedia/relative-preview.svg\n`project/narushisuto-DK/assets/ルイ.png`");
+  await tauriPage.waitForFunction(() => document.querySelectorAll('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"] img').length === 3);
+  await tauriPage.waitForFunction(() => document.querySelector('.prompt-path-token[data-path="project/narushisuto-DK/assets/ルイ.png"]'));
+  await tauriPage.locator('.prompt-path-token[data-path="project/narushisuto-DK/assets/ルイ.png"]').hover();
+  await tauriPage.waitForFunction(() => document.querySelector(".prompt-hover-preview img"));
+  await tauriPage.click('[data-view="table"]');
   for (let index = 0; index < 11; index += 1) {
     tauriPage.once("dialog", (dialog) => dialog.accept());
     await tauriPage.evaluate(() => document.querySelector('[data-file-action="createBackup"]')?.click());
@@ -962,7 +977,9 @@ async function installTauriMock(targetPage, options = {}) {
     const key = "preproEnhancer.recentProjects.v1";
     localStorage.setItem(key, JSON.stringify(config.recent || []));
     const files = new Map((config.files || []).map(([path, bytes]) => [path, bytes]));
+    const mediaFiles = new Map((config.mediaFiles || []).map(([path, bytes]) => [path, bytes]));
     window.__tauriMockFiles = files;
+    window.__tauriMockMediaFiles = mediaFiles;
     window.__TAURI__ = {
       core: {
         invoke: async (command, args = {}) => {
@@ -978,6 +995,21 @@ async function installTauriMock(targetPage, options = {}) {
           if (command === "read_project_file") {
             if (!files.has(args.path)) throw new Error("file not found");
             return { path: args.path, file_name: args.path.split("\\").pop(), bytes: files.get(args.path) };
+          }
+          if (command === "read_media_file") {
+            const projectPath = args.projectPath || args.project_path;
+            const mediaPath = args.mediaPath || args.media_path;
+            const normalized = mediaPath.replace(/\//g, "\\");
+            const base = projectPath.replace(/[\\/][^\\/]+$/, "");
+            const candidates = [/^[A-Za-z]:[\\/]/.test(mediaPath) || mediaPath.startsWith("/") ? [mediaPath] : [
+              `${base}\\${normalized}`,
+              `C:\\${normalized}`,
+              mediaPath,
+            ]].flat();
+            const resolved = candidates.find((path) => mediaFiles.has(path));
+            if (!resolved) throw new Error("media not found");
+            const bytes = mediaFiles.get(resolved);
+            return { path: resolved, file_name: resolved.split(/[\\/]/).pop(), bytes };
           }
           if (command === "save_project_backup") {
             const projectPath = args.projectPath || args.project_path;
