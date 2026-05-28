@@ -181,6 +181,35 @@ const PROJECT_AGENTS_MD = [
   "",
   "Also tell the user that after confirming the cut structure, you can build `image_prompt` and `video_prompt` as the next step.",
   "",
+  "## Still Image Asset and Prompt Workflow",
+  "",
+  "### Asset generation preparation",
+  "",
+  "カットリストから必要なアセットを人物、環境、小物、乗り物に分類して洗い出し、画像なしの状態で `assets.json` の assets 登録候補を作成する。",
+  "シナリオやカットリストにアセットの外見、服装、色、形状、年代、質感、役割などの特徴が書かれている場合は、その内容を asset の `note` に記録する。",
+  "画像生成へ進む前に、API や skill を使って画像生成するかをユーザーに確認する。",
+  "画像生成する場合は、ユーザー環境で利用できる API や skill を調べ、どの手段で生成するかをユーザーに質問して決定する。",
+  "API や skill で生成した画像は、作業フォルダに `assets/<project-file-name>/` を作成し、用途が分かるファイル名へリネームして保存またはコピーする。",
+  "保存した画像ファイルのパスを、対応する assets 登録アイテムの `path` に記録する。",
+  "複数枚を生成する場合はバッチスクリプトを作成し、バックグラウンドスクリプトとして実行する。LLM は生成完了のレスポンス待ちでブロックしない。",
+  "",
+  "### Still image prompt creation",
+  "",
+  "静止画プロンプトを作成する前に、ストーリーボードを作るのか開始フレームを作るのかをユーザーに確認する。",
+  "ストーリーボードの場合は、画面内に指示文を含めるか、カラーかラフスケッチか、解像度、アスペクト比も確認する。",
+  "`scene > multicut > cut` にグループされた単体 cut には `image_prompt` を書かず、グループ元の multicut に `image_prompt` を書く。",
+  "プロンプトは `scene`、`subject`、`composition`、`action`、`camera`、`dialogue` などから、状況を説明するキャプションとして作成する。",
+  "人物やサブジェクトの reference asset がある場合は、`assets.json` に登録されているファイルパスを使用する。",
+  "画像生成エンジンが reference image 指定記法を必要とする場合は、その記法に置き換える。gpt-image-2 ではアップロード順に `image 1`, `image 2`, `image 3` のように参照する。",
+  "nanobanana の場合は自然言語で直接参照できるため、reference image 指定記法への置き換えはしない。",
+  "プロンプトの最後には、使用する reference image のファイルパスを列挙し、アプリ側がプレビュー対象として参照できるようにする。",
+  "",
+  "### Still image generation",
+  "",
+  "API や skill で静止画生成する場合は、作成済みの `image_prompt` と reference image を使用して生成する。",
+  "生成 API や skill に渡す直前に、プロンプト末尾へ列挙した reference image パス文字列は削除する。",
+  "複数枚を生成する場合はバッチスクリプトを作成し、バックグラウンドスクリプトとして実行する。LLM は生成完了のレスポンス待ちでブロックしない。",
+  "",
   "## Final Delivery for Chat AI Editing",
   "",
   "`.lctproj` is a ZIP archive whose extension is `.lctproj`.",
@@ -2765,12 +2794,7 @@ async function resolvePromptMediaPath(path) {
     return state.promptPreviewUrls.get(path);
   }
   try {
-    const opened = normalizeTauriFile(await tauriInvoke("read_media_file", {
-      projectPath: state.projectPath,
-      project_path: state.projectPath,
-      mediaPath: path,
-      media_path: path,
-    }));
+    const opened = normalizeTauriFile(await readPromptMediaFile(path));
     const blob = new Blob([new Uint8Array(opened.bytes || [])], { type: mimeFromPath(path) });
     const url = URL.createObjectURL(blob);
     state.promptPreviewUrls.set(path, { status: "ready", url, kind: promptMediaKind(path) });
@@ -2778,6 +2802,30 @@ async function resolvePromptMediaPath(path) {
     state.promptPreviewUrls.set(path, { status: "missing", url: "", kind: promptMediaKind(path) });
   }
   return state.promptPreviewUrls.get(path);
+}
+
+async function readPromptMediaFile(path) {
+  let lastError = null;
+  for (const candidate of promptMediaReadCandidates(path)) {
+    try {
+      return await tauriInvoke("read_media_file", {
+        projectPath: state.projectPath,
+        project_path: state.projectPath,
+        mediaPath: candidate,
+        media_path: candidate,
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("media not found");
+}
+
+function promptMediaReadCandidates(path) {
+  const candidates = [path];
+  const slashPath = String(path || "").replace(/\\/g, "/");
+  if (slashPath && slashPath !== path) candidates.push(slashPath);
+  return candidates;
 }
 
 function isBrowserSafeMediaPath(path) {

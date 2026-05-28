@@ -949,6 +949,13 @@ function expectAgentsMd(content, label) {
   if (!content.includes("scene > cut")) throw new Error(`${label} AGENTS.md should document direct cut hierarchy rules`);
   if (!content.includes("multicut` is optional")) throw new Error(`${label} AGENTS.md should document optional multicut rules`);
   if (!content.includes("100 Japanese characters = 17 seconds")) throw new Error(`${label} AGENTS.md should document dialogue duration rule`);
+  if (!content.includes("## Still Image Asset and Prompt Workflow")) throw new Error(`${label} AGENTS.md should document still image workflow`);
+  if (!content.includes("人物、環境、小物、乗り物")) throw new Error(`${label} AGENTS.md should document asset extraction categories`);
+  if (!content.includes("assets/<project-file-name>/")) throw new Error(`${label} AGENTS.md should document generated asset folder policy`);
+  if (!content.includes("グループ元の multicut に `image_prompt`")) throw new Error(`${label} AGENTS.md should document multicut image prompt policy`);
+  if (!content.includes("gpt-image-2")) throw new Error(`${label} AGENTS.md should document gpt-image-2 reference handling`);
+  if (!content.includes("nanobanana")) throw new Error(`${label} AGENTS.md should document nanobanana reference handling`);
+  if (!content.includes("reference image パス文字列は削除")) throw new Error(`${label} AGENTS.md should document generation prompt cleanup`);
   if (!content.includes("`.lctproj` is a ZIP archive")) throw new Error(`${label} AGENTS.md should document lctproj zip archive format`);
   if (!content.includes("At the ZIP root, at minimum `manifest.json` and `cutlist.tsv`")) throw new Error(`${label} AGENTS.md should document required zip root files`);
   if (!content.includes("Compress-Archive")) throw new Error(`${label} AGENTS.md should include a PowerShell rearchive example`);
@@ -984,6 +991,7 @@ async function runTauriWelcomeSmoke(browser) {
     mediaFiles: [
       ["C:\\Projects\\media\\absolute-preview.svg", Array.from(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect width="100" height="60" fill="#6fd2ff"/></svg>`))],
       ["C:\\Projects\\media\\relative-preview.svg", Array.from(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect width="100" height="60" fill="#d7ff57"/></svg>`))],
+      ["C:\\Projects\\project\\narushisuto-DK\\assets\\episode_001\\人物レイアウト案_episode_001_mannequin_16x9.png", Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64"))],
       ["C:\\project\\narushisuto-DK\\assets\\ルイ.png", Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64"))],
     ],
     recent: [{ fileName: "Recent Project.lctproj", path: recentPath, timestamp: "2026-05-24T00:00:00.000Z" }],
@@ -1028,10 +1036,14 @@ async function runTauriWelcomeSmoke(browser) {
   await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "LLM Updated Scene");
   await tauriPage.evaluate(() => document.querySelector('tbody tr[data-id="ct778"] td[data-column="title"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
   await tauriPage.click('[data-view="promptEdit"]');
-  await tauriPage.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill("C:\\Projects\\media\\absolute-preview.svg\nmedia/relative-preview.svg\n`project/narushisuto-DK/assets/ルイ.png`");
-  await tauriPage.waitForFunction(() => document.querySelectorAll('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"] img').length === 3);
+  const backslashRelativePreviewPath = "project\\narushisuto-DK\\assets\\episode_001\\人物レイアウト案_episode_001_mannequin_16x9.png";
+  await tauriPage.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill(`C:\\Projects\\media\\absolute-preview.svg\nmedia/relative-preview.svg\n\`project/narushisuto-DK/assets/ルイ.png\`\n${backslashRelativePreviewPath}`);
+  await tauriPage.waitForFunction(() => document.querySelectorAll('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"] img').length === 4);
   await tauriPage.waitForFunction(() => document.querySelector('.prompt-path-token[data-path="project/narushisuto-DK/assets/ルイ.png"]'));
   await tauriPage.locator('.prompt-path-token[data-path="project/narushisuto-DK/assets/ルイ.png"]').hover();
+  await tauriPage.waitForFunction(() => document.querySelector(".prompt-hover-preview img"));
+  await tauriPage.waitForFunction((path) => [...document.querySelectorAll(".prompt-path-token")].some((token) => token.dataset.path === path), backslashRelativePreviewPath);
+  await tauriPage.locator(".prompt-path-token", { hasText: backslashRelativePreviewPath }).hover();
   await tauriPage.waitForFunction(() => document.querySelector(".prompt-hover-preview img"));
   await tauriPage.click('[data-view="assets"]');
   await dropFilesOnPage(tauriPage, "#assetsView", [
