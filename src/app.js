@@ -2093,6 +2093,11 @@ function handleAssetDrop(event) {
   el.assetsView?.querySelector(".assets-view")?.classList.remove("drag-over");
   const files = [...(event.dataTransfer?.files || [])];
   if (!files.length) return;
+  const targetAssetId = assetDropCardIdFromElement(event.target);
+  if (targetAssetId) {
+    applyDroppedAssetToExistingAsset(targetAssetId, assetFromDroppedFile(files[0]));
+    return;
+  }
   addDroppedAssets(files.map(assetFromDroppedFile));
 }
 
@@ -2107,17 +2112,35 @@ function handleTauriAssetDropEvent(event) {
   const payload = event?.payload || event;
   const paths = payload?.paths || payload?.payload?.paths || [];
   if (!paths.length) return;
-  if (!assetDropTargetFromPosition(payload?.position || payload?.payload?.position)) return;
+  const target = assetDropTargetFromPayload(payload);
+  if (!target) return;
+  const targetAssetId = assetDropCardIdFromElement(target);
+  if (targetAssetId) {
+    applyDroppedAssetToExistingAsset(targetAssetId, assetFromDroppedPath(paths[0]));
+    return;
+  }
   addDroppedAssets(paths.map(assetFromDroppedPath));
 }
 
-function assetDropTargetFromPosition(position) {
+function assetDropTargetFromPayload(payload) {
+  return assetDropTargetFromPosition(payload?.position || payload?.payload?.position, payload?.scaleFactor ?? payload?.scale_factor ?? payload?.payload?.scaleFactor ?? payload?.payload?.scale_factor);
+}
+
+function assetDropTargetFromPosition(position, scaleFactor = 1) {
   const view = el.assetsView;
   if (!view || view.hidden || state.view !== "assets") return null;
   if (el.assetsView.querySelector(".asset-modal-backdrop")) return null;
   if (!position || position.x == null || position.y == null) return view;
+  const scale = Number(scaleFactor) || window.devicePixelRatio || 1;
+  const point = { x: position.x / scale, y: position.y / scale };
   const rect = view.getBoundingClientRect();
-  return position.x >= rect.left && position.x <= rect.right && position.y >= rect.top && position.y <= rect.bottom ? view : null;
+  if (point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) return null;
+  return document.elementFromPoint(point.x, point.y) || view;
+}
+
+function assetDropCardIdFromElement(element) {
+  const card = element?.closest?.(".asset-card");
+  return card?.dataset?.assetId || "";
 }
 
 function addDroppedAssets(added) {
@@ -2125,6 +2148,19 @@ function addDroppedAssets(added) {
   state.assets.push(...added);
   state.assetSelectedIds = new Set(added.map((asset) => asset.id));
   state.assetSelectionAnchorId = added[0]?.id || "";
+  markDirty();
+  renderAssets();
+  renderStatus(validate());
+}
+
+function applyDroppedAssetToExistingAsset(assetId, droppedAsset) {
+  const asset = assetById(assetId);
+  if (!asset || !droppedAsset?.path) return;
+  asset.path = droppedAsset.path;
+  asset.type = assetTypeFromPath(droppedAsset.path);
+  if (!asset.title) asset.title = fileStem(droppedAsset.path);
+  state.assetSelectedIds = new Set([asset.id]);
+  state.assetSelectionAnchorId = asset.id;
   markDirty();
   renderAssets();
   renderStatus(validate());

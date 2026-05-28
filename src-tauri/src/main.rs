@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}};
-use tauri::{DragDropEvent, Emitter, RunEvent, WindowEvent};
+use tauri::{DragDropEvent, Emitter, Manager, RunEvent, WindowEvent};
 
 #[derive(Serialize)]
 struct OpenedFile {
@@ -26,6 +26,7 @@ struct BackupFile {
 struct AssetDropPayload {
     paths: Vec<String>,
     position: AssetDropPosition,
+    scale_factor: f64,
 }
 
 #[derive(Clone, Serialize)]
@@ -300,9 +301,14 @@ fn prune_project_backups(dir: &Path, max_backups: usize) -> Result<(), String> {
 }
 
 fn emit_asset_file_drop(app: &tauri::AppHandle, label: &str, paths: &[PathBuf], position: &tauri::PhysicalPosition<f64>) {
+    let scale_factor = app
+        .get_webview_window(label)
+        .and_then(|window| window.scale_factor().ok())
+        .unwrap_or(1.0);
     let payload = AssetDropPayload {
         paths: paths.iter().map(|path| path.to_string_lossy().to_string()).collect(),
         position: AssetDropPosition { x: position.x, y: position.y },
+        scale_factor,
     };
     let _ = app.emit_to(label, "asset-file-drop", payload);
 }

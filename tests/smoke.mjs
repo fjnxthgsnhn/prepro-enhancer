@@ -537,6 +537,15 @@ await page.locator('.asset-modal [data-asset-field="note"]').fill("Reusable Rui 
 await page.locator('.asset-modal [data-asset-field="note"]').press("Tab");
 await page.locator('.asset-modal [data-asset-action="close"]').click();
 await page.waitForFunction(() => document.querySelector('#assetsView .prompt-media-card[data-kind="image"]'));
+await dropFiles(".asset-card", [{ name: "rui-updated.png", type: "image/png" }]);
+await expectCount(".asset-card", 1);
+const updatedRuiAssetPath = "assets/rui-updated.png";
+await page.waitForFunction((path) => document.querySelector(`.asset-card .prompt-media-card[data-path="${path}"]`), updatedRuiAssetPath);
+if ((await page.locator('.asset-card [data-asset-field="alias"]').inputValue()) !== "rui") throw new Error("Asset drop update should keep alias");
+await page.locator(".asset-card .asset-thumb").click();
+await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "assets/rui-updated.png");
+if ((await page.locator('.asset-modal [data-asset-field="note"]').inputValue()) !== "Reusable Rui asset") throw new Error("Asset drop update should keep note");
+await page.locator('.asset-modal [data-asset-action="close"]').click();
 await dropFiles("#assetsView", [{ name: "rui-duplicate.png", type: "image/png" }]);
 await expectCount(".asset-card", 2);
 await page.locator('.asset-card').nth(1).locator('[data-asset-field="alias"]').fill("rui");
@@ -553,14 +562,14 @@ await clearPromptEditor(imagePromptEditor);
 await page.locator(imagePromptEditor).pressSequentially("@rui");
 await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
 await page.keyboard.press("Tab");
-if ((await promptEditorText(imagePromptEditor)) !== "media/images/cut001.jpg") throw new Error("PromptEdit @ suggestion should replace on line 1");
+if ((await promptEditorText(imagePromptEditor)) !== updatedRuiAssetPath) throw new Error("PromptEdit @ suggestion should replace on line 1");
 await clearPromptEditor(imagePromptEditor);
 await page.locator(imagePromptEditor).pressSequentially("A");
 await page.keyboard.press("Enter");
 await page.locator(imagePromptEditor).pressSequentially("@rui");
 await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
 await page.keyboard.press("Tab");
-if ((await promptEditorText(imagePromptEditor)) !== "A\nmedia/images/cut001.jpg") throw new Error("PromptEdit @ suggestion should replace on line 2 without extra spaces");
+if ((await promptEditorText(imagePromptEditor)) !== `A\n${updatedRuiAssetPath}`) throw new Error("PromptEdit @ suggestion should replace on line 2 without extra spaces");
 await clearPromptEditor(imagePromptEditor);
 await page.locator(imagePromptEditor).pressSequentially("A");
 await page.keyboard.press("Enter");
@@ -569,7 +578,7 @@ await page.keyboard.press("Enter");
 await page.locator(imagePromptEditor).pressSequentially("@rui");
 await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
 await page.keyboard.press("Tab");
-if ((await promptEditorText(imagePromptEditor)) !== "A\nB\nmedia/images/cut001.jpg") throw new Error("PromptEdit @ suggestion should replace on line 3 without extra spaces");
+if ((await promptEditorText(imagePromptEditor)) !== `A\nB\n${updatedRuiAssetPath}`) throw new Error("PromptEdit @ suggestion should replace on line 3 without extra spaces");
 await page.waitForFunction(() => document.querySelector('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]'));
 await clearPromptEditor(videoPromptEditor);
 await page.locator(videoPromptEditor).pressSequentially("参照:");
@@ -577,17 +586,17 @@ await page.keyboard.press("Enter");
 await page.locator(videoPromptEditor).pressSequentially("@rui");
 await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
 await page.locator(".asset-suggest button").first().click();
-if ((await promptEditorText(videoPromptEditor)) !== "参照:\nmedia/images/cut001.jpg") throw new Error("PromptEdit @ suggestion should replace by mouse click after newline");
+if (!((await promptEditorText(videoPromptEditor)).endsWith(`\n${updatedRuiAssetPath}`))) throw new Error("PromptEdit @ suggestion should replace by mouse click after newline");
 await page.click('[data-view="table"]');
 await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
 const detailImagePrompt = page.locator("#detailPanel textarea").nth(0);
 await detailImagePrompt.fill("@rui");
-await page.waitForFunction(() => (
+await page.waitForFunction((path) => (
   document.querySelector(".asset-suggest")?.textContent?.includes("@rui") ||
-  document.querySelectorAll("#detailPanel textarea")[0]?.value.includes("media/images/cut001.jpg")
-));
+  document.querySelectorAll("#detailPanel textarea")[0]?.value.includes(path)
+), updatedRuiAssetPath);
 if (await page.locator(".asset-suggest").count()) await page.keyboard.press("Tab");
-await page.waitForFunction(() => document.querySelectorAll("#detailPanel textarea")[0]?.value.includes("media/images/cut001.jpg"));
+await page.waitForFunction((path) => document.querySelectorAll("#detailPanel textarea")[0]?.value.includes(path), updatedRuiAssetPath);
 await page.click('[data-view="table"]');
 await page.waitForFunction(() => document.querySelector('tbody tr[data-id="ct002"]'));
 await page.locator("#tableView").evaluate((node) => {
@@ -606,11 +615,11 @@ await page.locator('td[data-column="image_prompt"] input').pressSequentially("@r
 await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
 await page.keyboard.press("Tab");
 await page.keyboard.press("Enter");
-await expectText('tbody tr[data-id="ct002"] td[data-column="image_prompt"]', "media/images/cut001.jpg");
+await expectText('tbody tr[data-id="ct002"] td[data-column="image_prompt"]', updatedRuiAssetPath);
 const [assetsProjectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
 const assetsProjectEntries = readZipEntries(await readFile(await assetsProjectDownload.path()));
 const savedAssets = JSON.parse(assetsProjectEntries.get("assets.json") || "{}");
-if (savedAssets.assets?.[0]?.alias !== "rui" || savedAssets.assets?.[0]?.path !== "media/images/cut001.jpg") {
+if (savedAssets.assets?.[0]?.alias !== "rui" || savedAssets.assets?.[0]?.path !== updatedRuiAssetPath) {
   throw new Error("assets.json should persist registered assets");
 }
 await page.click('[data-view="table"]');
@@ -1057,14 +1066,14 @@ async function runTauriWelcomeSmoke(browser) {
     if (!tauriAssetPaths.includes(expectedPath)) throw new Error(`Dropped asset path should preserve project-relative/external policy: ${expectedPath}`);
   }
   await tauriPage.evaluate(() => {
-    const target = document.querySelector("#assetsView");
+    const target = document.querySelector(".assets-drop-zone");
     const rect = target.getBoundingClientRect();
     window.__emitTauriAssetDrop({
       paths: [
         "C:\\Projects\\assets\\episode_001\\BG_恒一_ルイ.png",
         "C:\\Users\\huge2\\Downloads\\ChatGPT Image 2026年5月27日 00_31_09.png",
       ],
-      position: { x: rect.left + 20, y: rect.top + 20 },
+      position: { x: rect.right - 20, y: rect.bottom - 20 },
     });
   });
   await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 5);
@@ -1075,6 +1084,17 @@ async function runTauriWelcomeSmoke(browser) {
   ]) {
     if (!nativeDropAssetPaths.includes(expectedPath)) throw new Error(`Native Tauri drop should preserve full path: ${expectedPath}`);
   }
+  await tauriPage.evaluate(() => {
+    const target = document.querySelector(".asset-card");
+    const rect = target.getBoundingClientRect();
+    window.__emitTauriAssetDrop({
+      paths: ["C:\\Projects\\assets\\episode_001\\updated-native-rui.png", "C:\\Projects\\assets\\episode_001\\ignored-extra.png"],
+      position: { x: rect.left + 16, y: rect.top + 16 },
+      scaleFactor: 1,
+    });
+  });
+  await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 5);
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="assets/episode_001/updated-native-rui.png"]'));
   await tauriPage.evaluate(() => {
     window.__emitTauriAssetDrop({
       paths: ["C:\\Projects\\assets\\ignored.png"],
