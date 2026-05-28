@@ -296,6 +296,8 @@ const el = {
   search: document.querySelector("#searchInput"),
 };
 
+setupTauriAssetDrop();
+
 decorateStaticIconButton(el.welcomeNew, "note_add");
 decorateStaticIconButton(el.welcomeOpen, "folder_open");
 
@@ -413,7 +415,7 @@ document.addEventListener("click", (event) => {
 });
 
 setInterval(() => {
-  createProjectBackup("auto").catch((error) => console.warn("Auto backup failed", error));
+  createProjectBackup("auto", { notify: "toast" }).catch((error) => console.warn("Auto backup failed", error));
 }, BACKUP_INTERVAL_MS);
 
 function toggleFileMenu() {
@@ -1956,26 +1958,25 @@ function renderAssets() {
   const modalAsset = state.assets.find((asset) => asset.id === state.assetModalId);
   el.assetsView.innerHTML = `
     <div class="assets-view">
-      <div class="assets-toolbar">
-        <button id="addAssetBtn" type="button">${iconHtml("note_add")}<span class="icon-button-label">Add Asset</span></button>
-      </div>
       ${duplicateAliases.size ? `<div class="asset-warning">Duplicate aliases: ${escapeHtml([...duplicateAliases].join(", "))}</div>` : ""}
       <div class="assets-drop-zone">
         <div class="assets-grid">
-          ${state.assets.length ? state.assets.map((asset, index) => assetCardHtml(asset, index, duplicateAliases)).join("") : `<div class="empty-state">Drop asset files here or add one manually.</div>`}
+          ${state.assets.length ? state.assets.map((asset, index) => assetCardHtml(asset, index, duplicateAliases)).join("") : `<div class="empty-state">Drop asset files here.</div>`}
         </div>
       </div>
     </div>
     ${modalAsset ? assetModalHtml(modalAsset) : ""}`;
-  el.assetsView.querySelector("#addAssetBtn")?.addEventListener("click", addAsset);
-  const dropZone = el.assetsView.querySelector(".assets-drop-zone");
-  dropZone?.addEventListener("dragover", (event) => {
+  const dropTarget = el.assetsView;
+  const dropSurface = el.assetsView.querySelector(".assets-view");
+  dropTarget?.addEventListener("dragover", (event) => {
     if (!hasFilePayload(event.dataTransfer)) return;
     event.preventDefault();
-    dropZone.classList.add("drag-over");
+    dropSurface?.classList.add("drag-over");
   });
-  dropZone?.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
-  dropZone?.addEventListener("drop", handleAssetDrop);
+  dropTarget?.addEventListener("dragleave", (event) => {
+    if (!dropTarget.contains(event.relatedTarget)) dropSurface?.classList.remove("drag-over");
+  });
+  dropTarget?.addEventListener("drop", handleAssetDrop);
   el.assetsView.querySelectorAll(".asset-card").forEach((card) => {
     card.addEventListener("click", (event) => selectAsset(card.dataset.assetId, event));
   });
@@ -2047,15 +2048,6 @@ function assetPreviewHtml(asset) {
   return promptMediaCardHtml(asset.path || "", true);
 }
 
-function addAsset() {
-  const asset = { id: nextAssetId(), alias: uniqueAssetAlias("asset"), path: "", type: "other", title: "", note: "" };
-  state.assets.push(asset);
-  state.assetSelectedIds = new Set([asset.id]);
-  state.assetSelectionAnchorId = asset.id;
-  markDirty();
-  renderAssets();
-}
-
 function updateAsset(id, field, value) {
   const asset = assetById(id);
   if (!asset) return;
@@ -2069,10 +2061,38 @@ function updateAsset(id, field, value) {
 
 function handleAssetDrop(event) {
   event.preventDefault();
-  event.currentTarget?.classList?.remove("drag-over");
+  el.assetsView?.querySelector(".assets-view")?.classList.remove("drag-over");
   const files = [...(event.dataTransfer?.files || [])];
   if (!files.length) return;
-  const added = files.map(assetFromDroppedFile);
+  addDroppedAssets(files.map(assetFromDroppedFile));
+}
+
+function setupTauriAssetDrop() {
+  const listen = window.__TAURI__?.event?.listen;
+  if (!listen) return;
+  Promise.resolve(listen("asset-file-drop", (event) => handleTauriAssetDropEvent(event)))
+    .catch((error) => console.warn("Tauri asset drop listener could not be registered", error));
+}
+
+function handleTauriAssetDropEvent(event) {
+  const payload = event?.payload || event;
+  const paths = payload?.paths || payload?.payload?.paths || [];
+  if (!paths.length) return;
+  if (!assetDropTargetFromPosition(payload?.position || payload?.payload?.position)) return;
+  addDroppedAssets(paths.map(assetFromDroppedPath));
+}
+
+function assetDropTargetFromPosition(position) {
+  const view = el.assetsView;
+  if (!view || view.hidden || state.view !== "assets") return null;
+  if (el.assetsView.querySelector(".asset-modal-backdrop")) return null;
+  if (!position || position.x == null || position.y == null) return view;
+  const rect = view.getBoundingClientRect();
+  return position.x >= rect.left && position.x <= rect.right && position.y >= rect.top && position.y <= rect.bottom ? view : null;
+}
+
+function addDroppedAssets(added) {
+  if (!added.length) return;
   state.assets.push(...added);
   state.assetSelectedIds = new Set(added.map((asset) => asset.id));
   state.assetSelectionAnchorId = added[0]?.id || "";
@@ -2095,6 +2115,19 @@ function assetFromDroppedFile(file) {
   };
 }
 
+function assetFromDroppedPath(droppedPath) {
+  const path = assetPathFromDroppedPath(droppedPath);
+  const title = fileStem(path);
+  return {
+    id: nextAssetId(),
+    alias: uniqueAssetAlias(safeAssetAlias(title)),
+    path,
+    type: assetTypeFromPath(path),
+    title,
+    note: "",
+  };
+}
+
 function assetPathFromDroppedFile(file) {
   const rawPath = normalizeAssetPathSeparators(file.path || "");
   const relativeFromProject = rawPath ? relativeAssetPathFromProject(rawPath) : "";
@@ -2103,6 +2136,11 @@ function assetPathFromDroppedFile(file) {
   const webkitPath = normalizeAssetPathSeparators(file.webkitRelativePath || "");
   if (webkitPath) return webkitPath;
   return `assets/${normalizeAssetPathSeparators(file.name || "asset")}`;
+}
+
+function assetPathFromDroppedPath(path) {
+  const normalized = normalizeAssetPathSeparators(path);
+  return relativeAssetPathFromProject(normalized) || normalized;
 }
 
 function relativeAssetPathFromProject(path) {
@@ -3787,8 +3825,32 @@ async function createProjectBackup(reason = "manual", options = {}) {
     maxBackups: MAX_PROJECT_BACKUPS,
     max_backups: MAX_PROJECT_BACKUPS,
   });
-  if (!options.silent) alert(`Backup created: ${normalizeTauriFile(saved).fileName || backupName}`);
+  const fileName = normalizeTauriFile(saved).fileName || backupName;
+  if (options.notify === "toast") showToast(`Auto backup saved: ${fileName}`);
+  else if (!options.silent) alert(`Backup created: ${fileName}`);
   return saved;
+}
+
+function showToast(message, options = {}) {
+  const duration = options.duration ?? 5000;
+  let toast = document.querySelector(".app-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.className = "app-toast";
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    document.body.appendChild(toast);
+  }
+  clearTimeout(showToast.timer);
+  toast.textContent = message;
+  toast.hidden = false;
+  requestAnimationFrame(() => toast.classList.add("visible"));
+  showToast.timer = setTimeout(() => {
+    toast.classList.remove("visible");
+    setTimeout(() => {
+      if (!toast.classList.contains("visible")) toast.hidden = true;
+    }, 180);
+  }, duration);
 }
 
 async function restoreProjectBackup() {

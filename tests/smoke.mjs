@@ -497,7 +497,8 @@ await page.waitForFunction(() => !document.querySelector(".prompt-hover-preview"
 
 await page.click('[data-view="assets"]');
 await expectText("#assetsView", "Drop asset files here");
-await dropFiles(".assets-drop-zone", [
+if (await page.locator("#addAssetBtn").count()) throw new Error("Assets view should not expose Add Asset");
+await dropFiles("#assetsView", [
   { name: "rui.png", type: "image/png" },
   { name: "voice.wav", type: "audio/wav" },
   { name: "ルイ.png", type: "image/png" },
@@ -521,18 +522,12 @@ await page.waitForFunction(() => document.querySelector('.asset-modal [data-asse
 await page.locator('.asset-modal [data-asset-action="close"]').click();
 await page.keyboard.press("Delete");
 await expectCount(".asset-card", 0);
-await page.click("#addAssetBtn");
+await dropFiles("#assetsView", [{ name: "rui.png", type: "image/png" }]);
+await expectCount(".asset-card", 1);
 await page.locator('.asset-card [data-asset-field="alias"]').fill("rui");
 await page.locator('.asset-card [data-asset-field="alias"]').press("Tab");
 await page.locator('.asset-card [data-asset-field="title"]').fill("Rui");
 await page.locator('.asset-card [data-asset-field="title"]').press("Tab");
-await page.click('[data-view="promptEdit"]');
-await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').click();
-await page.keyboard.press("Control+A");
-await page.keyboard.press("Backspace");
-await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').pressSequentially("@rui");
-await page.waitForTimeout(120);
-if (await page.locator(".asset-suggest").count()) throw new Error("Asset without a path should not appear in @ suggestions");
 await page.click('[data-view="assets"]');
 await page.locator(".asset-card .asset-thumb").click();
 await expectText(".asset-modal", "Asset");
@@ -542,7 +537,8 @@ await page.locator('.asset-modal [data-asset-field="note"]').fill("Reusable Rui 
 await page.locator('.asset-modal [data-asset-field="note"]').press("Tab");
 await page.locator('.asset-modal [data-asset-action="close"]').click();
 await page.waitForFunction(() => document.querySelector('#assetsView .prompt-media-card[data-kind="image"]'));
-await page.click("#addAssetBtn");
+await dropFiles("#assetsView", [{ name: "rui-duplicate.png", type: "image/png" }]);
+await expectCount(".asset-card", 2);
 await page.locator('.asset-card').nth(1).locator('[data-asset-field="alias"]').fill("rui");
 await page.locator('.asset-card').nth(1).locator('[data-asset-field="alias"]').press("Tab");
 await expectText("#assetsView", "Duplicate aliases");
@@ -1038,7 +1034,7 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.locator('.prompt-path-token[data-path="project/narushisuto-DK/assets/ルイ.png"]').hover();
   await tauriPage.waitForFunction(() => document.querySelector(".prompt-hover-preview img"));
   await tauriPage.click('[data-view="assets"]');
-  await dropFilesOnPage(tauriPage, ".assets-drop-zone", [
+  await dropFilesOnPage(tauriPage, "#assetsView", [
     { name: "local-rui.png", type: "image/png", path: "C:\\Projects\\assets\\local-rui.png" },
     { name: "external-rui.png", type: "image/png", path: "D:\\External\\external-rui.png" },
     { name: "fallback-rui.png", type: "image/png" },
@@ -1048,10 +1044,50 @@ async function runTauriWelcomeSmoke(browser) {
   for (const expectedPath of ["assets/local-rui.png", "D:/External/external-rui.png", "assets/fallback-rui.png"]) {
     if (!tauriAssetPaths.includes(expectedPath)) throw new Error(`Dropped asset path should preserve project-relative/external policy: ${expectedPath}`);
   }
+  await tauriPage.evaluate(() => {
+    const target = document.querySelector("#assetsView");
+    const rect = target.getBoundingClientRect();
+    window.__emitTauriAssetDrop({
+      paths: [
+        "C:\\Projects\\assets\\episode_001\\BG_恒一_ルイ.png",
+        "C:\\Users\\huge2\\Downloads\\ChatGPT Image 2026年5月27日 00_31_09.png",
+      ],
+      position: { x: rect.left + 20, y: rect.top + 20 },
+    });
+  });
+  await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 5);
+  const nativeDropAssetPaths = await tauriPage.$$eval(".asset-card .prompt-media-card[data-path]", (cards) => cards.map((card) => card.dataset.path));
+  for (const expectedPath of [
+    "assets/episode_001/BG_恒一_ルイ.png",
+    "C:/Users/huge2/Downloads/ChatGPT Image 2026年5月27日 00_31_09.png",
+  ]) {
+    if (!nativeDropAssetPaths.includes(expectedPath)) throw new Error(`Native Tauri drop should preserve full path: ${expectedPath}`);
+  }
+  await tauriPage.evaluate(() => {
+    window.__emitTauriAssetDrop({
+      paths: ["C:\\Projects\\assets\\ignored.png"],
+      position: { x: 2, y: 2 },
+    });
+  });
+  await tauriPage.waitForTimeout(120);
+  if ((await tauriPage.locator(".asset-card").count()) !== 5) throw new Error("Native drop outside Assets view should be ignored");
   await tauriPage.locator(".asset-card").nth(1).locator(".asset-thumb").click();
   await tauriPage.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "D:/External/external-rui.png");
   await tauriPage.locator('.asset-modal [data-asset-action="close"]').click();
   await tauriPage.click('[data-view="table"]');
+  let autoBackupDialogSeen = false;
+  const autoBackupDialogHandler = (dialog) => {
+    autoBackupDialogSeen = true;
+    dialog.dismiss();
+  };
+  tauriPage.on("dialog", autoBackupDialogHandler);
+  await tauriPage.evaluate(() => window.createProjectBackup("auto", { notify: "toast" }));
+  await tauriPage.waitForFunction(() => document.querySelector(".app-toast.visible")?.textContent?.includes("Auto backup saved"));
+  if (autoBackupDialogSeen) throw new Error("Auto backup should use toast instead of browser dialog");
+  await tauriPage.waitForFunction(() => document.querySelector(".app-toast")?.hidden, null, { timeout: 6500 });
+  tauriPage.off("dialog", autoBackupDialogHandler);
+  await tauriPage.evaluate(() => window.createProjectBackup("before-repair", { silent: true }));
+  if (await tauriPage.locator(".app-toast.visible").count()) throw new Error("Silent backup should not show a toast");
   for (let index = 0; index < 11; index += 1) {
     tauriPage.once("dialog", (dialog) => dialog.accept());
     await tauriPage.evaluate(() => document.querySelector('[data-file-action="createBackup"]')?.click());
@@ -1190,7 +1226,22 @@ async function installTauriMock(targetPage, options = {}) {
     const mediaFiles = new Map((config.mediaFiles || []).map(([path, bytes]) => [path, bytes]));
     window.__tauriMockFiles = files;
     window.__tauriMockMediaFiles = mediaFiles;
+    const eventHandlers = new Map();
+    window.__emitTauriAssetDrop = (payload) => {
+      (eventHandlers.get("asset-file-drop") || []).forEach((handler) => handler({ payload }));
+    };
     window.__TAURI__ = {
+      event: {
+        listen: async (eventName, handler) => {
+          const handlers = eventHandlers.get(eventName) || [];
+          handlers.push(handler);
+          eventHandlers.set(eventName, handlers);
+          return () => {
+            const index = handlers.indexOf(handler);
+            if (index >= 0) handlers.splice(index, 1);
+          };
+        },
+      },
       core: {
         invoke: async (command, args = {}) => {
           if (command === "save_project_as") {

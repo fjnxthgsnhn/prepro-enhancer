@@ -1515,20 +1515,12 @@ button.active {
 
 .assets-view {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   height: 100%;
   padding: 12px;
   overflow: hidden;
-}
-
-.assets-toolbar {
-  display: flex;
-  gap: 8px;
-}
-
-.assets-toolbar button {
-  min-height: 32px;
+  border: 1px dashed transparent;
 }
 
 .asset-warning {
@@ -1541,11 +1533,10 @@ button.active {
 
 .assets-drop-zone {
   min-height: 0;
-  border: 1px dashed transparent;
   overflow: auto;
 }
 
-.assets-drop-zone.drag-over {
+.assets-view.drag-over {
   border-color: var(--accent);
   background: rgba(215, 255, 87, 0.06);
 }
@@ -1739,6 +1730,31 @@ button.active {
 .empty-state {
   padding: 28px;
   color: var(--muted);
+}
+
+.app-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 38px;
+  z-index: 80;
+  max-width: min(420px, calc(100vw - 36px));
+  border: 1px solid rgba(215, 255, 87, 0.34);
+  background: rgba(24, 27, 23, 0.94);
+  color: var(--text);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3);
+  padding: 9px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.app-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 @keyframes view-enter {

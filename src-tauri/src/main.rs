@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}};
+use tauri::{DragDropEvent, Emitter, RunEvent, WindowEvent};
 
 #[derive(Serialize)]
 struct OpenedFile {
@@ -19,6 +20,18 @@ struct BackupFile {
     name: String,
     path: String,
     timestamp: u64,
+}
+
+#[derive(Clone, Serialize)]
+struct AssetDropPayload {
+    paths: Vec<String>,
+    position: AssetDropPosition,
+}
+
+#[derive(Clone, Serialize)]
+struct AssetDropPosition {
+    x: f64,
+    y: f64,
 }
 
 #[tauri::command]
@@ -286,8 +299,16 @@ fn prune_project_backups(dir: &Path, max_backups: usize) -> Result<(), String> {
     Ok(())
 }
 
+fn emit_asset_file_drop(app: &tauri::AppHandle, label: &str, paths: &[PathBuf], position: &tauri::PhysicalPosition<f64>) {
+    let payload = AssetDropPayload {
+        paths: paths.iter().map(|path| path.to_string_lossy().to_string()).collect(),
+        position: AssetDropPosition { x: position.x, y: position.y },
+    };
+    let _ = app.emit_to(label, "asset-file-drop", payload);
+}
+
 fn main() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             open_project,
             save_project,
@@ -301,6 +322,14 @@ fn main() {
             delete_project_backup,
             export_file
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let RunEvent::WindowEvent { label, event, .. } = event {
+            if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, position }) = event {
+                emit_asset_file_drop(app_handle, &label, &paths, &position);
+            }
+        }
+    });
 }
