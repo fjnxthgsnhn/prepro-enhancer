@@ -2094,53 +2094,181 @@ function handleAssetDrop(event) {
   const files = [...(event.dataTransfer?.files || [])];
   if (!files.length) return;
   const targetAssetId = assetDropCardIdFromElement(event.target);
-  if (targetAssetId) {
-    applyDroppedAssetToExistingAsset(targetAssetId, assetFromDroppedFile(files[0]));
-    return;
-  }
-  addDroppedAssets(files.map(assetFromDroppedFile));
+  handleResolvedAssetDrop({
+    assets: targetAssetId ? [assetFromDroppedFile(files[0])] : files.map(assetFromDroppedFile),
+    target: event.target,
+    source: "browser",
+  });
 }
 
 function setupTauriAssetDrop() {
   const listen = window.__TAURI__?.event?.listen;
-  if (!listen) return;
-  Promise.resolve(listen("asset-file-drop", (event) => handleTauriAssetDropEvent(event)))
-    .catch((error) => console.warn("Tauri asset drop listener could not be registered", error));
+  const registered = [];
+  const hasStandardListener = setupTauriStandardAssetDrop(() => {
+    if (listen) registerTauriAssetDropEventListen("tauri://drag-drop", "tauri-event", registered);
+  }, registered);
+  if (!hasStandardListener && listen) registerTauriAssetDropEventListen("tauri://drag-drop", "tauri-event", registered);
+  if (listen) registerTauriAssetDropEventListen("asset-file-drop", "asset-file-drop", registered);
+  console.info(`[assets-dnd] registered listeners: ${registered.length ? registered.join(", ") : "none"}`);
+  debugAssetDrop("available tauri namespaces", {
+    hasEventListen: typeof listen === "function",
+    hasWebview: Boolean(window.__TAURI__?.webview),
+    hasWebviewWindow: Boolean(window.__TAURI__?.webviewWindow),
+  });
 }
 
-function handleTauriAssetDropEvent(event) {
-  const payload = event?.payload || event;
-  const paths = payload?.paths || payload?.payload?.paths || [];
-  if (!paths.length) return;
-  const target = assetDropTargetFromPayload(payload);
-  if (!target) return;
-  const targetAssetId = assetDropCardIdFromElement(target);
-  if (targetAssetId) {
-    applyDroppedAssetToExistingAsset(targetAssetId, assetFromDroppedPath(paths[0]));
+function setupTauriStandardAssetDrop(onFailure, registered = []) {
+  const webviewWindow = window.__TAURI__?.webviewWindow;
+  const webview = window.__TAURI__?.webview;
+  const candidates = [
+    { label: "webview.getCurrentWebview", owner: webview, method: "getCurrentWebview" },
+    { label: "webview.getCurrent", owner: webview, method: "getCurrent" },
+    { label: "webviewWindow.getCurrentWebviewWindow", owner: webviewWindow, method: "getCurrentWebviewWindow" },
+    { label: "webviewWindow.getCurrent", owner: webviewWindow, method: "getCurrent" },
+  ];
+  for (const candidate of candidates) {
+    try {
+      const getCurrent = candidate.owner?.[candidate.method];
+      if (typeof getCurrent !== "function") continue;
+      const current = getCurrent.call(candidate.owner);
+      const onDragDropEvent = current?.onDragDropEvent;
+      if (typeof onDragDropEvent !== "function") continue;
+      Promise.resolve(onDragDropEvent((event) => handleTauriAssetDropEvent(event, "tauri-standard")))
+        .catch((error) => {
+          console.warn("Tauri standard drag/drop listener could not be registered", error);
+          onFailure?.();
+        });
+      registered.push(candidate.label);
+      return true;
+    } catch (error) {
+      console.warn(`Tauri standard drag/drop listener could not be initialized via ${candidate.label}`, error);
+    }
+  }
+  return false;
+}
+
+function registerTauriAssetDropEventListen(eventName, source, registered = []) {
+  const listen = window.__TAURI__?.event?.listen;
+  if (!listen) return;
+  Promise.resolve(listen(eventName, (event) => handleTauriAssetDropEvent(event, source)))
+    .catch((error) => console.warn(`Tauri ${eventName} listener could not be registered`, error));
+  registered.push(eventName);
+}
+
+function handleTauriAssetDropEvent(event, source = "tauri") {
+  const drop = normalizeTauriAssetDropEvent(event, source);
+  debugAssetDrop("received native drop event", drop);
+  if (drop.type && drop.type !== "drop") {
+    debugAssetDrop("ignored non-drop event", drop);
     return;
   }
-  addDroppedAssets(paths.map(assetFromDroppedPath));
+  if (!drop.paths.length) {
+    debugAssetDrop("ignored empty drop", drop);
+    return;
+  }
+  const target = assetDropTargetFromPosition(drop.position, drop.scaleFactor);
+  if (!target) {
+    debugAssetDrop("ignored drop outside assets view", drop);
+    return;
+  }
+  const targetAssetId = assetDropCardIdFromElement(target);
+  handleResolvedAssetDrop({
+    assets: targetAssetId ? [assetFromDroppedPath(drop.paths[0])] : drop.paths.map(assetFromDroppedPath),
+    target,
+    source: drop.source,
+    position: drop.position,
+    scaleFactor: drop.scaleFactor,
+  });
 }
 
-function assetDropTargetFromPayload(payload) {
-  return assetDropTargetFromPosition(payload?.position || payload?.payload?.position, payload?.scaleFactor ?? payload?.scale_factor ?? payload?.payload?.scaleFactor ?? payload?.payload?.scale_factor);
+function normalizeTauriAssetDropEvent(event, source = "tauri") {
+  const payload = event?.payload || event || {};
+  const inner = payload?.payload || {};
+  const paths = payload?.paths || inner?.paths || [];
+  return {
+    source,
+    type: payload?.type || inner?.type || event?.type || "",
+    paths: Array.isArray(paths) ? paths : [],
+    position: payload?.position || inner?.position || null,
+    scaleFactor: payload?.scaleFactor ?? payload?.scale_factor ?? inner?.scaleFactor ?? inner?.scale_factor ?? window.devicePixelRatio ?? 1,
+  };
 }
 
 function assetDropTargetFromPosition(position, scaleFactor = 1) {
   const view = el.assetsView;
-  if (!view || view.hidden || state.view !== "assets") return null;
-  if (el.assetsView.querySelector(".asset-modal-backdrop")) return null;
-  if (!position || position.x == null || position.y == null) return view;
+  if (!view || view.hidden || state.view !== "assets") {
+    debugAssetDrop("drop target unavailable", { hasAssetsView: Boolean(view), hidden: view?.hidden, currentView: state.view });
+    return null;
+  }
+  if (el.assetsView.querySelector(".asset-modal-backdrop")) {
+    debugAssetDrop("drop ignored because asset modal is open");
+    return null;
+  }
+  if (!position || position.x == null || position.y == null) {
+    debugAssetDrop("drop has no position; using assets view as target", { target: describeAssetDropElement(view) });
+    return view;
+  }
   const scale = Number(scaleFactor) || window.devicePixelRatio || 1;
   const point = { x: position.x / scale, y: position.y / scale };
   const rect = view.getBoundingClientRect();
-  if (point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) return null;
-  return document.elementFromPoint(point.x, point.y) || view;
+  if (point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) {
+    debugAssetDrop("drop point outside assets view", { position, scaleFactor: scale, cssPoint: point, assetsViewRect: domRectToObject(rect) });
+    return null;
+  }
+  const element = document.elementFromPoint(point.x, point.y) || view;
+  debugAssetDrop("resolved drop target", {
+    position,
+    scaleFactor: scale,
+    cssPoint: point,
+    assetsViewRect: domRectToObject(rect),
+    element: describeAssetDropElement(element),
+    targetAssetId: assetDropCardIdFromElement(element),
+  });
+  return element;
 }
 
 function assetDropCardIdFromElement(element) {
   const card = element?.closest?.(".asset-card");
   return card?.dataset?.assetId || "";
+}
+
+function handleResolvedAssetDrop({ assets, target, source, position = null, scaleFactor = 1 }) {
+  if (!assets?.length) return;
+  const targetAssetId = assetDropCardIdFromElement(target);
+  debugAssetDrop("accepted drop", { source, paths: assets.map((asset) => asset.path), position, scaleFactor, targetAssetId });
+  if (targetAssetId) {
+    applyDroppedAssetToExistingAsset(targetAssetId, assets[0]);
+    showToast("Asset path updated. Save the project to write it to the .lctproj file.");
+    return;
+  }
+  addDroppedAssets(assets);
+  showToast(`${assets.length} asset${assets.length === 1 ? "" : "s"} added. Save the project to write assets.json.`);
+}
+
+function debugAssetDrop(message, details = {}) {
+  if (localStorage.getItem("previzDebugDnd") !== "1") return;
+  console.debug("[assets-dnd]", message, details);
+}
+
+function describeAssetDropElement(element) {
+  if (!element) return null;
+  return {
+    tagName: element.tagName,
+    id: element.id || "",
+    className: typeof element.className === "string" ? element.className : "",
+    assetId: element.closest?.(".asset-card")?.dataset?.assetId || "",
+  };
+}
+
+function domRectToObject(rect) {
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    width: rect.width,
+    height: rect.height,
+  };
 }
 
 function addDroppedAssets(added) {

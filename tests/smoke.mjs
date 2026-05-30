@@ -1,9 +1,13 @@
 import { chromium } from "playwright";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { Buffer } from "node:buffer";
 import { deflateRawSync } from "node:zlib";
+
+const REAL_TAURI_DND_ASSET_PATH = "H:\\AICreation\\project\\narushisuto-DK\\assets\\episode_001\\BG_教室.png";
+const REAL_TAURI_DND_PROJECT_PATH = "H:\\AICreation\\project\\narushisuto-DK\\episode_001_03.lctproj";
+const REAL_TAURI_DND_REGISTERED_PATH = "assets/episode_001/BG_教室.png";
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
@@ -843,6 +847,26 @@ async function dropFilesOnPage(targetPage, selector, files) {
   }, files);
 }
 
+function capturePageConsole(targetPage) {
+  const messages = [];
+  targetPage.on("console", (message) => messages.push(`${message.type()}: ${message.text()}`));
+  targetPage.on("pageerror", (error) => messages.push(`pageerror: ${error.message}`));
+  return messages;
+}
+
+async function waitForFunctionWithCapture(targetPage, pageFunction, label, consoleMessages, arg) {
+  try {
+    return await targetPage.waitForFunction(pageFunction, arg);
+  } catch (error) {
+    const safeLabel = label.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "playwright-failure";
+    const outputDir = resolve("test-results");
+    await mkdir(outputDir, { recursive: true });
+    await targetPage.screenshot({ path: resolve(outputDir, `${safeLabel}.png`), fullPage: true });
+    await writeFile(resolve(outputDir, `${safeLabel}.log`), consoleMessages.join("\n"), "utf8");
+    throw new Error(`${label} failed. Screenshot and console log written to test-results. Original error: ${error.message}`);
+  }
+}
+
 async function dispatchDragDrop(sourceSelector, targetSelector, options = {}) {
   await page.evaluate(
     ({ sourceSelector, targetSelector, options }) => {
@@ -1068,7 +1092,8 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.evaluate(() => {
     const target = document.querySelector(".assets-drop-zone");
     const rect = target.getBoundingClientRect();
-    window.__emitTauriAssetDrop({
+    window.__emitTauriStandardAssetDrop({
+      type: "drop",
       paths: [
         "C:\\Projects\\assets\\episode_001\\BG_恒一_ルイ.png",
         "C:\\Users\\huge2\\Downloads\\ChatGPT Image 2026年5月27日 00_31_09.png",
@@ -1087,7 +1112,8 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.evaluate(() => {
     const target = document.querySelector(".asset-card");
     const rect = target.getBoundingClientRect();
-    window.__emitTauriAssetDrop({
+    window.__emitTauriStandardAssetDrop({
+      type: "drop",
       paths: ["C:\\Projects\\assets\\episode_001\\updated-native-rui.png", "C:\\Projects\\assets\\episode_001\\ignored-extra.png"],
       position: { x: rect.left + 16, y: rect.top + 16 },
       scaleFactor: 1,
@@ -1095,17 +1121,54 @@ async function runTauriWelcomeSmoke(browser) {
   });
   await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 5);
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="assets/episode_001/updated-native-rui.png"]'));
+  if ((await tauriPage.locator('.asset-card [data-asset-field="alias"]').first().inputValue()) !== "local-rui") throw new Error("Native asset drop update should keep alias");
+  await tauriPage.waitForFunction(() => document.querySelector(".app-toast.visible")?.textContent?.includes("Save the project"));
   await tauriPage.evaluate(() => {
-    window.__emitTauriAssetDrop({
+    window.__emitTauriStandardAssetDrop({
+      type: "drop",
       paths: ["C:\\Projects\\assets\\ignored.png"],
       position: { x: 2, y: 2 },
     });
   });
   await tauriPage.waitForTimeout(120);
   if ((await tauriPage.locator(".asset-card").count()) !== 5) throw new Error("Native drop outside Assets view should be ignored");
+  await tauriPage.evaluate(() => {
+    const target = document.querySelector(".assets-drop-zone");
+    const rect = target.getBoundingClientRect();
+    window.__emitTauriAssetDrop({
+      paths: ["C:\\Projects\\assets\\asset-file-drop-fallback.png"],
+      position: { x: rect.right - 24, y: rect.bottom - 24 },
+      scaleFactor: 1,
+    });
+  });
+  await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 6);
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="assets/asset-file-drop-fallback.png"]'));
   await tauriPage.locator(".asset-card").nth(1).locator(".asset-thumb").click();
   await tauriPage.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "D:/External/external-rui.png");
   await tauriPage.locator('.asset-modal [data-asset-action="close"]').click();
+  const tauriEventFallbackPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
+  await installTauriMock(tauriEventFallbackPage, {
+    standardDragDrop: false,
+    files: [[recentPath, Array.from(recentProject)]],
+    recent: [{ fileName: "Recent Project.lctproj", path: recentPath, timestamp: "2026-05-24T00:00:00.000Z" }],
+  });
+  await tauriEventFallbackPage.goto(pathToFileURL(resolve("index.html")).href);
+  await tauriEventFallbackPage.click(".recent-project-row");
+  await tauriEventFallbackPage.waitForFunction(() => document.querySelector("#welcomeView")?.hidden);
+  await tauriEventFallbackPage.click('[data-view="assets"]');
+  await tauriEventFallbackPage.evaluate(() => {
+    const target = document.querySelector(".assets-drop-zone");
+    const rect = target.getBoundingClientRect();
+    window.__emitTauriDragDropEvent({
+      type: "drop",
+      paths: ["C:\\Projects\\assets\\tauri-event-fallback.png"],
+      position: { x: rect.left + 24, y: rect.top + 24 },
+      scaleFactor: 1,
+    });
+  });
+  await tauriEventFallbackPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="assets/tauri-event-fallback.png"]'));
+  await tauriEventFallbackPage.close();
+  await runRealTauriAssetDropSmoke(browser);
   await tauriPage.click('[data-view="table"]');
   let autoBackupDialogSeen = false;
   const autoBackupDialogHandler = (dialog) => {
@@ -1185,6 +1248,86 @@ async function runTauriWelcomeSmoke(browser) {
   await missingPage.close();
 }
 
+async function runRealTauriAssetDropSmoke(browser) {
+  const realAssetBytes = await readFile(REAL_TAURI_DND_ASSET_PATH);
+  const realProject = makeStoredZip(new Map([
+    ["manifest.json", JSON.stringify({ projectName: "Real DnD Project", mainCutlist: "cutlist.tsv", assets: "assets.json" })],
+    ["cutlist.tsv", expectedHeaders().join("\t")],
+    ["assets.json", JSON.stringify({ version: 1, assets: [
+      { id: "asset-bg", alias: "classroom_bg", path: "", type: "image", title: "Classroom BG", note: "Keep this note" },
+    ] })],
+  ]));
+  const realPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
+  const consoleMessages = capturePageConsole(realPage);
+  await realPage.addInitScript(() => localStorage.setItem("previzDebugDnd", "1"));
+  await installTauriMock(realPage, {
+    files: [[REAL_TAURI_DND_PROJECT_PATH, Array.from(realProject)]],
+    mediaFiles: [[REAL_TAURI_DND_ASSET_PATH, Array.from(realAssetBytes)]],
+    recent: [{ fileName: "episode_001_03.lctproj", path: REAL_TAURI_DND_PROJECT_PATH, timestamp: "2026-05-28T00:00:00.000Z" }],
+  });
+  await realPage.goto(pathToFileURL(resolve("index.html")).href);
+  await realPage.click(".recent-project-row");
+  await realPage.waitForFunction(() => document.querySelector("#welcomeView")?.hidden);
+  await realPage.click('[data-view="assets"]');
+  await realPage.waitForFunction(() => document.querySelector('.asset-card [data-asset-field="alias"]')?.value === "classroom_bg");
+  await realPage.evaluate((assetPath) => {
+    const target = document.querySelector(".asset-card");
+    const rect = target.getBoundingClientRect();
+    window.__emitTauriStandardAssetDrop({
+      type: "drop",
+      paths: [assetPath],
+      position: { x: rect.left + 20, y: rect.top + 20 },
+      scaleFactor: 1,
+    });
+  }, REAL_TAURI_DND_ASSET_PATH);
+  await waitForFunctionWithCapture(
+    realPage,
+    (registeredPath) => document.querySelectorAll(".asset-card").length === 1 &&
+      document.querySelector(`.asset-card .prompt-media-card[data-kind="image"][data-path="${registeredPath}"] img`),
+    "real-tauri-standard-card-drop",
+    consoleMessages,
+    REAL_TAURI_DND_REGISTERED_PATH,
+  );
+  if ((await realPage.locator('.asset-card [data-asset-field="alias"]').first().inputValue()) !== "classroom_bg") {
+    throw new Error("Real DnD card update should keep alias");
+  }
+  await realPage.locator(".asset-card .asset-thumb").click();
+  await realPage.waitForFunction((registeredPath) => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === registeredPath, REAL_TAURI_DND_REGISTERED_PATH);
+  if ((await realPage.locator('.asset-modal [data-asset-field="note"]').inputValue()) !== "Keep this note") throw new Error("Real DnD card update should keep note");
+  await realPage.locator('.asset-modal [data-asset-action="close"]').click();
+  await realPage.evaluate((assetPath) => {
+    const target = document.querySelector(".assets-drop-zone");
+    const rect = target.getBoundingClientRect();
+    window.__emitTauriAssetDrop({
+      paths: [assetPath],
+      position: { x: rect.right - 18, y: rect.bottom - 18 },
+      scaleFactor: 1,
+    });
+  }, REAL_TAURI_DND_ASSET_PATH);
+  await waitForFunctionWithCapture(
+    realPage,
+    (registeredPath) => document.querySelectorAll(".asset-card").length === 2 &&
+      document.querySelectorAll(`.asset-card .prompt-media-card[data-kind="image"][data-path="${registeredPath}"] img`).length === 2,
+    "real-tauri-asset-file-drop-add",
+    consoleMessages,
+    REAL_TAURI_DND_REGISTERED_PATH,
+  );
+  await realPage.waitForFunction(() => document.querySelector(".app-toast.visible")?.textContent?.includes("Save the project"));
+  if (!consoleMessages.some((message) => message.includes("[assets-dnd]") && message.includes("asset-file-drop"))) {
+    throw new Error(`Real DnD debug logs should include asset-file-drop source. Logs:\n${consoleMessages.join("\n")}`);
+  }
+  await realPage.click("#fileMenuBtn");
+  await realPage.click('[data-file-action="save"]');
+  await realPage.waitForFunction(() => document.querySelector("#saveState")?.textContent?.includes("Saved"));
+  const savedBytes = await realPage.evaluate((projectPath) => window.__tauriMockFiles.get(projectPath), REAL_TAURI_DND_PROJECT_PATH);
+  const savedEntries = readZipEntries(Buffer.from(savedBytes));
+  const savedAssets = JSON.parse(savedEntries.get("assets.json") || "{}").assets || [];
+  if (savedAssets.length !== 2 || savedAssets.some((asset) => asset.path !== REAL_TAURI_DND_REGISTERED_PATH)) {
+    throw new Error(`Real DnD save should persist registered asset paths: ${JSON.stringify(savedAssets)}`);
+  }
+  await realPage.close();
+}
+
 async function installTauriMock(targetPage, options = {}) {
   await targetPage.addInitScript((config) => {
     window.__expectedHeaders = () => [
@@ -1259,8 +1402,24 @@ async function installTauriMock(targetPage, options = {}) {
     window.__tauriMockFiles = files;
     window.__tauriMockMediaFiles = mediaFiles;
     const eventHandlers = new Map();
+    const standardDragDropHandlers = [];
     window.__emitTauriAssetDrop = (payload) => {
       (eventHandlers.get("asset-file-drop") || []).forEach((handler) => handler({ payload }));
+    };
+    window.__emitTauriDragDropEvent = (payload) => {
+      (eventHandlers.get("tauri://drag-drop") || []).forEach((handler) => handler({ payload }));
+    };
+    window.__emitTauriStandardAssetDrop = (event) => {
+      standardDragDropHandlers.forEach((handler) => handler(event));
+    };
+    const currentWebview = {
+      onDragDropEvent: async (handler) => {
+        standardDragDropHandlers.push(handler);
+        return () => {
+          const index = standardDragDropHandlers.indexOf(handler);
+          if (index >= 0) standardDragDropHandlers.splice(index, 1);
+        };
+      },
     };
     window.__TAURI__ = {
       event: {
@@ -1273,6 +1432,14 @@ async function installTauriMock(targetPage, options = {}) {
             if (index >= 0) handlers.splice(index, 1);
           };
         },
+      },
+      webview: config.standardDragDrop === false ? undefined : {
+        getCurrentWebview: () => currentWebview,
+        getCurrent: () => currentWebview,
+      },
+      webviewWindow: config.standardDragDrop === false ? undefined : {
+        getCurrentWebviewWindow: () => currentWebview,
+        getCurrent: () => currentWebview,
       },
       core: {
         invoke: async (command, args = {}) => {
