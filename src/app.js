@@ -5,48 +5,55 @@ const COLUMNS = [
   "order",
   "title",
   "duration",
+  "status",
+  "image",
+  "audio_file",
+  "video_file",
+  "image_prompt",
+  "video_prompt",
   "scene",
   "subject",
   "composition",
   "action",
   "camera",
-  "dialogue",
-  "image",
-  "audio_file",
-  "image_prompt",
-  "video_prompt",
+  "audio",
   "note",
 ];
 
 const EDITABLE_COLUMNS = new Set([
   "title",
   "duration",
+  "status",
+  "image",
+  "audio_file",
+  "video_file",
+  "image_prompt",
+  "video_prompt",
   "scene",
   "subject",
   "composition",
   "action",
   "camera",
-  "dialogue",
-  "image",
-  "audio_file",
-  "image_prompt",
-  "video_prompt",
+  "audio",
   "note",
 ]);
 
 const DISPLAY_COLUMNS = [
+  "id",
   "title",
   "duration",
+  "status",
+  "image",
+  "audio_file",
+  "video_file",
+  "image_prompt",
+  "video_prompt",
   "scene",
   "subject",
   "composition",
   "action",
   "camera",
-  "dialogue",
-  "image",
-  "audio_file",
-  "image_prompt",
-  "video_prompt",
+  "audio",
   "note",
 ];
 
@@ -57,16 +64,18 @@ const LLM_TSV_COLUMNS = [
   "order",
   "title",
   "duration",
+  "status",
+  "image",
+  "audio_file",
+  "video_file",
+  "image_prompt",
+  "video_prompt",
   "scene",
   "subject",
   "composition",
   "action",
   "camera",
-  "dialogue",
-  "image",
-  "audio_file",
-  "image_prompt",
-  "video_prompt",
+  "audio",
   "note",
 ];
 
@@ -78,10 +87,12 @@ const HEADER_ALIASES = {
   parentid: "parent_id",
   parent_id: "parent_id",
   parent: "parent_id",
-  audio: "dialogue",
-  dialog: "dialogue",
+  dialogue: "audio",
+  dialog: "audio",
   audiofile: "audio_file",
   audio_file: "audio_file",
+  videofile: "video_file",
+  video_file: "video_file",
   imageprompt: "image_prompt",
   image_prompt: "image_prompt",
   videoprompt: "video_prompt",
@@ -95,6 +106,8 @@ const DEFAULT_MANIFEST = {
   projectName: "Untitled Project",
   mainCutlist: "cutlist.tsv",
   assets: "assets.json",
+  generate: "generate.json",
+  prompts: "prompts.json",
   timeline: "timeline.json",
   settings: "settings.json",
   pathMode: "relative",
@@ -103,6 +116,8 @@ const DEFAULT_MANIFEST = {
     media: "media",
     images: "media/images",
     audio: "media/audio",
+    video: "media/video",
+    references: "media/references",
   },
   sequence: {
     frameRate: 30,
@@ -122,7 +137,7 @@ const PROJECT_AGENTS_MD = [
   "",
   "Edit `cutlist.tsv` only. Keep this column order exactly:",
   "",
-  "row_type\tid\tparent_id\torder\ttitle\tduration\tscene\tsubject\tcomposition\taction\tcamera\tdialogue\timage\taudio_file\timage_prompt\tvideo_prompt\tnote",
+  "row_type\tid\tparent_id\torder\ttitle\tduration\tstatus\timage\taudio_file\tvideo_file\timage_prompt\tvideo_prompt\tscene\tsubject\tcomposition\taction\tcamera\taudio\tnote",
   "",
   "## Initial Build Policy",
   "",
@@ -158,7 +173,7 @@ const PROJECT_AGENTS_MD = [
   "- composition: long, medium, close, hands, eyes, etc.",
   "- action: action extracted from script directions",
   "- camera: fixed, pan, dolly, push in, pull out, handheld, etc.",
-  "- dialogue: only the dialogue used in that cut",
+  "- audio: sound direction, ambience, or dialogue-related audio note",
   "- note: rationale, direction intent, or unresolved points",
   "",
   "## ID Rules",
@@ -213,7 +228,7 @@ const PROJECT_AGENTS_MD = [
   "## Final Delivery for Chat AI Editing",
   "",
   "`.lctproj` is a ZIP archive whose extension is `.lctproj`.",
-  "In principle, only edit `cutlist.tsv`. Do not delete or rename `manifest.json`, `timeline.json`, `settings.json`, `media_index.json`, or `AGENTS.md`.",
+  "In principle, edit `cutlist.tsv`, `prompts.json`, `generate.json`, and `assets.json` according to their roles. Do not delete or rename `manifest.json`, `timeline.json`, `settings.json`, `media_index.json`, or `AGENTS.md`.",
   "",
   "Final packaging steps:",
   "",
@@ -242,13 +257,13 @@ const PROJECT_AGENTS_MD = [
   "If direct `.lctproj` attachment is unavailable, return the complete `cutlist.tsv` instead. Avoid returning the entire `.lctproj` as Base64 unless explicitly requested.",
 ].join("\n");
 
-const SAMPLE_TSV = `row_type	id	parent_id	order	title	duration	scene	subject	composition	action	camera	dialogue	image	audio_file	image_prompt	video_prompt	note
-scene	sc001		1	Lab Anomaly		Laboratory		Long shot	Establish the lab	Slow push				wide cinematic laboratory, tense atmosphere	establishing shot of a quiet research lab	Opening scene
-multicut	mc001	sc001	1	Microscope Sequence		Laboratory	Yamamoto	Close coverage	Observe specimen	Dolly in				microscope lens, scientist hands, shallow depth of field	push in from microscope to scientist reaction	Intro multicut
-cut	ct001	mc001	1	Microscope Close	3s	Laboratory	Microscope	Close shot	Lens fills the frame	Slow dolly	low machine hum	media/images/cut001.jpg	media/audio/cut001.wav	extreme close-up of microscope lens in a white lab	slow dolly toward microscope lens	Opening cut
-cut	ct002	mc001	2	Yamamoto Eyes	3s	Laboratory	Yamamoto	Eye close-up	Notices something strange	Subtle push in	breath catches	media/images/cut002.jpg		close-up of a scientist's eyes, tense expression	scientist narrows eyes while looking into microscope	Reaction cut
-multicut	mc002	sc001	2	Warning Lamp		Laboratory	Warning lamp	Cutaway	Alarm begins	Fixed and pan	warning beep			red warning lamp reflected in glass	warning lamp flashes and lab reacts	
-cut	ct003	mc002	1	Warning Flash	2s	Laboratory	Warning lamp	Close shot	Lamp flashes	Locked shot	warning beep	media/images/cut003.jpg	media/audio/cut003.wav	close-up of red warning lamp, hard shadows	red warning lamp flashes rhythmically	`; 
+const SAMPLE_TSV = `row_type	id	parent_id	order	title	duration	status	image	audio_file	video_file	image_prompt	video_prompt	scene	subject	composition	action	camera	audio	note
+scene	sc001		1	Lab Anomaly		review				wide cinematic laboratory, tense atmosphere	establishing shot of a quiet research lab	Laboratory		Long shot	Establish the lab	Slow push		Opening scene
+multicut	mc001	sc001	1	Microscope Sequence		draft				microscope lens, scientist hands, shallow depth of field	push in from microscope to scientist reaction	Laboratory	Yamamoto	Close coverage	Observe specimen	Dolly in		Intro multicut
+cut	ct001	mc001	1	Microscope Close	3s	draft	media/images/cut001.jpg	media/audio/cut001.wav		extreme close-up of microscope lens in a white lab	slow dolly toward microscope lens	Laboratory	Microscope	Close shot	Lens fills the frame	Slow dolly	low machine hum	Opening cut
+cut	ct002	mc001	2	Yamamoto Eyes	3s	review	media/images/cut002.jpg			close-up of a scientist's eyes, tense expression	scientist narrows eyes while looking into microscope	Laboratory	Yamamoto	Eye close-up	Notices something strange	Subtle push in	breath catches	Reaction cut
+multicut	mc002	sc001	2	Warning Lamp		draft				red warning lamp reflected in glass	warning lamp flashes and lab reacts	Laboratory	Warning lamp	Cutaway	Alarm begins	Fixed and pan	warning beep	
+cut	ct003	mc002	1	Warning Flash	2s	draft	media/images/cut003.jpg	media/audio/cut003.wav		close-up of red warning lamp, hard shadows	red warning lamp flashes rhythmically	Laboratory	Warning lamp	Close shot	Lamp flashes	Locked shot	warning beep	`; 
 const state = {
   manifest: structuredClone(DEFAULT_MANIFEST),
   rows: [],
@@ -265,6 +280,8 @@ const state = {
   mediaBlobs: new Map(),
   promptPreviewUrls: new Map(),
   assets: [],
+  generatedMedia: [],
+  prompts: [],
   assetSelectedIds: new Set(),
   assetSelectionAnchorId: "",
   assetModalId: "",
@@ -545,7 +562,7 @@ async function newProject() {
   manifest.projectName = "Untitled Project";
   const rows = [];
   const defaultName = `${safeName(manifest.projectName)}.lctproj`;
-  const bytes = await projectArchiveBytes({ manifest, rows, assets: [], mediaBlobs: new Map(), collapsed: [], activeId: "", view: "table" });
+  const bytes = await projectArchiveBytes({ manifest, rows, assets: [], generatedMedia: [], prompts: [], mediaBlobs: new Map(), collapsed: [], activeId: "", view: "table" });
   if (tauriInvoke) {
     const saved = await tauriInvoke("save_project_as", { defaultName, bytes: [...bytes] });
     if (!saved) return;
@@ -602,6 +619,9 @@ function loadTsv(text, name) {
   };
   state.rows = loadRowsFromTsv(text);
   state.assets = [];
+  state.generatedMedia = generatedMediaFromRows(state.rows);
+  state.prompts = promptsFromRows(state.rows);
+  syncRowsFromJsonState();
   clearAssetSelection();
   state.mediaUrls = new Map();
   state.mediaBlobs = new Map();
@@ -663,6 +683,11 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
   state.manifest = manifest;
   state.rows = rows;
   state.assets = loadAssetsFromEntries(entries, manifest);
+  state.generatedMedia = loadGeneratedMediaFromEntries(entries, manifest);
+  state.prompts = loadPromptsFromEntries(entries, manifest);
+  if (!state.generatedMedia.length) state.generatedMedia = generatedMediaFromRows(state.rows);
+  if (!state.prompts.length) state.prompts = promptsFromRows(state.rows);
+  syncRowsFromJsonState();
   clearAssetSelection();
   state.mediaUrls = new Map();
   state.mediaBlobs = new Map();
@@ -694,7 +719,31 @@ function loadAssetsFromEntries(entries, manifest) {
   try {
     const parsed = JSON.parse(text);
     const assets = Array.isArray(parsed.assets) ? parsed.assets : [];
-    return normalizeAssets(assets).filter((asset) => asset.alias || asset.path);
+    return normalizeAssets(assets).filter((asset) => asset.id || asset.path || asset.title || asset.note);
+  } catch {
+    return [];
+  }
+}
+
+function loadGeneratedMediaFromEntries(entries, manifest) {
+  const match = findZipEntry(entries, manifest.generate || "generate.json");
+  const text = decodeZipText(match?.entry);
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return normalizeGeneratedMedia(Array.isArray(parsed.items) ? parsed.items : []);
+  } catch {
+    return [];
+  }
+}
+
+function loadPromptsFromEntries(entries, manifest) {
+  const match = findZipEntry(entries, manifest.prompts || "prompts.json");
+  const text = decodeZipText(match?.entry);
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return normalizePrompts(Array.isArray(parsed.prompts) ? parsed.prompts : []);
   } catch {
     return [];
   }
@@ -711,15 +760,172 @@ function normalizeAssets(assets = []) {
 
 function normalizeAsset(asset = {}) {
   const path = String(asset.path || "").trim();
-  const alias = String(asset.alias || "").replace(/^@+/, "").trim();
   return {
-    id: String(asset.id || assetIdFromParts(alias, path, asset.title || "")).trim(),
-    alias,
+    id: String(asset.id || nextAssetId()).trim(),
+    type: "reference_image",
     path,
-    type: ["image", "audio", "other"].includes(asset.type) ? asset.type : assetTypeFromPath(path),
     title: String(asset.title || "").trim(),
+    tags: Array.isArray(asset.tags) ? asset.tags.map(String) : String(asset.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean),
     note: String(asset.note || "").trim(),
+    createdAt: String(asset.createdAt || new Date().toISOString()),
   };
+}
+
+function normalizeGeneratedMedia(items = []) {
+  const used = new Set();
+  return items.map((item) => {
+    const normalized = normalizeGeneratedMediaItem(item);
+    if (!normalized.id || used.has(normalized.id)) normalized.id = nextGeneratedMediaId(used);
+    used.add(normalized.id);
+    return normalized;
+  });
+}
+
+function normalizeGeneratedMediaItem(item = {}) {
+  const type = ["image", "audio", "video"].includes(item.type) ? item.type : mediaTypeFromPath(item.path || "");
+  return {
+    id: String(item.id || "").trim(),
+    cutId: String(item.cutId || item.cut_id || "").trim(),
+    type,
+    path: String(item.path || "").trim(),
+    takeName: String(item.takeName || item.take_name || "").trim(),
+    status: ["candidate", "ok", "ng", "hold"].includes(item.status) ? item.status : "candidate",
+    isActive: Boolean(item.isActive ?? item.is_active),
+    note: String(item.note || "").trim(),
+    createdAt: String(item.createdAt || item.created_at || new Date().toISOString()),
+    sourcePromptId: String(item.sourcePromptId || item.source_prompt_id || "").trim(),
+    referenceAssetIds: Array.isArray(item.referenceAssetIds) ? item.referenceAssetIds.map(String) : [],
+  };
+}
+
+function normalizePrompts(prompts = []) {
+  const used = new Set();
+  return prompts.map((prompt) => {
+    const normalized = normalizePrompt(prompt);
+    if (!normalized.id || used.has(normalized.id)) normalized.id = nextPromptId(used);
+    used.add(normalized.id);
+    return normalized;
+  });
+}
+
+function normalizePrompt(prompt = {}) {
+  return {
+    id: String(prompt.id || "").trim(),
+    ownerId: String(prompt.ownerId || prompt.owner_id || "").trim(),
+    ownerType: ["scene", "multicut", "cut"].includes(prompt.ownerType) ? prompt.ownerType : "cut",
+    kind: ["image", "video"].includes(prompt.kind) ? prompt.kind : "image",
+    text: String(prompt.text || "").trim(),
+    status: String(prompt.status || (prompt.isActive || prompt.is_active ? "active" : "candidate")).trim(),
+    isActive: Boolean(prompt.isActive ?? prompt.is_active),
+    linkedAssetIds: Array.isArray(prompt.linkedAssetIds) ? prompt.linkedAssetIds.map(String) : [],
+    note: String(prompt.note || "").trim(),
+    createdAt: String(prompt.createdAt || prompt.created_at || new Date().toISOString()),
+    updatedAt: String(prompt.updatedAt || prompt.updated_at || new Date().toISOString()),
+  };
+}
+
+function generatedMediaFromRows(rows = state.rows) {
+  const items = [];
+  rows.filter((row) => row.row_type === "cut").forEach((row) => {
+    [
+      ["image", row.image],
+      ["audio", row.audio_file],
+      ["video", row.video_file],
+    ].forEach(([type, path]) => {
+      if (!path) return;
+      items.push(normalizeGeneratedMediaItem({
+        id: nextGeneratedMediaId(),
+        cutId: row.id,
+        type,
+        path,
+        status: "candidate",
+        isActive: true,
+      }));
+    });
+  });
+  return normalizeGeneratedMedia(items);
+}
+
+function promptsFromRows(rows = state.rows) {
+  const prompts = [];
+  rows.forEach((row) => {
+    [
+      ["image", row.image_prompt],
+      ["video", row.video_prompt],
+    ].forEach(([kind, text]) => {
+      if (!text) return;
+      prompts.push(normalizePrompt({
+        id: nextPromptId(),
+        ownerId: row.id,
+        ownerType: row.row_type,
+        kind,
+        text,
+        status: "active",
+        isActive: true,
+      }));
+    });
+  });
+  return normalizePrompts(prompts);
+}
+
+function syncRowsFromJsonState(rows = state.rows) {
+  rows.forEach((row) => {
+    row.image = activeGeneratedPath(row.id, "image");
+    row.audio_file = activeGeneratedPath(row.id, "audio");
+    row.video_file = activeGeneratedPath(row.id, "video");
+    row.image_prompt = activePromptText(row.id, "image");
+    row.video_prompt = activePromptText(row.id, "video");
+  });
+}
+
+function rowWithJsonValues(row) {
+  return {
+    ...row,
+    image: activeGeneratedPath(row.id, "image") || row.image || "",
+    audio_file: activeGeneratedPath(row.id, "audio") || row.audio_file || "",
+    video_file: activeGeneratedPath(row.id, "video") || row.video_file || "",
+    image_prompt: activePromptText(row.id, "image") || row.image_prompt || "",
+    video_prompt: activePromptText(row.id, "video") || row.video_prompt || "",
+  };
+}
+
+function activeGeneratedPath(cutId, type) {
+  return state.generatedMedia.find((item) => item.cutId === cutId && item.type === type && item.isActive)?.path || "";
+}
+
+function activePromptText(ownerId, kind) {
+  return state.prompts.find((prompt) => prompt.ownerId === ownerId && prompt.kind === kind && prompt.isActive)?.text || "";
+}
+
+function setActiveGeneratedMedia(cutId, type, path) {
+  if (!cutId || !type) return;
+  state.generatedMedia.forEach((item) => {
+    if (item.cutId === cutId && item.type === type) item.isActive = false;
+  });
+  if (!path) return;
+  let item = state.generatedMedia.find((entry) => entry.cutId === cutId && entry.type === type && entry.path === path);
+  if (!item) {
+    item = normalizeGeneratedMediaItem({ id: nextGeneratedMediaId(), cutId, type, path, status: "candidate", isActive: true });
+    state.generatedMedia.push(item);
+  }
+  item.isActive = true;
+}
+
+function setActivePrompt(ownerId, ownerType, kind, text) {
+  if (!ownerId || !kind) return;
+  state.prompts.forEach((prompt) => {
+    if (prompt.ownerId === ownerId && prompt.kind === kind) prompt.isActive = false;
+  });
+  if (!text) return;
+  let prompt = state.prompts.find((entry) => entry.ownerId === ownerId && entry.kind === kind && entry.text === text);
+  if (!prompt) {
+    prompt = normalizePrompt({ id: nextPromptId(), ownerId, ownerType, kind, text, status: "active", isActive: true });
+    state.prompts.push(prompt);
+  }
+  prompt.text = text;
+  prompt.status = "active";
+  prompt.isActive = true;
+  prompt.updatedAt = new Date().toISOString();
 }
 
 function assetIdFromParts(alias, path, title) {
@@ -922,7 +1128,8 @@ function parseTsv(text) {
   for (const column of ["row_type", "id"]) {
     if (!headers.includes(column)) throw new Error(`cutlist.tsv is missing required column ${column}.`);
   }
-  const rows = records.slice(1).map((values, index) => {
+  const rows = records.slice(1).map((rawValues, index) => {
+    const values = normalizeTsvValuesForHeaders(headers, rawValues);
     const row = {};
     COLUMNS.forEach((column) => {
       const headerIndex = headerIndexForColumn(headers, column);
@@ -935,6 +1142,14 @@ function parseTsv(text) {
     return row;
   });
   return { headers, rowCount: records.length - 1, rows };
+}
+
+function normalizeTsvValuesForHeaders(headers, values) {
+  if (headers.join("\t") === COLUMNS.join("\t") && values.length === 17) {
+    const [row_type, id, parent_id, order, title, duration, scene, subject, composition, action, camera, audio, image, audio_file, image_prompt, video_prompt, note] = values;
+    return [row_type, id, parent_id, order, title, duration, "", image, audio_file, "", image_prompt, video_prompt, scene, subject, composition, action, camera, audio, note];
+  }
+  return values;
 }
 
 function normalizeTsvHeader(header) {
@@ -1109,7 +1324,11 @@ function decodeCell(value) {
 }
 
 function serializeTsv(rows = state.rows) {
-  return [COLUMNS.join("\t"), ...rows.map((row) => COLUMNS.map((column) => encodeCell(row[column])).join("\t"))].join("\n");
+  syncRowsFromJsonState(rows);
+  return [COLUMNS.join("\t"), ...rows.map((row) => {
+    const exported = rowWithJsonValues(row);
+    return COLUMNS.map((column) => encodeCell(exported[column])).join("\t");
+  })].join("\n");
 }
 
 function emptyProjectTsv() {
@@ -1117,7 +1336,11 @@ function emptyProjectTsv() {
 }
 
 function serializeLlmTsv(rows = state.rows) {
-  return [LLM_TSV_COLUMNS.join("\t"), ...rows.map((row) => LLM_TSV_COLUMNS.map((column) => encodeCell(row[column])).join("\t"))].join("\n");
+  syncRowsFromJsonState(rows);
+  return [LLM_TSV_COLUMNS.join("\t"), ...rows.map((row) => {
+    const exported = rowWithJsonValues(row);
+    return LLM_TSV_COLUMNS.map((column) => encodeCell(exported[column])).join("\t");
+  })].join("\n");
 }
 
 function buildTree() {
@@ -1592,7 +1815,7 @@ function timelinePreviewHtml(cut, offset) {
   if (!cut) return `<div class="timeline-preview"><div class="timeline-text-preview"><strong>No cut</strong></div></div>`;
   const image = displayMediaUrl(cut.image);
   const audio = displayMediaUrl(cut.audio_file);
-  const textRows = ["title", "scene", "subject", "composition", "action", "camera", "dialogue"]
+  const textRows = ["title", "scene", "subject", "composition", "action", "camera", "audio"]
     .map((field) => [field, field === "title" ? rowLabel(cut) : cut[field]])
     .filter(([, value]) => value)
     .map(([field, value]) => `<div><span>${escapeHtml(field)}</span><strong>${escapeHtml(value)}</strong></div>`);
@@ -1897,18 +2120,18 @@ function renderDetail() {
   }
   const form = document.createElement("div");
   form.className = "form-grid";
-  const fields = ["title", "duration", "scene", "subject", "composition", "action", "camera", "dialogue", "image", "audio_file", "image_prompt", "video_prompt", "note"];
+  const fields = ["id", "title", "duration", "status", "image", "audio_file", "video_file", "image_prompt", "video_prompt", "scene", "subject", "composition", "action", "camera", "audio", "note"];
   fields.forEach((field) => {
     const wrapper = document.createElement("div");
     wrapper.className = "field";
     const autoDuration = field === "duration" && row.row_type !== "cut";
-    const readOnly = autoDuration || (!EDITABLE_COLUMNS.has(field) && !["parent_id", "order"].includes(field));
+    const readOnly = autoDuration || !EDITABLE_COLUMNS.has(field);
     const tag = ["image_prompt", "video_prompt", "note"].includes(field) ? "textarea" : "input";
     wrapper.innerHTML = `<label>${field}</label><${tag} ${readOnly ? "readonly" : ""}>${tag === "textarea" ? escapeHtml(row[field] || "") : ""}</${tag}>`;
     const input = wrapper.querySelector(tag);
     if (tag === "input") input.value = autoDuration ? displayDuration(row) : row[field] || "";
-    if (!autoDuration) input.addEventListener("change", () => updateRow(row.id, { [field]: input.value }));
-    if (!autoDuration) attachAssetAutocomplete(input);
+    if (!readOnly) input.addEventListener("change", () => updateRow(row.id, { [field]: input.value }));
+    if (!readOnly) attachAssetAutocomplete(input);
     form.appendChild(wrapper);
   });
   el.detail.replaceChildren(form);
@@ -1983,14 +2206,12 @@ function renderPromptEdit() {
 
 function renderAssets() {
   if (!el.assetsView) return;
-  const duplicateAliases = duplicateAssetAliases();
   const modalAsset = state.assets.find((asset) => asset.id === state.assetModalId);
   el.assetsView.innerHTML = `
     <div class="assets-view">
-      ${duplicateAliases.size ? `<div class="asset-warning">Duplicate aliases: ${escapeHtml([...duplicateAliases].join(", "))}</div>` : ""}
       <div class="assets-drop-zone">
         <div class="assets-grid">
-          ${state.assets.length ? state.assets.map((asset, index) => assetCardHtml(asset, index, duplicateAliases)).join("") : `<div class="empty-state">Drop asset files here.</div>`}
+          ${state.assets.length ? state.assets.map((asset, index) => assetCardHtml(asset, index)).join("") : `<div class="empty-state">Drop reference image files here.</div>`}
         </div>
       </div>
     </div>
@@ -2032,13 +2253,12 @@ function renderAssets() {
   resolvePromptMediaPreviews(el.assetsView);
 }
 
-function assetCardHtml(asset, index, duplicateAliases) {
-  const duplicate = duplicateAliases.has(asset.alias);
+function assetCardHtml(asset, index) {
   return `
-    <article class="asset-card${duplicate ? " invalid" : ""}${state.assetSelectedIds.has(asset.id) ? " selected" : ""}" data-asset-id="${escapeAttr(asset.id)}" data-asset-index="${index}">
+    <article class="asset-card${state.assetSelectedIds.has(asset.id) ? " selected" : ""}" data-asset-id="${escapeAttr(asset.id)}" data-asset-index="${index}">
       <div class="asset-thumb" title="Open details">${assetPreviewHtml(asset)}</div>
-      <label>alias<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="alias" value="${escapeAttr(asset.alias)}"></label>
       <label>title<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="title" value="${escapeAttr(asset.title)}"></label>
+      <label>tags<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="tags" value="${escapeAttr(asset.tags.join(", "))}"></label>
     </article>`;
 }
 
@@ -2053,12 +2273,10 @@ function assetModalHtml(asset) {
         <div class="asset-modal-body">
           <div class="asset-modal-preview">${assetPreviewHtml(asset)}</div>
           <div class="asset-modal-fields">
-            <label>alias<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="alias" value="${escapeAttr(asset.alias)}"></label>
             <label>path<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="path" value="${escapeAttr(asset.path)}"></label>
-            <label>type<select data-asset-id="${escapeAttr(asset.id)}" data-asset-field="type">
-        ${["image", "audio", "other"].map((type) => `<option value="${type}"${asset.type === type ? " selected" : ""}>${type}</option>`).join("")}
-            </select></label>
+            <label>type<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="type" value="${escapeAttr(asset.type)}" readonly></label>
             <label>title<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="title" value="${escapeAttr(asset.title)}"></label>
+            <label>tags<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="tags" value="${escapeAttr(asset.tags.join(", "))}"></label>
             <label>note<textarea data-asset-id="${escapeAttr(asset.id)}" data-asset-field="note">${escapeHtml(asset.note)}</textarea></label>
           </div>
         </div>
@@ -2071,16 +2289,13 @@ function assetModalHtml(asset) {
 }
 
 function assetPreviewHtml(asset) {
-  if (asset.type === "other") {
-    return `<article class="prompt-media-card compact" data-kind="other"><div class="prompt-media-thumb">${iconHtml("folder", "empty-icon")}<span>${escapeHtml(asset.path || "No path")}</span></div><div class="prompt-media-path" title="${escapeAttr(asset.path || "")}">${escapeHtml(asset.path || "No path")}</div></article>`;
-  }
   return promptMediaCardHtml(asset.path || "", true);
 }
 
 function updateAsset(id, field, value) {
   const asset = assetById(id);
   if (!asset) return;
-  asset[field] = field === "alias" ? value.replace(/^@+/, "").trim() : value;
+  asset[field] = field === "tags" ? String(value).split(",").map((tag) => tag.trim()).filter(Boolean) : value;
   if (field === "path") asset.type = assetTypeFromPath(value);
   if (field === "path" && !asset.title) asset.title = fileStem(value);
   markDirty();
@@ -2298,27 +2513,25 @@ function assetFromDroppedFile(file) {
   const path = assetPathFromDroppedFile(file);
   setSessionMediaUrl(path, file);
   const title = fileStem(path);
-  return {
+  return normalizeAsset({
     id: nextAssetId(),
-    alias: uniqueAssetAlias(safeAssetAlias(title)),
     path,
     type: assetTypeFromPath(path),
     title,
     note: "",
-  };
+  });
 }
 
 function assetFromDroppedPath(droppedPath) {
   const path = assetPathFromDroppedPath(droppedPath);
   const title = fileStem(path);
-  return {
+  return normalizeAsset({
     id: nextAssetId(),
-    alias: uniqueAssetAlias(safeAssetAlias(title)),
     path,
     type: assetTypeFromPath(path),
     title,
     note: "",
-  };
+  });
 }
 
 function assetPathFromDroppedFile(file) {
@@ -2453,10 +2666,34 @@ let assetIdCounter = 0;
 
 function nextAssetId(extraTaken = new Set()) {
   const taken = new Set([...state.assets.map((asset) => asset.id), ...extraTaken]);
-  let id = typeof crypto !== "undefined" && crypto.randomUUID ? `asset-${crypto.randomUUID()}` : "";
+  let id = "";
   while (!id || taken.has(id)) {
     assetIdCounter += 1;
-    id = `asset-${Date.now().toString(36)}-${assetIdCounter}-${Math.random().toString(36).slice(2, 8)}`;
+    id = `asset_${String(assetIdCounter).padStart(3, "0")}`;
+  }
+  return id;
+}
+
+let generatedMediaIdCounter = 0;
+
+function nextGeneratedMediaId(extraTaken = new Set()) {
+  const taken = new Set([...state.generatedMedia.map((item) => item.id), ...extraTaken]);
+  let id = "";
+  while (!id || taken.has(id)) {
+    generatedMediaIdCounter += 1;
+    id = `gen_${String(generatedMediaIdCounter).padStart(3, "0")}`;
+  }
+  return id;
+}
+
+let promptIdCounter = 0;
+
+function nextPromptId(extraTaken = new Set()) {
+  const taken = new Set([...state.prompts.map((prompt) => prompt.id), ...extraTaken]);
+  let id = "";
+  while (!id || taken.has(id)) {
+    promptIdCounter += 1;
+    id = `prompt_${String(promptIdCounter).padStart(3, "0")}`;
   }
   return id;
 }
@@ -2478,9 +2715,14 @@ function fileStem(path) {
 }
 
 function assetTypeFromPath(path) {
+  return /\.(png|jpe?g|webp|gif|svg)$/i.test(path) ? "reference_image" : "reference_image";
+}
+
+function mediaTypeFromPath(path) {
   if (/\.(png|jpe?g|webp|gif|svg)$/i.test(path)) return "image";
   if (/\.(wav|mp3|m4a|aac|ogg|flac)$/i.test(path)) return "audio";
-  return "other";
+  if (/\.(mp4|mov|m4v|webm)$/i.test(path)) return "video";
+  return "image";
 }
 
 function promptEditColumnHtml(field, label, value) {
@@ -2615,7 +2857,10 @@ function commitPromptEditor(editor) {
     pushHistory();
     if (session) session.historyPushed = true;
   }
+  if (field === "image_prompt") setActivePrompt(row.id, row.row_type, "image", value);
+  if (field === "video_prompt") setActivePrompt(row.id, row.row_type, "video", value);
   row[field] = value;
+  syncRowsFromJsonState();
   markDirty();
   renderStatus(validate());
   renderPrompt();
@@ -2829,14 +3074,18 @@ function assetSuggestionMatches(query) {
   const normalized = query.toLowerCase();
   const seen = new Set();
   return state.assets
-    .filter((asset) => asset.alias && asset.path)
+    .filter((asset) => asset.path)
     .filter((asset) => {
-      const key = asset.alias.toLowerCase();
+      const key = assetSuggestKey(asset).toLowerCase();
       if (seen.has(key)) return false;
       seen.add(key);
-      return !normalized || key.startsWith(normalized) || asset.title?.toLowerCase().includes(normalized);
+      return !normalized || key.startsWith(normalized) || asset.title?.toLowerCase().includes(normalized) || asset.path?.toLowerCase().includes(normalized);
     })
     .slice(0, 8);
+}
+
+function assetSuggestKey(asset) {
+  return safeAssetAlias(asset.title || fileStem(asset.path) || asset.id);
 }
 
 function renderAssetSuggest(target, context, matches) {
@@ -2848,7 +3097,7 @@ function renderAssetSuggest(target, context, matches) {
   popup.style.top = `${Math.min(window.innerHeight - 180, rect.top + 30)}px`;
   popup.innerHTML = matches.map((asset, index) => `
     <button type="button" data-suggest-index="${index}"${index === 0 ? " class=\"active\"" : ""}>
-      <strong>@${escapeHtml(asset.alias)}</strong>
+      <strong>@${escapeHtml(assetSuggestKey(asset))}</strong>
       <span>${escapeHtml(asset.title || asset.path)}</span>
     </button>`).join("");
   popup.querySelectorAll("button").forEach((button) => {
@@ -3160,7 +3409,15 @@ function updateRow(id, patch) {
   const row = getRow(id);
   if (!row) return;
   pushHistory();
+  if (row.row_type === "cut") {
+    if (Object.hasOwn(patch, "image")) setActiveGeneratedMedia(row.id, "image", patch.image);
+    if (Object.hasOwn(patch, "audio_file")) setActiveGeneratedMedia(row.id, "audio", patch.audio_file);
+    if (Object.hasOwn(patch, "video_file")) setActiveGeneratedMedia(row.id, "video", patch.video_file);
+  }
+  if (Object.hasOwn(patch, "image_prompt")) setActivePrompt(row.id, row.row_type, "image", patch.image_prompt);
+  if (Object.hasOwn(patch, "video_prompt")) setActivePrompt(row.id, row.row_type, "video", patch.video_prompt);
   Object.assign(row, patch);
+  syncRowsFromJsonState();
   markDirty();
   render();
 }
@@ -3646,12 +3903,10 @@ function handleMediaDrop(event, target) {
     patch.audio_file = audio.name;
     setSessionMediaUrl(audio.name, audio);
   }
-  pushHistory();
-  Object.assign(target, patch);
+  updateRow(target.id, patch);
   state.activeId = target.id;
   state.selectedIds = new Set([target.id]);
   state.selectionAnchorId = target.id;
-  markDirty();
   render();
 }
 
@@ -3833,13 +4088,39 @@ function validate() {
     if (row.row_type === "cut" && row.image && !mediaUrl(row.image)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: image may be missing (${row.image}).` });
     if (row.row_type === "cut" && row.audio_file && !mediaUrl(row.audio_file)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: audio may be missing (${row.audio_file}).` });
   });
-  const aliases = new Set();
+  const assetIds = new Set();
   state.assets.forEach((asset, index) => {
-    if (!asset.alias) issues.push(error(`Asset ${index + 1}: alias is required.`));
-    const key = asset.alias?.toLowerCase();
-    if (key && aliases.has(key)) issues.push(error(`Asset @${asset.alias}: duplicate alias.`));
-    if (key) aliases.add(key);
-    if (!asset.path) issues.push(warn(`Asset @${asset.alias || index + 1}: path is empty.`));
+    if (!asset.id) issues.push(error(`Asset ${index + 1}: id is required.`));
+    if (asset.id && assetIds.has(asset.id)) issues.push(error(`${asset.id}: duplicate asset id.`));
+    if (asset.id) assetIds.add(asset.id);
+    if (!asset.path) issues.push(warn(`Asset ${asset.id || index + 1}: path is empty.`));
+  });
+  const promptIds = new Set(state.prompts.map((prompt) => prompt.id).filter(Boolean));
+  const activeMediaKeys = new Set();
+  state.generatedMedia.forEach((item) => {
+    if (!getRow(item.cutId)) issues.push(error(`${item.id}: cutId does not exist (${item.cutId}).`));
+    if (item.sourcePromptId && !promptIds.has(item.sourcePromptId)) issues.push(error(`${item.id}: sourcePromptId does not exist (${item.sourcePromptId}).`));
+    item.referenceAssetIds.forEach((assetId) => {
+      if (!assetIds.has(assetId)) issues.push(error(`${item.id}: referenceAssetId does not exist (${assetId}).`));
+    });
+    if (item.isActive) {
+      const key = `${item.cutId}:${item.type}`;
+      if (activeMediaKeys.has(key)) issues.push(error(`${item.cutId}: multiple active ${item.type} generated media items.`));
+      activeMediaKeys.add(key);
+    }
+  });
+  const activePromptKeys = new Set();
+  state.prompts.forEach((prompt) => {
+    const owner = getRow(prompt.ownerId);
+    if (!owner || owner.row_type !== prompt.ownerType) issues.push(error(`${prompt.id}: ownerId does not exist or ownerType is invalid (${prompt.ownerId}).`));
+    prompt.linkedAssetIds.forEach((assetId) => {
+      if (!assetIds.has(assetId)) issues.push(error(`${prompt.id}: linkedAssetId does not exist (${assetId}).`));
+    });
+    if (prompt.isActive) {
+      const key = `${prompt.ownerId}:${prompt.kind}`;
+      if (activePromptKeys.has(key)) issues.push(error(`${prompt.ownerId}: multiple active ${prompt.kind} prompts.`));
+      activePromptKeys.add(key);
+    }
   });
   return issues;
 }
@@ -3855,8 +4136,8 @@ function warn(message) {
 function effectivePrompts(row) {
   const chain = row.row_type === "cut" ? [getAncestor(row, "scene"), getAncestor(row, "multicut"), row] : row.row_type === "multicut" ? [getAncestor(row, "scene"), row] : [row];
   return {
-    image: chain.map((item) => item?.image_prompt).filter(Boolean).join("\n"),
-    video: chain.map((item) => item?.video_prompt).filter(Boolean).join("\n"),
+    image: chain.map((item) => item ? activePromptText(item.id, "image") || item.image_prompt : "").filter(Boolean).join("\n"),
+    video: chain.map((item) => item ? activePromptText(item.id, "video") || item.video_prompt : "").filter(Boolean).join("\n"),
   };
 }
 
@@ -3933,16 +4214,38 @@ function markDirty() {
 }
 
 function pushHistory() {
-  state.undo.push(JSON.stringify(state.rows));
+  state.undo.push(JSON.stringify(historySnapshot()));
   if (state.undo.length > 100) state.undo.shift();
   state.redo = [];
+}
+
+function historySnapshot() {
+  return {
+    rows: state.rows,
+    assets: state.assets,
+    generatedMedia: state.generatedMedia,
+    prompts: state.prompts,
+  };
+}
+
+function restoreHistorySnapshot(snapshot) {
+  const parsed = typeof snapshot === "string" ? JSON.parse(snapshot) : snapshot;
+  if (Array.isArray(parsed)) {
+    state.rows = parsed;
+    return;
+  }
+  state.rows = parsed.rows || [];
+  state.assets = parsed.assets || state.assets;
+  state.generatedMedia = parsed.generatedMedia || [];
+  state.prompts = parsed.prompts || [];
+  syncRowsFromJsonState();
 }
 
 function undo() {
   const snapshot = state.undo.pop();
   if (!snapshot) return;
-  state.redo.push(JSON.stringify(state.rows));
-  state.rows = JSON.parse(snapshot);
+  state.redo.push(JSON.stringify(historySnapshot()));
+  restoreHistorySnapshot(snapshot);
   markDirty();
   render();
 }
@@ -3950,8 +4253,8 @@ function undo() {
 function redo() {
   const snapshot = state.redo.pop();
   if (!snapshot) return;
-  state.undo.push(JSON.stringify(state.rows));
-  state.rows = JSON.parse(snapshot);
+  state.undo.push(JSON.stringify(historySnapshot()));
+  restoreHistorySnapshot(snapshot);
   markDirty();
   render();
 }
@@ -4129,10 +4432,13 @@ async function projectArchiveBytes(options = {}) {
   const sourceManifest = options.manifest || state.manifest;
   const sourceRows = options.rows || state.rows;
   const sourceAssets = options.assets || state.assets;
+  const sourceGeneratedMedia = options.generatedMedia || state.generatedMedia;
+  const sourcePrompts = options.prompts || state.prompts;
   const sourceMediaBlobs = options.mediaBlobs || state.mediaBlobs;
   const collapsed = options.collapsed || [...state.collapsed];
   const activeId = options.activeId ?? state.activeId;
   const view = options.view || state.view;
+  syncRowsFromJsonState(sourceRows);
   const cutlist = sourceRows.length ? serializeTsv(sourceRows) : emptyProjectTsv();
   const manifest = {
     ...sourceManifest,
@@ -4141,6 +4447,8 @@ async function projectArchiveBytes(options = {}) {
     timeline: "timeline.json",
     settings: "settings.json",
     assets: "assets.json",
+    generate: "generate.json",
+    prompts: "prompts.json",
   };
   const files = new Map([
     ["manifest.json", JSON.stringify(manifest, null, 2)],
@@ -4148,8 +4456,10 @@ async function projectArchiveBytes(options = {}) {
     ["AGENTS.md", PROJECT_AGENTS_MD],
     ["timeline.json", JSON.stringify({ collapsed, activeId }, null, 2)],
     ["settings.json", JSON.stringify({ view }, null, 2)],
-    ["assets.json", JSON.stringify({ version: 1, assets: normalizeAssets(sourceAssets) }, null, 2)],
-    ["media_index.json", JSON.stringify({ media: sourceRows.filter((row) => row.row_type === "cut").map((row) => ({ id: row.id, image: row.image, audio_file: row.audio_file })) }, null, 2)],
+    ["assets.json", JSON.stringify({ format: "LocalCutBoardAssets", formatVersion: "1.0.0", assets: normalizeAssets(sourceAssets) }, null, 2)],
+    ["generate.json", JSON.stringify({ format: "LocalCutBoardGeneratedMedia", formatVersion: "1.0.0", items: normalizeGeneratedMedia(sourceGeneratedMedia) }, null, 2)],
+    ["prompts.json", JSON.stringify({ format: "LocalCutBoardPrompts", formatVersion: "1.0.0", prompts: normalizePrompts(sourcePrompts) }, null, 2)],
+    ["media_index.json", JSON.stringify({ media: sourceRows.filter((row) => row.row_type === "cut").map((row) => ({ id: row.id, image: row.image, audio_file: row.audio_file, video_file: row.video_file })) }, null, 2)],
   ]);
   for (const [path, mediaBlob] of sourceMediaBlobs.entries()) {
     files.set(path, new Uint8Array(await mediaBlob.arrayBuffer()));
@@ -4171,7 +4481,8 @@ function buildPremiereXml() {
   const clips = [];
   const markers = [];
   state.rows.filter((row) => row.row_type !== "cut").forEach((row) => {
-    markers.push(`<marker><name>${xmlEscape(row.title || row.id)}</name><comment>${xmlEscape([row.image_prompt, row.video_prompt, row.note].filter(Boolean).join("\n"))}</comment><in>${frame}</in><out>${frame}</out></marker>`);
+    const promptRow = rowWithJsonValues(row);
+    markers.push(`<marker><name>${xmlEscape(row.title || row.id)}</name><comment>${xmlEscape([promptRow.image_prompt, promptRow.video_prompt, row.note].filter(Boolean).join("\n"))}</comment><in>${frame}</in><out>${frame}</out></marker>`);
   });
   cuts.forEach((cut, index) => {
     const duration = Math.round(durationSeconds(cut.duration) * fps);

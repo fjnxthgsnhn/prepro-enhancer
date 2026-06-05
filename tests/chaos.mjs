@@ -228,7 +228,7 @@ async function cellText(page, rowId, column) {
 }
 
 function expectedHeaders() {
-  return ["row_type", "id", "parent_id", "order", "title", "duration", "scene", "subject", "composition", "action", "camera", "dialogue", "image", "audio_file", "image_prompt", "video_prompt", "note"];
+  return ["row_type", "id", "parent_id", "order", "title", "duration", "status", "image", "audio_file", "video_file", "image_prompt", "video_prompt", "scene", "subject", "composition", "action", "camera", "audio", "note"];
 }
 
 function emptyTsv() {

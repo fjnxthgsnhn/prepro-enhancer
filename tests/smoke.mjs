@@ -149,7 +149,7 @@ const legacyProject = makeStoredZip(
 await loadProjectFile("legacy-project.lctproj", legacyProject);
 await expectText("#projectName", "Legacy TSV Project");
 await expectText("#counts", "scene 1 / multicut 1 / cut 1");
-await expectText('tbody tr[data-id="ct900"] td[data-column="dialogue"]', "Legacy Dialogue");
+await expectText('tbody tr[data-id="ct900"] td[data-column="audio"]', "Legacy Dialogue");
 await page.reload();
 await expectText("#projectName", "Sample Project");
 await page.fill("#searchInput", "not-in-next-project");
@@ -176,7 +176,7 @@ await loadProjectFile("alias-header.lctproj", aliasHeaderProject);
 await expectText("#projectName", "Alias Header Project");
 await expectText("#counts", "scene 1 / multicut 1 / cut 1");
 await expectText('tbody tr[data-id="ct910"] td[data-column="audio_file"]', "alias.wav");
-await expectText('tbody tr[data-id="ct910"] td[data-column="dialogue"]', "Alias Dialogue");
+await expectText('tbody tr[data-id="ct910"] td[data-column="audio"]', "Alias Dialogue");
 await page.reload();
 await expectText("#projectName", "Sample Project");
 const orphanCutProject = makeStoredZip(
@@ -204,9 +204,9 @@ await expectText("#counts", "scene 1 / multicut 2 / cut 3");
 const duplicateAssetIdProject = makeStoredZip(new Map([
   ["manifest.json", JSON.stringify({ projectName: "Duplicate Asset IDs", mainCutlist: "cutlist.tsv", assets: "assets.json" })],
   ["cutlist.tsv", expectedHeaders().join("\t")],
-  ["assets.json", JSON.stringify({ version: 1, assets: [
-    { id: "asset-dup", alias: "rui", path: "assets/rui.png", type: "image", title: "Rui" },
-    { id: "asset-dup", alias: "kou", path: "assets/kou.png", type: "image", title: "Kou" },
+  ["assets.json", JSON.stringify({ format: "LocalCutBoardAssets", formatVersion: "1.0.0", assets: [
+    { id: "asset_dup", path: "media/references/rui.png", type: "reference_image", title: "Rui" },
+    { id: "asset_dup", path: "media/references/kou.png", type: "reference_image", title: "Kou" },
   ] })],
 ]));
 await loadProjectFile("duplicate-asset-ids.lctproj", duplicateAssetIdProject);
@@ -215,7 +215,7 @@ await expectCount(".asset-card", 2);
 const loadedAssetIds = await page.$$eval(".asset-card", (cards) => cards.map((card) => card.dataset.assetId));
 if (new Set(loadedAssetIds).size !== loadedAssetIds.length) throw new Error("Loaded asset IDs should be made unique");
 await page.locator(".asset-card").nth(1).locator(".asset-thumb").click();
-await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="alias"]')?.value === "kou");
+await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="title"]')?.value === "Kou");
 await page.locator('.asset-modal [data-asset-action="close"]').click();
 await page.reload();
 await expectText("#projectName", "Sample Project");
@@ -224,14 +224,14 @@ for (const removedButton of ["addSceneBtn", "addMulticutBtn", "addCutBtn", "grou
   if (await page.locator(`#${removedButton}`).count()) throw new Error(`${removedButton} should be removed from the toolbar`);
 }
 const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
-for (const hidden of ["row_type", "id", "parent_id", "order", "cut", "status"]) {
+for (const hidden of ["row_type", "parent_id", "order"]) {
   if (headers.includes(hidden)) throw new Error(`${hidden} should be hidden in Table View`);
 }
-for (const visible of ["composition", "action", "camera", "dialogue"]) {
+for (const visible of ["id", "status", "composition", "action", "camera", "audio"]) {
   if (!headers.includes(visible)) throw new Error(`${visible} should be visible in Table View`);
 }
-const expectedTail = ["dialogue", "image", "audio_file", "image_prompt", "video_prompt", "note"];
-const tailStart = headers.indexOf("dialogue");
+const expectedTail = ["image", "audio_file", "video_file", "image_prompt", "video_prompt"];
+const tailStart = headers.indexOf("image");
 if (tailStart < 0 || expectedTail.some((name, index) => headers[tailStart + index] !== name)) {
   throw new Error(`media columns should be adjacent to dialogue on the right: ${headers.join(",")}`);
 }
@@ -463,7 +463,7 @@ await page.waitForFunction(() => !document.querySelector(".data-table tr.selecte
 await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
 await page.waitForFunction(() => document.querySelector('tbody tr[data-id="ct001"]')?.classList.contains("selected"));
 const detailLabels = await page.$$eval("#detailPanel label", (nodes) => nodes.map((node) => node.textContent));
-for (const hiddenDetail of ["row_type", "id", "parent_id", "order"]) {
+for (const hiddenDetail of ["row_type", "parent_id", "order"]) {
   if (detailLabels.includes(hiddenDetail)) throw new Error(`${hiddenDetail} should be hidden in Detail panel`);
 }
 await page.click('[data-view="promptEdit"]');
@@ -500,7 +500,7 @@ await page.locator('.prompt-path-token[data-path="media/images/cut001.jpg"]').ho
 await page.waitForFunction(() => !document.querySelector(".prompt-hover-preview")?.hidden);
 
 await page.click('[data-view="assets"]');
-await expectText("#assetsView", "Drop asset files here");
+await expectText("#assetsView", "Drop reference image files here");
 if (await page.locator("#addAssetBtn").count()) throw new Error("Assets view should not expose Add Asset");
 await dropFiles("#assetsView", [
   { name: "rui.png", type: "image/png" },
@@ -508,7 +508,7 @@ await dropFiles("#assetsView", [
   { name: "ルイ.png", type: "image/png" },
 ]);
 await expectCount(".asset-card", 3);
-await page.waitForFunction(() => document.querySelector('.asset-card input[data-asset-field="alias"]')?.value === "rui");
+await page.waitForFunction(() => document.querySelector('.asset-card input[data-asset-field="title"]')?.value === "rui");
 const droppedAssetIds = await page.$$eval(".asset-card", (cards) => cards.map((card) => card.dataset.assetId));
 if (new Set(droppedAssetIds).size !== droppedAssetIds.length) throw new Error("Dropped asset card IDs should be unique");
 const droppedAssetPaths = await page.$$eval(".asset-card .prompt-media-card[data-path]", (cards) => cards.map((card) => card.dataset.path));
@@ -528,10 +528,10 @@ await page.keyboard.press("Delete");
 await expectCount(".asset-card", 0);
 await dropFiles("#assetsView", [{ name: "rui.png", type: "image/png" }]);
 await expectCount(".asset-card", 1);
-await page.locator('.asset-card [data-asset-field="alias"]').fill("rui");
-await page.locator('.asset-card [data-asset-field="alias"]').press("Tab");
 await page.locator('.asset-card [data-asset-field="title"]').fill("Rui");
 await page.locator('.asset-card [data-asset-field="title"]').press("Tab");
+await page.locator('.asset-card [data-asset-field="tags"]').fill("character, reference");
+await page.locator('.asset-card [data-asset-field="tags"]').press("Tab");
 await page.click('[data-view="assets"]');
 await page.locator(".asset-card .asset-thumb").click();
 await expectText(".asset-modal", "Asset");
@@ -545,16 +545,13 @@ await dropFiles(".asset-card", [{ name: "rui-updated.png", type: "image/png" }])
 await expectCount(".asset-card", 1);
 const updatedRuiAssetPath = "assets/rui-updated.png";
 await page.waitForFunction((path) => document.querySelector(`.asset-card .prompt-media-card[data-path="${path}"]`), updatedRuiAssetPath);
-if ((await page.locator('.asset-card [data-asset-field="alias"]').inputValue()) !== "rui") throw new Error("Asset drop update should keep alias");
+if ((await page.locator('.asset-card [data-asset-field="title"]').inputValue()) !== "Rui") throw new Error("Asset drop update should keep title");
 await page.locator(".asset-card .asset-thumb").click();
 await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "assets/rui-updated.png");
 if ((await page.locator('.asset-modal [data-asset-field="note"]').inputValue()) !== "Reusable Rui asset") throw new Error("Asset drop update should keep note");
 await page.locator('.asset-modal [data-asset-action="close"]').click();
 await dropFiles("#assetsView", [{ name: "rui-duplicate.png", type: "image/png" }]);
 await expectCount(".asset-card", 2);
-await page.locator('.asset-card').nth(1).locator('[data-asset-field="alias"]').fill("rui");
-await page.locator('.asset-card').nth(1).locator('[data-asset-field="alias"]').press("Tab");
-await expectText("#assetsView", "Duplicate aliases");
 if (await page.locator('[data-asset-action="duplicate"]').count()) throw new Error("Assets view should not expose Duplicate");
 await page.locator(".asset-card").nth(1).click();
 await page.keyboard.press("Backspace");
@@ -564,14 +561,14 @@ const imagePromptEditor = '.prompt-edit-column[data-field="image_prompt"] .promp
 const videoPromptEditor = '.prompt-edit-column[data-field="video_prompt"] .prompt-token-editor';
 await clearPromptEditor(imagePromptEditor);
 await page.locator(imagePromptEditor).pressSequentially("@rui");
-await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
+await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@Rui"));
 await page.keyboard.press("Tab");
 if ((await promptEditorText(imagePromptEditor)) !== updatedRuiAssetPath) throw new Error("PromptEdit @ suggestion should replace on line 1");
 await clearPromptEditor(imagePromptEditor);
 await page.locator(imagePromptEditor).pressSequentially("A");
 await page.keyboard.press("Enter");
 await page.locator(imagePromptEditor).pressSequentially("@rui");
-await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
+await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@Rui"));
 await page.keyboard.press("Tab");
 if ((await promptEditorText(imagePromptEditor)) !== `A\n${updatedRuiAssetPath}`) throw new Error("PromptEdit @ suggestion should replace on line 2 without extra spaces");
 await clearPromptEditor(imagePromptEditor);
@@ -580,7 +577,7 @@ await page.keyboard.press("Enter");
 await page.locator(imagePromptEditor).pressSequentially("B");
 await page.keyboard.press("Enter");
 await page.locator(imagePromptEditor).pressSequentially("@rui");
-await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
+await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@Rui"));
 await page.keyboard.press("Tab");
 if ((await promptEditorText(imagePromptEditor)) !== `A\nB\n${updatedRuiAssetPath}`) throw new Error("PromptEdit @ suggestion should replace on line 3 without extra spaces");
 await page.waitForFunction(() => document.querySelector('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]'));
@@ -588,7 +585,7 @@ await clearPromptEditor(videoPromptEditor);
 await page.locator(videoPromptEditor).pressSequentially("参照:");
 await page.keyboard.press("Enter");
 await page.locator(videoPromptEditor).pressSequentially("@rui");
-await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
+await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@Rui"));
 await page.locator(".asset-suggest button").first().click();
 if (!((await promptEditorText(videoPromptEditor)).endsWith(`\n${updatedRuiAssetPath}`))) throw new Error("PromptEdit @ suggestion should replace by mouse click after newline");
 await page.click('[data-view="table"]');
@@ -596,7 +593,7 @@ await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
 const detailImagePrompt = page.locator("#detailPanel textarea").nth(0);
 await detailImagePrompt.fill("@rui");
 await page.waitForFunction((path) => (
-  document.querySelector(".asset-suggest")?.textContent?.includes("@rui") ||
+  document.querySelector(".asset-suggest")?.textContent?.includes("@Rui") ||
   document.querySelectorAll("#detailPanel textarea")[0]?.value.includes(path)
 ), updatedRuiAssetPath);
 if (await page.locator(".asset-suggest").count()) await page.keyboard.press("Tab");
@@ -616,16 +613,20 @@ await page.locator('td[data-column="image_prompt"] input').click();
 await page.keyboard.press("Control+A");
 await page.keyboard.press("Backspace");
 await page.locator('td[data-column="image_prompt"] input').pressSequentially("@rui");
-await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@rui"));
+await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@Rui"));
 await page.keyboard.press("Tab");
 await page.keyboard.press("Enter");
 await expectText('tbody tr[data-id="ct002"] td[data-column="image_prompt"]', updatedRuiAssetPath);
 const [assetsProjectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
 const assetsProjectEntries = readZipEntries(await readFile(await assetsProjectDownload.path()));
 const savedAssets = JSON.parse(assetsProjectEntries.get("assets.json") || "{}");
-if (savedAssets.assets?.[0]?.alias !== "rui" || savedAssets.assets?.[0]?.path !== updatedRuiAssetPath) {
+const savedPrompts = JSON.parse(assetsProjectEntries.get("prompts.json") || "{}");
+const savedGenerate = JSON.parse(assetsProjectEntries.get("generate.json") || "{}");
+if (savedAssets.assets?.[0]?.title !== "Rui" || savedAssets.assets?.[0]?.path !== updatedRuiAssetPath) {
   throw new Error("assets.json should persist registered assets");
 }
+if (!Array.isArray(savedPrompts.prompts)) throw new Error("prompts.json should persist prompt records");
+if (!Array.isArray(savedGenerate.items)) throw new Error("generate.json should persist generated media records");
 await page.click('[data-view="table"]');
 if ((await page.locator('td[data-column="title"] input').count()) !== 0) {
   throw new Error("First editable cell click should select the row without opening an input");
@@ -961,16 +962,18 @@ function expectedHeaders() {
     "order",
     "title",
     "duration",
+    "status",
+    "image",
+    "audio_file",
+    "video_file",
+    "image_prompt",
+    "video_prompt",
     "scene",
     "subject",
     "composition",
     "action",
     "camera",
-    "dialogue",
-    "image",
-    "audio_file",
-    "image_prompt",
-    "video_prompt",
+    "audio",
     "note",
   ];
 }
@@ -996,7 +999,7 @@ function expectAgentsMd(content, label) {
 }
 async function expectTableHeaders() {
   const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
-  const expected = expectedHeaders().filter((name) => !["row_type", "id", "parent_id", "order"].includes(name));
+  const expected = expectedHeaders().filter((name) => !["row_type", "parent_id", "order"].includes(name));
   if (headers.join("\t") !== expected.join("\t")) throw new Error(`Table headers mismatch: ${headers.join(",")}`);
 }
 
@@ -1121,7 +1124,7 @@ async function runTauriWelcomeSmoke(browser) {
   });
   await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 5);
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="assets/episode_001/updated-native-rui.png"]'));
-  if ((await tauriPage.locator('.asset-card [data-asset-field="alias"]').first().inputValue()) !== "local-rui") throw new Error("Native asset drop update should keep alias");
+  if ((await tauriPage.locator('.asset-card [data-asset-field="title"]').first().inputValue()) !== "local-rui") throw new Error("Native asset drop update should keep title");
   await tauriPage.waitForFunction(() => document.querySelector(".app-toast.visible")?.textContent?.includes("Save the project"));
   await tauriPage.evaluate(() => {
     window.__emitTauriStandardAssetDrop({
@@ -1254,7 +1257,7 @@ async function runRealTauriAssetDropSmoke(browser) {
     ["manifest.json", JSON.stringify({ projectName: "Real DnD Project", mainCutlist: "cutlist.tsv", assets: "assets.json" })],
     ["cutlist.tsv", expectedHeaders().join("\t")],
     ["assets.json", JSON.stringify({ version: 1, assets: [
-      { id: "asset-bg", alias: "classroom_bg", path: "", type: "image", title: "Classroom BG", note: "Keep this note" },
+      { id: "asset_bg", path: "", type: "reference_image", title: "Classroom BG", note: "Keep this note" },
     ] })],
   ]));
   const realPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
@@ -1269,7 +1272,7 @@ async function runRealTauriAssetDropSmoke(browser) {
   await realPage.click(".recent-project-row");
   await realPage.waitForFunction(() => document.querySelector("#welcomeView")?.hidden);
   await realPage.click('[data-view="assets"]');
-  await realPage.waitForFunction(() => document.querySelector('.asset-card [data-asset-field="alias"]')?.value === "classroom_bg");
+  await realPage.waitForFunction(() => document.querySelector('.asset-card [data-asset-field="title"]')?.value === "Classroom BG");
   await realPage.evaluate((assetPath) => {
     const target = document.querySelector(".asset-card");
     const rect = target.getBoundingClientRect();
@@ -1288,8 +1291,8 @@ async function runRealTauriAssetDropSmoke(browser) {
     consoleMessages,
     REAL_TAURI_DND_REGISTERED_PATH,
   );
-  if ((await realPage.locator('.asset-card [data-asset-field="alias"]').first().inputValue()) !== "classroom_bg") {
-    throw new Error("Real DnD card update should keep alias");
+  if ((await realPage.locator('.asset-card [data-asset-field="title"]').first().inputValue()) !== "Classroom BG") {
+    throw new Error("Real DnD card update should keep title");
   }
   await realPage.locator(".asset-card .asset-thumb").click();
   await realPage.waitForFunction((registeredPath) => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === registeredPath, REAL_TAURI_DND_REGISTERED_PATH);
@@ -1337,16 +1340,18 @@ async function installTauriMock(targetPage, options = {}) {
       "order",
       "title",
       "duration",
+      "status",
+      "image",
+      "audio_file",
+      "video_file",
+      "image_prompt",
+      "video_prompt",
       "scene",
       "subject",
       "composition",
       "action",
       "camera",
-      "dialogue",
-      "image",
-      "audio_file",
-      "image_prompt",
-      "video_prompt",
+      "audio",
       "note",
     ];
     window.__makeStoredZip = (files) => {
