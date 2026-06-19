@@ -140,6 +140,29 @@ await expectText("#projectName", "Deflate Project");
 await expectText("#counts", "scene 1 / multicut 0 / cut 0");
 await page.reload();
 await expectText("#projectName", "Sample Project");
+const customAgentsText = "# Custom Agents\n\nEdit cutlist.tsv and project JSON carefully.";
+const agentsProject = makeStoredZip(
+  new Map([
+    ["manifest.json", JSON.stringify({ projectName: "Agents Project", mainCutlist: "cutlist.tsv" })],
+    ["cutlist.tsv", `${expectedHeaders().join("\t")}\nscene\tsc960\t\t1\tAgents Scene\t\t\t\t\t\t\t\t\t\t\t\t`],
+    ["AGENTS.md", customAgentsText],
+  ]),
+);
+await loadProjectFile("agents-project.lctproj", agentsProject);
+await page.keyboard.press("Alt+6");
+await page.waitForFunction((text) => document.querySelector("#agentsEditor")?.value === text, customAgentsText);
+await page.locator("#agentsEditor").fill(`${customAgentsText}\n\nUse prompts.json for active prompts.`);
+await expectText("#saveState", "Unsaved");
+const [agentsProjectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
+const editedAgentsEntries = readZipEntries(await readFile(await agentsProjectDownload.path()));
+if (!editedAgentsEntries.get("AGENTS.md")?.includes("Use prompts.json for active prompts.")) throw new Error("Edited AGENTS.md should be saved into project archive");
+page.once("dialog", (dialog) => dialog.accept());
+await page.click("#resetAgentsBtn");
+await page.waitForFunction(() => document.querySelector("#agentsEditor")?.value.includes("# Prepro Enhancer Project Agent Instructions"));
+const [resetAgentsDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
+expectAgentsMd(readZipEntries(await readFile(await resetAgentsDownload.path())).get("AGENTS.md"), "Agents Reset");
+await page.reload();
+await expectText("#projectName", "Sample Project");
 const legacyProject = makeStoredZip(
   new Map([
     ["manifest.json", JSON.stringify({ projectName: "Legacy TSV Project", mainCutlist: "cutlist.tsv" })],
@@ -1055,6 +1078,7 @@ async function runTauriWelcomeSmoke(browser) {
         { id: "prompt_refresh_image", ownerId: "ct778", ownerType: "cut", kind: "image", text: "Refreshed image prompt from JSON", status: "active", isActive: true },
         { id: "prompt_refresh_video", ownerId: "ct778", ownerType: "cut", kind: "video", text: "Refreshed video prompt from JSON", status: "active", isActive: true },
       ] })],
+      ["AGENTS.md", "# Refreshed Agents\n\nUse refreshed project instructions."],
     ]));
     window.__tauriMockFiles.set(path, Array.from(updated));
   }, recentPath);
@@ -1068,6 +1092,8 @@ async function runTauriWelcomeSmoke(browser) {
   await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="video_prompt"]', "Refreshed video prompt from JSON");
   await tauriPage.click('[data-view="assets"]');
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card [data-asset-field="title"]')?.value === "Refresh Ref");
+  await tauriPage.click('[data-view="agents"]');
+  await tauriPage.waitForFunction(() => document.querySelector("#agentsEditor")?.value.includes("# Refreshed Agents"));
   await tauriPage.click('[data-view="table"]');
   await tauriPage.click('tbody tr[data-id="sc777"] td[data-column="title"]');
   await tauriPage.click('tbody tr[data-id="sc777"] td[data-column="title"]');

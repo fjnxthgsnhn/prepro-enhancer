@@ -281,6 +281,7 @@ const state = {
   assets: [],
   generatedMedia: [],
   prompts: [],
+  agentsText: PROJECT_AGENTS_MD,
   assetSelectedIds: new Set(),
   assetSelectionAnchorId: "",
   assetModalId: "",
@@ -329,6 +330,7 @@ const el = {
   timeline: document.querySelector("#timelineView"),
   promptEdit: document.querySelector("#promptEditView"),
   assetsView: document.querySelector("#assetsView"),
+  agentsView: document.querySelector("#agentsView"),
   welcome: document.querySelector("#welcomeView"),
   welcomeNew: document.querySelector("#welcomeNewProjectBtn"),
   welcomeOpen: document.querySelector("#welcomeOpenProjectBtn"),
@@ -438,9 +440,9 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     redo();
   }
-  if (event.altKey && ["1", "2", "3", "4", "5"].includes(event.key)) {
+  if (event.altKey && ["1", "2", "3", "4", "5", "6"].includes(event.key)) {
     event.preventDefault();
-    setView(["table", "storyboard", "timeline", "promptEdit", "assets"][Number(event.key) - 1]);
+    setView(["table", "storyboard", "timeline", "promptEdit", "assets", "agents"][Number(event.key) - 1]);
   }
   if (event.key === "Escape") {
     if (state.assetModalId) closeAssetModal();
@@ -561,7 +563,7 @@ async function newProject() {
   manifest.projectName = "Untitled Project";
   const rows = [];
   const defaultName = `${safeName(manifest.projectName)}.lctproj`;
-  const bytes = await projectArchiveBytes({ manifest, rows, assets: [], generatedMedia: [], prompts: [], mediaBlobs: new Map(), collapsed: [], activeId: "", view: "table" });
+  const bytes = await projectArchiveBytes({ manifest, rows, assets: [], generatedMedia: [], prompts: [], agentsText: PROJECT_AGENTS_MD, mediaBlobs: new Map(), collapsed: [], activeId: "", view: "table" });
   if (tauriInvoke) {
     const saved = await tauriInvoke("save_project_as", { defaultName, bytes: [...bytes] });
     if (!saved) return;
@@ -620,6 +622,7 @@ function loadTsv(text, name) {
   state.assets = [];
   state.generatedMedia = generatedMediaFromRows(state.rows);
   state.prompts = promptsFromRows(state.rows);
+  state.agentsText = PROJECT_AGENTS_MD;
   syncRowsFromJsonState();
   clearAssetSelection();
   state.mediaUrls = new Map();
@@ -684,6 +687,7 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
   state.assets = loadAssetsFromEntries(entries, manifest);
   state.generatedMedia = loadGeneratedMediaFromEntries(entries, manifest);
   state.prompts = loadPromptsFromEntries(entries, manifest);
+  state.agentsText = loadAgentsFromEntries(entries);
   if (!state.generatedMedia.length) state.generatedMedia = generatedMediaFromRows(state.rows);
   if (!state.prompts.length) state.prompts = promptsFromRows(state.rows);
   syncRowsFromJsonState();
@@ -746,6 +750,11 @@ function loadPromptsFromEntries(entries, manifest) {
   } catch {
     return [];
   }
+}
+
+function loadAgentsFromEntries(entries) {
+  const match = findZipEntry(entries, "AGENTS.md");
+  return match?.entry ? decodeZipText(match.entry) : PROJECT_AGENTS_MD;
 }
 
 function normalizeAssets(assets = []) {
@@ -948,6 +957,7 @@ async function refreshProjectFromDisk() {
   let assets;
   let generatedMedia;
   let prompts;
+  let agentsText;
   try {
     const opened = normalizeTauriFile(await tauriInvoke("read_project_file", { path: state.projectPath }));
     const bytes = new Uint8Array(opened.bytes || []);
@@ -971,6 +981,7 @@ async function refreshProjectFromDisk() {
     assets = loadAssetsFromEntries(entries, diskManifest);
     generatedMedia = loadGeneratedMediaFromEntries(entries, diskManifest);
     prompts = loadPromptsFromEntries(entries, diskManifest);
+    agentsText = loadAgentsFromEntries(entries);
     if (!generatedMedia.length) generatedMedia = generatedMediaFromRows(rows);
     if (!prompts.length) prompts = promptsFromRows(rows);
   } catch (error) {
@@ -983,6 +994,7 @@ async function refreshProjectFromDisk() {
   state.assets = assets;
   state.generatedMedia = generatedMedia;
   state.prompts = prompts;
+  state.agentsText = agentsText;
   syncRowsFromJsonState();
   clearAssetSelection();
   preserveSelectionAfterRowsRefresh();
@@ -1028,6 +1040,10 @@ function renderCurrentView() {
   }
   if (state.view === "assets") {
     renderAssets();
+    return;
+  }
+  if (state.view === "agents") {
+    renderAgents();
     return;
   }
   renderTable();
@@ -1448,6 +1464,7 @@ function render() {
   renderTimeline();
   renderPromptEdit();
   renderAssets();
+  renderAgents();
   renderDetail();
   renderPrompt();
   renderMedia();
@@ -2265,6 +2282,45 @@ function renderAssets() {
     if (event.target.classList.contains("asset-modal-backdrop")) closeAssetModal();
   });
   resolvePromptMediaPreviews(el.assetsView);
+}
+
+function renderAgents() {
+  if (!el.agentsView) return;
+  el.agentsView.innerHTML = `
+    <div class="agents-view">
+      <header class="agents-header">
+        <div>
+          <strong>AGENTS.md</strong>
+          <span>Project agent instructions saved at the .lctproj root.</span>
+        </div>
+        <button id="resetAgentsBtn" type="button">${iconHtml("restore")}<span class="icon-button-label">Reset</span></button>
+      </header>
+      <textarea id="agentsEditor" spellcheck="false" aria-label="AGENTS.md">${escapeHtml(state.agentsText)}</textarea>
+    </div>`;
+  const editor = el.agentsView.querySelector("#agentsEditor");
+  editor?.addEventListener("input", () => {
+    if (state.agentsText === editor.value) return;
+    pushHistory();
+    state.agentsText = editor.value;
+    markDirty();
+    renderStatus(validate());
+  }, { once: true });
+  editor?.addEventListener("input", () => {
+    state.agentsText = editor.value;
+    markDirty();
+    renderStatus(validate());
+  });
+  el.agentsView.querySelector("#resetAgentsBtn")?.addEventListener("click", resetAgentsText);
+}
+
+function resetAgentsText() {
+  if (state.agentsText === PROJECT_AGENTS_MD) return;
+  if (!confirm("Reset AGENTS.md to the default project instructions?")) return;
+  pushHistory();
+  state.agentsText = PROJECT_AGENTS_MD;
+  markDirty();
+  renderAgents();
+  renderStatus(validate());
 }
 
 function assetCardHtml(asset, index) {
@@ -4239,6 +4295,7 @@ function historySnapshot() {
     assets: state.assets,
     generatedMedia: state.generatedMedia,
     prompts: state.prompts,
+    agentsText: state.agentsText,
   };
 }
 
@@ -4252,6 +4309,7 @@ function restoreHistorySnapshot(snapshot) {
   state.assets = parsed.assets || state.assets;
   state.generatedMedia = parsed.generatedMedia || [];
   state.prompts = parsed.prompts || [];
+  state.agentsText = parsed.agentsText ?? state.agentsText;
   syncRowsFromJsonState();
 }
 
@@ -4448,6 +4506,7 @@ async function projectArchiveBytes(options = {}) {
   const sourceAssets = options.assets || state.assets;
   const sourceGeneratedMedia = options.generatedMedia || state.generatedMedia;
   const sourcePrompts = options.prompts || state.prompts;
+  const sourceAgentsText = options.agentsText ?? state.agentsText ?? PROJECT_AGENTS_MD;
   const sourceMediaBlobs = options.mediaBlobs || state.mediaBlobs;
   const collapsed = options.collapsed || [...state.collapsed];
   const activeId = options.activeId ?? state.activeId;
@@ -4467,7 +4526,7 @@ async function projectArchiveBytes(options = {}) {
   const files = new Map([
     ["manifest.json", JSON.stringify(manifest, null, 2)],
     ["cutlist.tsv", cutlist],
-    ["AGENTS.md", PROJECT_AGENTS_MD],
+    ["AGENTS.md", sourceAgentsText],
     ["timeline.json", JSON.stringify({ collapsed, activeId }, null, 2)],
     ["settings.json", JSON.stringify({ view }, null, 2)],
     ["assets.json", JSON.stringify({ format: "LocalCutBoardAssets", formatVersion: "1.0.0", assets: normalizeAssets(sourceAssets) }, null, 2)],
