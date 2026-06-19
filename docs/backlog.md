@@ -8,6 +8,91 @@
 - P1: MVPで必要だが、P0完了後に着手してよい
 - P2: MVP後の拡張または品質向上
 
+## Git履歴反映メモ
+
+### 2026-06-19 反映対象
+
+`origin/master` 以降のローカル履歴から、バックログ本文へ未反映だった実装・改善を追跡用に整理する。
+
+- `bc42714` Restore HTML5 drag and drop in Tauri
+  - Tauri上でHTML5 drag and dropを再有効化した。
+  - 関連: PE-021, PE-023, PE-025, PE-026, PE-038
+- `3bea927` Update project data model and remove cut column
+  - プロジェクトデータモデルを更新し、`cut` カラム依存を削除した。
+  - 関連: PE-003, PE-004, PE-008, PE-010, PE-015
+- `3af3cec` Improve Tauri asset drag and drop diagnostics
+  - Tauri上のアセットD&D診断レポートとスモークテストを追加した。
+  - 関連: PE-021, PE-023, PE-043
+- `5389f38` Fix asset drag and drop updates in Tauri
+  - Tauri上のアセットD&D更新処理を修正した。
+  - 関連: PE-021, PE-023, PE-026
+- `041c55f` Update prompt previews and project agent image workflow
+  - プロンプトプレビューとプロジェクトエージェント用画像ワークフローを更新した。
+  - 関連: PE-016, PE-017, PE-018, PE-020
+- `4278f3e` Add native asset drops and chaos resilience tests
+  - ネイティブアセットドロップ、カオス耐性テスト、検証レポートを追加した。
+  - 関連: PE-021, PE-023, PE-043
+- `d2b048a` Fix PromptEdit asset completion and asset card paths
+  - PromptEditのアセット補完とアセットカードのパス処理を修正した。
+  - 関連: PE-016, PE-021, PE-026
+- `ca9a30a` Redesign assets view as selectable cards
+  - アセットビューを選択可能なカードUIへ刷新した。
+  - 関連: PE-025, PE-026, PE-038
+- `61d1820` Add asset library and fix PromptEdit IME input
+  - アセットライブラリを追加し、PromptEditのIME入力を修正した。
+  - 関連: PE-016, PE-021, PE-025, PE-026
+- `5a171ab` Fix PromptEdit media path previews
+  - PromptEditでメディアパスのプレビュー表示を修正した。
+  - 関連: PE-016, PE-021
+- `1567161` Add external project backups and TSV repair
+  - 外部プロジェクトのバックアップとTSV修復支援を追加した。
+  - 関連: PE-007, PE-044
+- `127f184` Add TSV refresh and drag drop UI refinements
+  - TSV再読み込みとD&D UI改善を追加した。
+  - 関連: PE-003, PE-005, PE-006, PE-021, PE-025
+- `797ecaa` Add Material Symbols icons across UI
+  - UI全体にMaterial Symbolsアイコンを追加した。
+  - 関連: PE-038, PE-039
+- `6808968` Fix timeline selection and scroll behavior
+  - Timeline Viewの選択とスクロール挙動を修正した。
+  - 関連: PE-027, PE-029, PE-030
+- `1bc7779` Improve multicut selection and cut operations
+  - multicut選択とcut操作を改善した。
+  - 関連: PE-008, PE-009, PE-010, PE-011, PE-012, PE-014
+- `57c449d` Make multicut optional in cutlist hierarchy
+  - `scene > cut` と任意の `scene > multicut > cut` を許容する階層仕様へ更新した。
+  - 関連: PE-004, PE-008, PE-009, MVP完了条件
+- `6d88f7c` Fix timeline scrub coordinate alignment
+  - Timeline Viewのスクラブ座標ずれを修正した。
+  - 関連: PE-027, PE-029
+- `6642d43` Add Tauri startup welcome screen
+  - Tauri起動時のウェルカム画面を追加した。
+  - 関連: PE-038, PE-039
+- `075ea96` Document chat AI lctproj rearchive workflow
+  - Chat AI向け `.lctproj` 再アーカイブ手順を文書化した。
+  - 関連: PE-001, PE-007, PE-020
+- `02f2f1b` Add project agent instructions to archives
+  - プロジェクトエージェント指示をアーカイブへ同梱する処理を追加した。
+  - 関連: PE-001, PE-002, PE-020
+
+### 追加バックログ候補
+
+- PE-051 アセットライブラリ
+  - 優先度: P1
+  - 内容: プロジェクト内外の画像・音声アセットを一覧し、カード選択、パス補完、PromptEditとの連携を行う。
+- PE-052 Tauri D&D診断と復旧
+  - 優先度: P1
+  - 内容: Tauri環境のHTML5 / native drag and dropを検証し、失敗時の診断情報と復旧手順を提供する。
+- PE-053 起動時ウェルカム画面
+  - 優先度: P2
+  - 内容: Tauri起動時に最近のプロジェクト、サンプル、初期導線を提示する。
+- PE-054 プロジェクトエージェント連携
+  - 優先度: P2
+  - 内容: `.lctproj` アーカイブにエージェント指示や画像ワークフロー情報を含め、外部AI編集へ渡せるようにする。
+- PE-055 カオス耐性テスト
+  - 優先度: P1
+  - 内容: D&D、TSV読み書き、欠損メディア、壊れたプロジェクトなどの異常系を自動テストで継続検証する。
+
 ## Epic 1: プロジェクトとTSV基盤
 
 ### PE-001 .lctproj読み込み基盤

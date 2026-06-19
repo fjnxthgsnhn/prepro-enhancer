@@ -50,6 +50,15 @@ await page.fill("#settingsAutoBackup", "15");
 await page.locator('[data-settings-action="apply"]').click();
 await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
 await expectText("#fileMenuBtn", "ファイル");
+await page.waitForFunction(() => {
+  const selectors = [".data-table", ".right-panel", "#agentsEditor"];
+  return selectors.every((selector) => {
+    const node = document.querySelector(selector);
+    if (!node) return false;
+    const match = getComputedStyle(node).backgroundColor.match(/\d+/g)?.map(Number) || [];
+    return match.length >= 3 && match.slice(0, 3).every((value) => value >= 180);
+  });
+});
 await page.waitForFunction(() => JSON.parse(localStorage.getItem("preproEnhancer.uiSettings.v1") || "{}").autoBackupIntervalMinutes === 15);
 await page.selectOption("#settingsLanguage", "zh");
 await page.locator('[data-settings-action="apply"]').click();

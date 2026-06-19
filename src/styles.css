@@ -20,10 +20,10 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f6f7f2;
+  --bg: #f8f9f5;
   --panel: #ffffff;
-  --panel-2: #eef1e8;
-  --line: #cfd6c8;
+  --panel-2: #f1f3ee;
+  --line: #d8ded2;
   --muted: #66705e;
   --text: #151a13;
   --accent: #4f7d00;
@@ -83,18 +83,44 @@ button {
   background: #f8faf4;
 }
 
+:root[data-theme="light"] input,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] select {
+  color: var(--text);
+  background: #ffffff;
+}
+
 :root[data-theme="light"] .toolbar,
 :root[data-theme="light"] .left-panel,
 :root[data-theme="light"] .right-panel,
 :root[data-theme="light"] .status-bar,
+:root[data-theme="light"] .main-area,
+:root[data-theme="light"] .data-table,
 :root[data-theme="light"] .data-table th,
 :root[data-theme="light"] .dropdown-menu,
 :root[data-theme="light"] .submenu-panel,
+:root[data-theme="light"] .storyboard,
+:root[data-theme="light"] .scene-section,
+:root[data-theme="light"] .multicut-section,
+:root[data-theme="light"] .cut-card,
 :root[data-theme="light"] .timeline-preview,
+:root[data-theme="light"] .timeline-controls,
 :root[data-theme="light"] .timeline-stage,
+:root[data-theme="light"] .timeline-lane,
+:root[data-theme="light"] .timeline-text-preview,
+:root[data-theme="light"] .assets-view,
+:root[data-theme="light"] .assets-drop-zone,
+:root[data-theme="light"] .detail-panel,
+:root[data-theme="light"] .prompt-panel,
+:root[data-theme="light"] .media-panel,
+:root[data-theme="light"] .validation-panel,
+:root[data-theme="light"] .prompt-edit-column,
 :root[data-theme="light"] .prompt-token-editor,
+:root[data-theme="light"] .prompt-media-strip,
 :root[data-theme="light"] #agentsEditor,
 :root[data-theme="light"] .asset-modal,
+:root[data-theme="light"] .asset-modal-preview,
+:root[data-theme="light"] .asset-modal-fields,
 :root[data-theme="light"] .asset-suggest {
   background: var(--panel);
   color: var(--text);
@@ -102,8 +128,57 @@ button {
 
 :root[data-theme="light"] .data-table td,
 :root[data-theme="light"] .asset-card,
-:root[data-theme="light"] .prompt-media-card {
-  background: rgba(0, 0, 0, 0.025);
+:root[data-theme="light"] .asset-thumb,
+:root[data-theme="light"] .prompt-media-card,
+:root[data-theme="light"] .prompt-media-thumb,
+:root[data-theme="light"] .timeline-clip,
+:root[data-theme="light"] .field input,
+:root[data-theme="light"] .field textarea,
+:root[data-theme="light"] .field select,
+:root[data-theme="light"] .asset-card input,
+:root[data-theme="light"] .asset-modal-fields input,
+:root[data-theme="light"] .asset-modal-fields select,
+:root[data-theme="light"] .asset-modal-fields textarea {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+:root[data-theme="light"] .data-table tr.scene td {
+  background: rgba(79, 125, 0, 0.08);
+}
+
+:root[data-theme="light"] .data-table tr.multicut td {
+  background: rgba(0, 108, 150, 0.07);
+}
+
+:root[data-theme="light"] .data-table tr.cut td {
+  background: #ffffff;
+}
+
+:root[data-theme="light"] .data-table tbody tr:hover td,
+:root[data-theme="light"] .cut-card:hover,
+:root[data-theme="light"] .asset-card:hover {
+  background: #eef4e7;
+}
+
+:root[data-theme="light"] .data-table tr.selected td,
+:root[data-theme="light"] .data-table tr.selection-range td,
+:root[data-theme="light"] .cut-card.selected,
+:root[data-theme="light"] .asset-card.selected,
+:root[data-theme="light"] .timeline-clip.selected {
+  background: #e6f0d8;
+}
+
+:root[data-theme="light"] .timeline-clip.scene {
+  background: linear-gradient(90deg, rgba(79, 125, 0, 0.18), rgba(255, 255, 255, 0.86));
+}
+
+:root[data-theme="light"] .timeline-clip.multicut {
+  background: linear-gradient(90deg, rgba(0, 108, 150, 0.16), rgba(255, 255, 255, 0.86));
+}
+
+:root[data-theme="light"] .timeline-clip.cut {
+  background: #ffffff;
 }
 
 .material-symbols-outlined.app-icon {
