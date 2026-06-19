@@ -224,16 +224,12 @@ for (const removedButton of ["addSceneBtn", "addMulticutBtn", "addCutBtn", "grou
   if (await page.locator(`#${removedButton}`).count()) throw new Error(`${removedButton} should be removed from the toolbar`);
 }
 const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
-for (const hidden of ["row_type", "parent_id", "order"]) {
+const expectedTableHeaders = ["id", "title", "duration", "scene", "subject", "composition", "action", "camera", "audio", "image_prompt", "video_prompt", "image", "audio_file", "video_file", "note"];
+if (headers.join("\t") !== expectedTableHeaders.join("\t")) {
+  throw new Error(`Table headers should match requested order: ${headers.join(",")}`);
+}
+for (const hidden of ["row_type", "parent_id", "order", "status"]) {
   if (headers.includes(hidden)) throw new Error(`${hidden} should be hidden in Table View`);
-}
-for (const visible of ["id", "status", "composition", "action", "camera", "audio"]) {
-  if (!headers.includes(visible)) throw new Error(`${visible} should be visible in Table View`);
-}
-const expectedTail = ["image", "audio_file", "video_file", "image_prompt", "video_prompt"];
-const tailStart = headers.indexOf("image");
-if (tailStart < 0 || expectedTail.some((name, index) => headers[tailStart + index] !== name)) {
-  throw new Error(`media columns should be adjacent to dialogue on the right: ${headers.join(",")}`);
 }
 const cssText = await readFile(resolve("src/styles.css"), "utf8");
 if (!cssText.includes("prefers-reduced-motion")) throw new Error("CSS should include reduced motion handling");
@@ -999,7 +995,7 @@ function expectAgentsMd(content, label) {
 }
 async function expectTableHeaders() {
   const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
-  const expected = expectedHeaders().filter((name) => !["row_type", "parent_id", "order"].includes(name));
+  const expected = ["id", "title", "duration", "scene", "subject", "composition", "action", "camera", "audio", "image_prompt", "video_prompt", "image", "audio_file", "video_file", "note"];
   if (headers.join("\t") !== expected.join("\t")) throw new Error(`Table headers mismatch: ${headers.join(",")}`);
 }
 
