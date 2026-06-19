@@ -18,6 +18,24 @@
   font-family: "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f7f2;
+  --panel: #ffffff;
+  --panel-2: #eef1e8;
+  --line: #cfd6c8;
+  --muted: #66705e;
+  --text: #151a13;
+  --accent: #4f7d00;
+  --accent-2: #006c96;
+  --danger: #ba3028;
+  --warn: #946300;
+  --ok: #237a38;
+  --row-scene: rgba(79, 125, 0, 0.1);
+  --row-multicut: rgba(0, 108, 150, 0.09);
+  --row-cut: rgba(0, 0, 0, 0.025);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -31,6 +49,13 @@ body {
     var(--bg);
   background-size: 28px 28px;
   color: var(--text);
+}
+
+:root[data-theme="light"] body {
+  background:
+    linear-gradient(90deg, rgba(79, 125, 0, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(79, 125, 0, 0.035) 1px, transparent 1px),
+    var(--bg);
 }
 
 button,
@@ -52,6 +77,33 @@ button {
   padding: 0 10px;
   border-radius: 6px;
   cursor: pointer;
+}
+
+:root[data-theme="light"] button {
+  background: #f8faf4;
+}
+
+:root[data-theme="light"] .toolbar,
+:root[data-theme="light"] .left-panel,
+:root[data-theme="light"] .right-panel,
+:root[data-theme="light"] .status-bar,
+:root[data-theme="light"] .data-table th,
+:root[data-theme="light"] .dropdown-menu,
+:root[data-theme="light"] .submenu-panel,
+:root[data-theme="light"] .timeline-preview,
+:root[data-theme="light"] .timeline-stage,
+:root[data-theme="light"] .prompt-token-editor,
+:root[data-theme="light"] #agentsEditor,
+:root[data-theme="light"] .asset-modal,
+:root[data-theme="light"] .asset-suggest {
+  background: var(--panel);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .data-table td,
+:root[data-theme="light"] .asset-card,
+:root[data-theme="light"] .prompt-media-card {
+  background: rgba(0, 0, 0, 0.025);
 }
 
 .material-symbols-outlined.app-icon {
@@ -1547,6 +1599,79 @@ button.active {
   height: 100%;
   min-height: 0;
   background: var(--bg);
+}
+
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.54);
+}
+
+.settings-modal {
+  width: min(460px, 100%);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.35);
+}
+
+.settings-modal header,
+.settings-modal footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-modal footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.settings-modal h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+}
+
+.settings-fields {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.settings-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-fields select,
+.settings-fields input {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.settings-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
 }
 
 .agents-header {

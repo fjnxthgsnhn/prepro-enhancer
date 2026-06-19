@@ -263,6 +263,52 @@ cut	ct001	mc001	1	Microscope Close	3s	draft	media/images/cut001.jpg	media/audio/
 cut	ct002	mc001	2	Yamamoto Eyes	3s	review	media/images/cut002.jpg			close-up of a scientist's eyes, tense expression	scientist narrows eyes while looking into microscope	Laboratory	Yamamoto	Eye close-up	Notices something strange	Subtle push in	breath catches	Reaction cut
 multicut	mc002	sc001	2	Warning Lamp		draft				red warning lamp reflected in glass	warning lamp flashes and lab reacts	Laboratory	Warning lamp	Cutaway	Alarm begins	Fixed and pan	warning beep	
 cut	ct003	mc002	1	Warning Flash	2s	draft	media/images/cut003.jpg	media/audio/cut003.wav		close-up of red warning lamp, hard shadows	red warning lamp flashes rhythmically	Laboratory	Warning lamp	Close shot	Lamp flashes	Locked shot	warning beep	`; 
+const DEFAULT_UI_SETTINGS = {
+  language: "en",
+  theme: "dark",
+  autoBackupIntervalMinutes: 10,
+};
+const UI_SETTINGS_KEY = "preproEnhancer.uiSettings.v1";
+
+const I18N = {
+  en: {
+    "menu.file": "File", "menu.new": "NewProject", "menu.open": "OpenProject", "menu.save": "Save", "menu.saveAs": "Save as", "menu.settings": "Settings", "menu.recovery": "Recovery", "menu.createBackup": "Create Backup Now", "menu.restoreBackup": "Restore Backup", "menu.repairCurrentTsv": "Repair Current TSV", "menu.repairTsvFile": "Repair TSV File", "menu.export": "Export", "menu.llmTsv": "LLM TSV",
+    "action.refreshProject": "Refresh Project", "action.refreshProjectTitle": "Refresh project",
+    "view.table": "Table", "view.storyboard": "Storyboard", "view.timeline": "Timeline", "view.promptEdit": "PromptEdit", "view.assets": "Assets", "view.agents": "Agents",
+    "search.label": "Search", "status.saved": "Saved", "status.unsaved": "Unsaved", "status.never": "Never", "status.noFile": "No file loaded", "status.browserWorkspace": "Browser workspace", "status.missing": "Missing", "status.savedAt": "Saved",
+    "settings.title": "Settings", "settings.language": "Language", "settings.theme": "Theme", "settings.dark": "Dark", "settings.light": "Light", "settings.autoBackup": "Auto backup interval", "settings.minutes": "minutes", "settings.close": "Close", "settings.apply": "Apply",
+    "toast.autoBackup": "Auto backup saved", "toast.settingsSaved": "Settings saved",
+    "empty.recent": "Recent projects will appear here.", "empty.tree": "Open a TSV or load the sample.", "empty.table": "No rows. Add a row to start.", "empty.search": "No rows match the current search.",
+  },
+  ja: {
+    "menu.file": "ファイル", "menu.new": "新規プロジェクト", "menu.open": "プロジェクトを開く", "menu.save": "保存", "menu.saveAs": "別名保存", "menu.settings": "設定", "menu.recovery": "復旧", "menu.createBackup": "今すぐバックアップ", "menu.restoreBackup": "バックアップ復元", "menu.repairCurrentTsv": "現在のTSVを修復", "menu.repairTsvFile": "TSVファイルを修復", "menu.export": "書き出し", "menu.llmTsv": "LLM TSV",
+    "action.refreshProject": "プロジェクト更新", "action.refreshProjectTitle": "プロジェクトを更新",
+    "view.table": "テーブル", "view.storyboard": "絵コンテ", "view.timeline": "タイムライン", "view.promptEdit": "プロンプト編集", "view.assets": "素材", "view.agents": "Agents",
+    "search.label": "検索", "status.saved": "保存済み", "status.unsaved": "未保存", "status.never": "未保存", "status.noFile": "ファイル未選択", "status.browserWorkspace": "ブラウザ作業領域", "status.missing": "不足", "status.savedAt": "保存",
+    "settings.title": "設定", "settings.language": "言語", "settings.theme": "テーマ", "settings.dark": "ダーク", "settings.light": "ライト", "settings.autoBackup": "自動バックアップ間隔", "settings.minutes": "分", "settings.close": "閉じる", "settings.apply": "適用",
+    "toast.autoBackup": "自動バックアップを保存しました", "toast.settingsSaved": "設定を保存しました",
+    "empty.recent": "最近使ったプロジェクトが表示されます。", "empty.tree": "TSVを開くかサンプルを読み込んでください。", "empty.table": "行がありません。行を追加してください。", "empty.search": "検索条件に一致する行がありません。",
+  },
+  zh: {
+    "menu.file": "文件", "menu.new": "新建项目", "menu.open": "打开项目", "menu.save": "保存", "menu.saveAs": "另存为", "menu.settings": "设置", "menu.recovery": "恢复", "menu.createBackup": "立即备份", "menu.restoreBackup": "恢复备份", "menu.repairCurrentTsv": "修复当前TSV", "menu.repairTsvFile": "修复TSV文件", "menu.export": "导出", "menu.llmTsv": "LLM TSV",
+    "action.refreshProject": "刷新项目", "action.refreshProjectTitle": "刷新项目",
+    "view.table": "表格", "view.storyboard": "故事板", "view.timeline": "时间线", "view.promptEdit": "提示编辑", "view.assets": "素材", "view.agents": "Agents",
+    "search.label": "搜索", "status.saved": "已保存", "status.unsaved": "未保存", "status.never": "从未", "status.noFile": "未加载文件", "status.browserWorkspace": "浏览器工作区", "status.missing": "缺失", "status.savedAt": "已保存",
+    "settings.title": "设置", "settings.language": "语言", "settings.theme": "主题", "settings.dark": "深色", "settings.light": "浅色", "settings.autoBackup": "自动备份间隔", "settings.minutes": "分钟", "settings.close": "关闭", "settings.apply": "应用",
+    "toast.autoBackup": "自动备份已保存", "toast.settingsSaved": "设置已保存",
+    "empty.recent": "最近项目会显示在这里。", "empty.tree": "打开TSV或加载示例。", "empty.table": "没有行。请先添加一行。", "empty.search": "没有匹配当前搜索的行。",
+  },
+  ko: {
+    "menu.file": "파일", "menu.new": "새 프로젝트", "menu.open": "프로젝트 열기", "menu.save": "저장", "menu.saveAs": "다른 이름 저장", "menu.settings": "설정", "menu.recovery": "복구", "menu.createBackup": "지금 백업", "menu.restoreBackup": "백업 복원", "menu.repairCurrentTsv": "현재 TSV 복구", "menu.repairTsvFile": "TSV 파일 복구", "menu.export": "내보내기", "menu.llmTsv": "LLM TSV",
+    "action.refreshProject": "프로젝트 새로고침", "action.refreshProjectTitle": "프로젝트 새로고침",
+    "view.table": "테이블", "view.storyboard": "스토리보드", "view.timeline": "타임라인", "view.promptEdit": "프롬프트 편집", "view.assets": "에셋", "view.agents": "Agents",
+    "search.label": "검색", "status.saved": "저장됨", "status.unsaved": "미저장", "status.never": "없음", "status.noFile": "파일 없음", "status.browserWorkspace": "브라우저 작업공간", "status.missing": "누락", "status.savedAt": "저장",
+    "settings.title": "설정", "settings.language": "언어", "settings.theme": "테마", "settings.dark": "다크", "settings.light": "라이트", "settings.autoBackup": "자동 백업 간격", "settings.minutes": "분", "settings.close": "닫기", "settings.apply": "적용",
+    "toast.autoBackup": "자동 백업 저장됨", "toast.settingsSaved": "설정 저장됨",
+    "empty.recent": "최근 프로젝트가 여기에 표시됩니다.", "empty.tree": "TSV를 열거나 샘플을 불러오세요.", "empty.table": "행이 없습니다. 행을 추가하세요.", "empty.search": "현재 검색과 일치하는 행이 없습니다.",
+  },
+};
+
 const state = {
   manifest: structuredClone(DEFAULT_MANIFEST),
   rows: [],
@@ -308,13 +354,14 @@ const state = {
   recentProjects: [],
   promptEditSessions: new Map(),
   pendingRepairTsvFile: false,
+  uiSettings: loadUiSettings(),
 };
 
 const tauriInvoke = window.__TAURI__?.core?.invoke || null;
 const RECENT_PROJECTS_KEY = "preproEnhancer.recentProjects.v1";
 const MAX_RECENT_PROJECTS = 10;
-const BACKUP_INTERVAL_MS = 10 * 60 * 1000;
 const MAX_PROJECT_BACKUPS = 10;
+let autoBackupTimer = 0;
 
 const el = {
   projectName: document.querySelector("#projectName"),
@@ -347,6 +394,9 @@ setupTauriAssetDrop();
 
 decorateStaticIconButton(el.welcomeNew, "note_add");
 decorateStaticIconButton(el.welcomeOpen, "folder_open");
+applyUiSettings();
+applyI18n();
+startAutoBackupTimer();
 
 document.querySelector("#fileMenuBtn").addEventListener("click", (event) => {
   event.stopPropagation();
@@ -445,6 +495,7 @@ document.addEventListener("keydown", (event) => {
     setView(["table", "storyboard", "timeline", "promptEdit", "assets", "agents"][Number(event.key) - 1]);
   }
   if (event.key === "Escape") {
+    closeSettingsModal();
     if (state.assetModalId) closeAssetModal();
     closeContextMenu();
     closeFileMenu();
@@ -461,9 +512,58 @@ document.addEventListener("click", (event) => {
   if (!event.target.closest?.(".asset-suggest")) closeAssetSuggest();
 });
 
-setInterval(() => {
-  createProjectBackup("auto", { notify: "toast" }).catch((error) => console.warn("Auto backup failed", error));
-}, BACKUP_INTERVAL_MS);
+function startAutoBackupTimer() {
+  clearInterval(autoBackupTimer);
+  const minutes = clampAutoBackupMinutes(state.uiSettings.autoBackupIntervalMinutes);
+  autoBackupTimer = setInterval(() => {
+    createProjectBackup("auto", { notify: "toast" }).catch((error) => console.warn("Auto backup failed", error));
+  }, minutes * 60 * 1000);
+}
+
+function loadUiSettings() {
+  try {
+    return normalizeUiSettings(JSON.parse(localStorage.getItem(UI_SETTINGS_KEY) || "{}"));
+  } catch {
+    return structuredClone(DEFAULT_UI_SETTINGS);
+  }
+}
+
+function saveUiSettings() {
+  localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(state.uiSettings));
+}
+
+function normalizeUiSettings(settings = {}) {
+  return {
+    language: ["en", "ja", "zh", "ko"].includes(settings.language) ? settings.language : DEFAULT_UI_SETTINGS.language,
+    theme: ["dark", "light"].includes(settings.theme) ? settings.theme : DEFAULT_UI_SETTINGS.theme,
+    autoBackupIntervalMinutes: clampAutoBackupMinutes(settings.autoBackupIntervalMinutes),
+  };
+}
+
+function clampAutoBackupMinutes(value) {
+  const minutes = Number.parseInt(value, 10);
+  if (!Number.isFinite(minutes)) return DEFAULT_UI_SETTINGS.autoBackupIntervalMinutes;
+  return Math.min(120, Math.max(1, minutes));
+}
+
+function t(key) {
+  return I18N[state.uiSettings.language]?.[key] || I18N.en[key] || key;
+}
+
+function applyUiSettings() {
+  state.uiSettings = normalizeUiSettings(state.uiSettings);
+  document.documentElement.dataset.theme = state.uiSettings.theme;
+  document.documentElement.lang = { en: "en", ja: "ja", zh: "zh", ko: "ko" }[state.uiSettings.language] || "en";
+}
+
+function applyI18n(root = document) {
+  root.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  root.querySelectorAll("[data-i18n-title]").forEach((node) => {
+    node.setAttribute("title", t(node.dataset.i18nTitle));
+  });
+}
 
 function toggleFileMenu() {
   const menu = document.querySelector("#fileMenu");
@@ -480,11 +580,81 @@ function closeFileMenu() {
   document.querySelector("#fileMenuBtn")?.setAttribute("aria-expanded", "false");
 }
 
+function openSettingsModal() {
+  closeSettingsModal();
+  const modal = document.createElement("div");
+  modal.className = "settings-modal-backdrop";
+  modal.innerHTML = `
+    <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <header>
+        <h2 id="settingsTitle">${iconHtml("settings")}<span>${escapeHtml(t("settings.title"))}</span></h2>
+        <button type="button" data-settings-action="close">${iconHtml("close")}<span class="icon-button-label">${escapeHtml(t("settings.close"))}</span></button>
+      </header>
+      <div class="settings-fields">
+        <label>${escapeHtml(t("settings.language"))}
+          <select id="settingsLanguage">
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="zh">中文</option>
+            <option value="ko">한국어</option>
+          </select>
+        </label>
+        <label>${escapeHtml(t("settings.theme"))}
+          <select id="settingsTheme">
+            <option value="dark">${escapeHtml(t("settings.dark"))}</option>
+            <option value="light">${escapeHtml(t("settings.light"))}</option>
+          </select>
+        </label>
+        <label>${escapeHtml(t("settings.autoBackup"))}
+          <span class="settings-inline">
+            <input id="settingsAutoBackup" type="number" min="1" max="120" step="1">
+            <span>${escapeHtml(t("settings.minutes"))}</span>
+          </span>
+        </label>
+      </div>
+      <footer>
+        <button type="button" data-settings-action="close">${escapeHtml(t("settings.close"))}</button>
+        <button type="button" class="primary-action" data-settings-action="apply">${escapeHtml(t("settings.apply"))}</button>
+      </footer>
+    </section>`;
+  document.body.appendChild(modal);
+  modal.querySelector("#settingsLanguage").value = state.uiSettings.language;
+  modal.querySelector("#settingsTheme").value = state.uiSettings.theme;
+  modal.querySelector("#settingsAutoBackup").value = state.uiSettings.autoBackupIntervalMinutes;
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal || event.target.closest("[data-settings-action='close']")) closeSettingsModal();
+    if (event.target.closest("[data-settings-action='apply']")) applySettingsFromModal();
+  });
+  modal.querySelector("#settingsLanguage")?.focus();
+}
+
+function closeSettingsModal() {
+  document.querySelector(".settings-modal-backdrop")?.remove();
+}
+
+function applySettingsFromModal() {
+  const modal = document.querySelector(".settings-modal-backdrop");
+  if (!modal) return;
+  state.uiSettings = normalizeUiSettings({
+    language: modal.querySelector("#settingsLanguage")?.value,
+    theme: modal.querySelector("#settingsTheme")?.value,
+    autoBackupIntervalMinutes: modal.querySelector("#settingsAutoBackup")?.value,
+  });
+  saveUiSettings();
+  applyUiSettings();
+  applyI18n();
+  startAutoBackupTimer();
+  render();
+  showToast(t("toast.settingsSaved"));
+  openSettingsModal();
+}
+
 async function handleFileAction(action) {
   if (action === "new") return newProject();
   if (action === "open") return openProject();
   if (action === "save") return saveProject();
   if (action === "saveAs") return saveProjectAs();
+  if (action === "settings") return openSettingsModal();
   if (action === "createBackup") return createProjectBackup("manual");
   if (action === "restoreBackup") return restoreProjectBackup();
   if (action === "repairCurrentTsv") return repairCurrentTsv();
@@ -1478,7 +1648,7 @@ function renderWelcome() {
   document.querySelector(".app-shell")?.classList.toggle("welcome-active", state.isWelcomeVisible);
   if (!el.recentProjects) return;
   if (!state.recentProjects.length) {
-    el.recentProjects.innerHTML = `<div class="recent-empty">Recent projects will appear here.</div>`;
+    el.recentProjects.innerHTML = `<div class="recent-empty">${escapeHtml(t("empty.recent"))}</div>`;
     return;
   }
   el.recentProjects.innerHTML = state.recentProjects.map((project) => `
@@ -1497,11 +1667,11 @@ function renderWelcome() {
 function renderStatus(issues) {
   const counts = countRows();
   el.projectName.textContent = state.manifest.projectName || "Untitled Project";
-  setStatusItem(el.projectPath, "folder", state.projectPath || state.projectFileName || (tauriInvoke ? "No file loaded" : "Browser workspace"));
+  setStatusItem(el.projectPath, "folder", state.projectPath || state.projectFileName || (tauriInvoke ? t("status.noFile") : t("status.browserWorkspace")));
   setStatusItem(el.counts, "tag", `scene ${counts.scene} / multicut ${counts.multicut} / cut ${counts.cut}`);
-  setStatusItem(el.missingCount, "image_not_supported", `Missing ${issues.filter((issue) => issue.kind === "missing-media").length}`);
-  setStatusItem(el.saveState, "cloud_done", state.dirty ? "Unsaved" : "Saved");
-  setStatusItem(el.lastSaved, "schedule", state.lastSaved ? `Saved ${state.lastSaved}` : "Never");
+  setStatusItem(el.missingCount, "image_not_supported", `${t("status.missing")} ${issues.filter((issue) => issue.kind === "missing-media").length}`);
+  setStatusItem(el.saveState, "cloud_done", state.dirty ? t("status.unsaved") : t("status.saved"));
+  setStatusItem(el.lastSaved, "schedule", state.lastSaved ? `${t("status.savedAt")} ${state.lastSaved}` : t("status.never"));
 }
 
 function countRows() {
@@ -1518,7 +1688,7 @@ function renderTree() {
   const tree = buildTree();
   el.tree.innerHTML = "";
   if (!tree.length) {
-    el.tree.innerHTML = `<div class="empty-state">Open a TSV or load the sample.</div>`;
+    el.tree.innerHTML = `<div class="empty-state">${escapeHtml(t("empty.tree"))}</div>`;
     return;
   }
   tree.forEach((scene) => {
@@ -1568,7 +1738,7 @@ function renderTable() {
     td.colSpan = DISPLAY_COLUMNS.length;
     td.innerHTML = `
       <div class="empty-table-state">
-        <span>${state.search ? "No rows match the current search." : "No rows. Add a row to start."}</span>
+        <span>${escapeHtml(state.search ? t("empty.search") : t("empty.table"))}</span>
         ${canInitialAdd ? `<div class="empty-add-actions">
           <button class="add-row-btn scene" type="button" data-initial-add-type="scene" title="Add Scene" aria-label="Add Scene">${iconHtml("movie", "small-icon")}</button>
           <button class="add-row-btn multicut" type="button" data-initial-add-type="multicut" title="Add Multicut" aria-label="Add Multicut">${iconHtml("dynamic_feed", "small-icon")}</button>
@@ -4413,7 +4583,7 @@ async function createProjectBackup(reason = "manual", options = {}) {
     max_backups: MAX_PROJECT_BACKUPS,
   });
   const fileName = normalizeTauriFile(saved).fileName || backupName;
-  if (options.notify === "toast") showToast(`Auto backup saved: ${fileName}`);
+  if (options.notify === "toast") showToast(`${t("toast.autoBackup")}: ${fileName}`);
   else if (!options.silent) alert(`Backup created: ${fileName}`);
   return saved;
 }

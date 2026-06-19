@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prepro Enhancer</title>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&amp;icon_names=account_tree,build,call_split,close,cloud_done,content_copy,content_cut,dashboard,delete,dock_to_right,dynamic_feed,edit_note,fact_check,file_copy,folder,folder_open,history,image_not_supported,inventory_2,ios_share,movie,movie_creation,note_add,perm_media,play_arrow,refresh,restore,save,save_as,schedule,search,smart_toy,stop,subject,table_chart,table_view,tag,terminal,timeline&amp;display=block" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined&amp;icon_names=account_tree,build,call_split,close,cloud_done,content_copy,content_cut,dashboard,delete,dock_to_right,dynamic_feed,edit_note,fact_check,file_copy,folder,folder_open,history,image_not_supported,inventory_2,ios_share,movie,movie_creation,note_add,perm_media,play_arrow,refresh,restore,save,save_as,schedule,search,settings,smart_toy,stop,subject,table_chart,table_view,tag,terminal,timeline&amp;display=block" rel="stylesheet" />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
@@ -18,44 +18,45 @@
           </div>
         </div>
         <div class="tool-section file-menu">
-          <button id="fileMenuBtn" class="menu-button" type="button" aria-haspopup="true" aria-expanded="false"><span class="material-symbols-outlined app-icon" aria-hidden="true">folder_open</span><span class="icon-button-label">File</span></button>
+          <button id="fileMenuBtn" class="menu-button" type="button" aria-haspopup="true" aria-expanded="false"><span class="material-symbols-outlined app-icon" aria-hidden="true">folder_open</span><span class="icon-button-label" data-i18n="menu.file">File</span></button>
           <div id="fileMenu" class="dropdown-menu" role="menu" hidden>
-            <button type="button" data-file-action="new" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">note_add</span><span class="icon-button-label">NewProject</span></button>
-            <button type="button" data-file-action="open" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">folder_open</span><span class="icon-button-label">OpenProject</span></button>
-            <button type="button" data-file-action="save" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save</span><span class="icon-button-label">Save</span></button>
-            <button type="button" data-file-action="saveAs" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save_as</span><span class="icon-button-label">Save as</span></button>
+            <button type="button" data-file-action="new" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">note_add</span><span class="icon-button-label" data-i18n="menu.new">NewProject</span></button>
+            <button type="button" data-file-action="open" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">folder_open</span><span class="icon-button-label" data-i18n="menu.open">OpenProject</span></button>
+            <button type="button" data-file-action="save" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save</span><span class="icon-button-label" data-i18n="menu.save">Save</span></button>
+            <button type="button" data-file-action="saveAs" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save_as</span><span class="icon-button-label" data-i18n="menu.saveAs">Save as</span></button>
+            <button type="button" data-file-action="settings" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">settings</span><span class="icon-button-label" data-i18n="menu.settings">Settings</span></button>
             <div class="submenu" role="none">
-              <button type="button" class="submenu-trigger" role="menuitem" aria-haspopup="true"><span class="material-symbols-outlined app-icon" aria-hidden="true">history</span><span class="icon-button-label">Recovery</span></button>
+              <button type="button" class="submenu-trigger" role="menuitem" aria-haspopup="true"><span class="material-symbols-outlined app-icon" aria-hidden="true">history</span><span class="icon-button-label" data-i18n="menu.recovery">Recovery</span></button>
               <div class="submenu-panel" role="menu">
-                <button type="button" data-file-action="createBackup" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save</span><span class="icon-button-label">Create Backup Now</span></button>
-                <button type="button" data-file-action="restoreBackup" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">restore</span><span class="icon-button-label">Restore Backup</span></button>
-                <button type="button" data-file-action="repairCurrentTsv" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">build</span><span class="icon-button-label">Repair Current TSV</span></button>
-                <button type="button" data-file-action="repairTsvFile" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">fact_check</span><span class="icon-button-label">Repair TSV File</span></button>
+                <button type="button" data-file-action="createBackup" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">save</span><span class="icon-button-label" data-i18n="menu.createBackup">Create Backup Now</span></button>
+                <button type="button" data-file-action="restoreBackup" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">restore</span><span class="icon-button-label" data-i18n="menu.restoreBackup">Restore Backup</span></button>
+                <button type="button" data-file-action="repairCurrentTsv" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">build</span><span class="icon-button-label" data-i18n="menu.repairCurrentTsv">Repair Current TSV</span></button>
+                <button type="button" data-file-action="repairTsvFile" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">fact_check</span><span class="icon-button-label" data-i18n="menu.repairTsvFile">Repair TSV File</span></button>
               </div>
             </div>
             <div class="submenu" role="none">
-              <button type="button" class="submenu-trigger" role="menuitem" aria-haspopup="true"><span class="material-symbols-outlined app-icon" aria-hidden="true">ios_share</span><span class="icon-button-label">Export</span></button>
+              <button type="button" class="submenu-trigger" role="menuitem" aria-haspopup="true"><span class="material-symbols-outlined app-icon" aria-hidden="true">ios_share</span><span class="icon-button-label" data-i18n="menu.export">Export</span></button>
               <div class="submenu-panel" role="menu">
                 <button type="button" data-file-action="exportTsv" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">table_chart</span><span class="icon-button-label">TSV</span></button>
-                <button type="button" data-file-action="exportLlmTsv" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">smart_toy</span><span class="icon-button-label">LLM TSV</span></button>
+                <button type="button" data-file-action="exportLlmTsv" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">smart_toy</span><span class="icon-button-label" data-i18n="menu.llmTsv">LLM TSV</span></button>
                 <button type="button" data-file-action="exportXml" role="menuitem"><span class="material-symbols-outlined app-icon" aria-hidden="true">movie</span><span class="icon-button-label">Premiere XML</span></button>
               </div>
             </div>
           </div>
         </div>
         <div class="tool-section refresh-section">
-          <button id="refreshTsvBtn" type="button" title="Refresh project"><span class="material-symbols-outlined app-icon" aria-hidden="true">refresh</span><span class="icon-button-label">Refresh Project</span></button>
+          <button id="refreshTsvBtn" type="button" title="Refresh project" data-i18n-title="action.refreshProjectTitle"><span class="material-symbols-outlined app-icon" aria-hidden="true">refresh</span><span class="icon-button-label" data-i18n="action.refreshProject">Refresh Project</span></button>
         </div>
         <div class="tool-section view-switch">
-          <button class="view-btn active" data-view="table"><span class="material-symbols-outlined app-icon" aria-hidden="true">table_view</span><span class="icon-button-label">Table</span></button>
-          <button class="view-btn" data-view="storyboard"><span class="material-symbols-outlined app-icon" aria-hidden="true">dashboard</span><span class="icon-button-label">Storyboard</span></button>
-          <button class="view-btn" data-view="timeline"><span class="material-symbols-outlined app-icon" aria-hidden="true">timeline</span><span class="icon-button-label">Timeline</span></button>
-          <button class="view-btn" data-view="promptEdit"><span class="material-symbols-outlined app-icon" aria-hidden="true">edit_note</span><span class="icon-button-label">PromptEdit</span></button>
-          <button class="view-btn" data-view="assets"><span class="material-symbols-outlined app-icon" aria-hidden="true">inventory_2</span><span class="icon-button-label">Assets</span></button>
-          <button class="view-btn" data-view="agents"><span class="material-symbols-outlined app-icon" aria-hidden="true">terminal</span><span class="icon-button-label">Agents</span></button>
+          <button class="view-btn active" data-view="table"><span class="material-symbols-outlined app-icon" aria-hidden="true">table_view</span><span class="icon-button-label" data-i18n="view.table">Table</span></button>
+          <button class="view-btn" data-view="storyboard"><span class="material-symbols-outlined app-icon" aria-hidden="true">dashboard</span><span class="icon-button-label" data-i18n="view.storyboard">Storyboard</span></button>
+          <button class="view-btn" data-view="timeline"><span class="material-symbols-outlined app-icon" aria-hidden="true">timeline</span><span class="icon-button-label" data-i18n="view.timeline">Timeline</span></button>
+          <button class="view-btn" data-view="promptEdit"><span class="material-symbols-outlined app-icon" aria-hidden="true">edit_note</span><span class="icon-button-label" data-i18n="view.promptEdit">PromptEdit</span></button>
+          <button class="view-btn" data-view="assets"><span class="material-symbols-outlined app-icon" aria-hidden="true">inventory_2</span><span class="icon-button-label" data-i18n="view.assets">Assets</span></button>
+          <button class="view-btn" data-view="agents"><span class="material-symbols-outlined app-icon" aria-hidden="true">terminal</span><span class="icon-button-label" data-i18n="view.agents">Agents</span></button>
         </div>
         <label class="search-box">
-          <span class="material-symbols-outlined app-icon" aria-hidden="true">search</span><span>Search</span>
+          <span class="material-symbols-outlined app-icon" aria-hidden="true">search</span><span data-i18n="search.label">Search</span>
           <input id="searchInput" type="search" autocomplete="off" />
         </label>
       </header>

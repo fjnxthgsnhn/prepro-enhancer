@@ -36,11 +36,36 @@ for (const removedButton of ["openProjectBtn", "loadSampleBtn", "saveTsvBtn", "e
   if (await page.locator(`#${removedButton}`).count()) throw new Error(`${removedButton} should be moved into the File menu`);
 }
 await page.click("#fileMenuBtn");
-for (const menuItem of ["NewProject", "OpenProject", "Save", "Save as", "Export"]) {
+for (const menuItem of ["NewProject", "OpenProject", "Save", "Save as", "Settings", "Export"]) {
   await expectText("#fileMenu", menuItem);
 }
 await page.keyboard.press("Escape");
 await page.waitForFunction(() => document.querySelector("#fileMenu")?.hidden);
+await clickFileAction("settings");
+await page.waitForFunction(() => document.querySelector(".settings-modal"));
+await expectText(".settings-modal", "Settings");
+await page.selectOption("#settingsLanguage", "ja");
+await page.selectOption("#settingsTheme", "light");
+await page.fill("#settingsAutoBackup", "15");
+await page.locator('[data-settings-action="apply"]').click();
+await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+await expectText("#fileMenuBtn", "ファイル");
+await page.waitForFunction(() => JSON.parse(localStorage.getItem("preproEnhancer.uiSettings.v1") || "{}").autoBackupIntervalMinutes === 15);
+await page.selectOption("#settingsLanguage", "zh");
+await page.locator('[data-settings-action="apply"]').click();
+await expectText("#fileMenuBtn", "文件");
+await page.selectOption("#settingsLanguage", "ko");
+await page.locator('[data-settings-action="apply"]').click();
+await expectText("#fileMenuBtn", "파일");
+await page.selectOption("#settingsLanguage", "en");
+await page.selectOption("#settingsTheme", "dark");
+await page.fill("#settingsAutoBackup", "10");
+await page.locator('[data-settings-action="apply"]').click();
+await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
+await expectText("#fileMenuBtn", "File");
+await page.reload();
+await expectText("#fileMenuBtn", "File");
+await page.waitForFunction(() => document.documentElement.dataset.theme === "dark");
 const [newProjectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("new")]);
 if (!newProjectDownload.suggestedFilename().endsWith(".lctproj")) throw new Error("NewProject should download an lctproj in web fallback");
 const newProjectBytes = await readFile(await newProjectDownload.path());
