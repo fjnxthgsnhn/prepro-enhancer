@@ -365,7 +365,7 @@ document.querySelectorAll("[data-toggle-panel]").forEach((button) => {
 document.querySelector("#rightPanelToggle").addEventListener("click", toggleRightPanel);
 el.welcomeNew?.addEventListener("click", newProject);
 el.welcomeOpen?.addEventListener("click", openProject);
-el.refreshTsv?.addEventListener("click", refreshTsvFromProject);
+el.refreshTsv?.addEventListener("click", refreshProjectFromDisk);
 
 document.querySelectorAll(".view-btn").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.view));
@@ -937,14 +937,18 @@ function assetIdFromParts(alias, path, title) {
   return `asset-${Math.abs(hash).toString(36)}`;
 }
 
-async function refreshTsvFromProject() {
+async function refreshProjectFromDisk() {
   if (!tauriInvoke || !state.projectPath) {
-    alert("Open a saved .lctproj project to refresh cutlist.tsv.");
+    alert("Open a saved .lctproj project to refresh the project.");
     return;
   }
-  if (state.dirty && !confirm("Discard unsaved changes and refresh cutlist.tsv from disk?")) return;
+  if (state.dirty && !confirm("Discard unsaved changes and refresh the project from disk?")) return;
   await createProjectBackup("before-refresh", { silent: true });
+  let diskManifest;
   let rows;
+  let assets;
+  let generatedMedia;
+  let prompts;
   try {
     const opened = normalizeTauriFile(await tauriInvoke("read_project_file", { path: state.projectPath }));
     const bytes = new Uint8Array(opened.bytes || []);
@@ -952,7 +956,7 @@ async function refreshTsvFromProject() {
     const manifestMatch = findZipEntry(entries, "manifest.json");
     const manifestText = decodeZipText(manifestMatch?.entry);
     if (!manifestText) throw new Error("manifest.json was not found.");
-    const diskManifest = { ...structuredClone(DEFAULT_MANIFEST), ...JSON.parse(manifestText) };
+    diskManifest = { ...structuredClone(DEFAULT_MANIFEST), ...JSON.parse(manifestText) };
     const cutlistMatch = findZipEntry(entries, diskManifest.mainCutlist || "cutlist.tsv");
     const cutlistEntry = cutlistMatch?.entry;
     if (!cutlistEntry) throw new Error(`${diskManifest.mainCutlist || "cutlist.tsv"} was not found.`);
@@ -960,17 +964,28 @@ async function refreshTsvFromProject() {
     try {
       rows = loadRowsFromTsv(tsvText);
     } catch (error) {
-      if (!confirm(`${error.message || "cutlist.tsv could not be refreshed."}\n\nRepair and refresh from disk?`)) throw error;
+      if (!confirm(`${error.message || "cutlist.tsv could not be refreshed."}\n\nRepair and refresh the project from disk?`)) throw error;
       const repaired = repairTsvText(tsvText);
       rows = repaired.rows;
       state.importWarnings = repaired.warnings;
     }
+    assets = loadAssetsFromEntries(entries, diskManifest);
+    generatedMedia = loadGeneratedMediaFromEntries(entries, diskManifest);
+    prompts = loadPromptsFromEntries(entries, diskManifest);
+    if (!generatedMedia.length) generatedMedia = generatedMediaFromRows(rows);
+    if (!prompts.length) prompts = promptsFromRows(rows);
   } catch (error) {
-    alert(error.message || "cutlist.tsv could not be refreshed.");
+    alert(error.message || "Project could not be refreshed.");
     return;
   }
   pushHistory();
+  state.manifest = diskManifest;
   state.rows = rows;
+  state.assets = assets;
+  state.generatedMedia = generatedMedia;
+  state.prompts = prompts;
+  syncRowsFromJsonState();
+  clearAssetSelection();
   preserveSelectionAfterRowsRefresh();
   state.dirty = false;
   state.lastSaved = new Date().toLocaleTimeString();

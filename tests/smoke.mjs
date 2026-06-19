@@ -1043,17 +1043,36 @@ async function runTauriWelcomeSmoke(browser) {
   await expectPageText(tauriPage, "#projectName", "Recent Project");
   await expectPageText(tauriPage, "#counts", "scene 1 / multicut 0 / cut 0");
   await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "Recent Scene");
+  await expectPageText(tauriPage, "#refreshTsvBtn", "Refresh Project");
   await tauriPage.evaluate((path) => {
     const updated = window.__makeStoredZip(new Map([
       ["manifest.json", JSON.stringify({ projectName: "Recent Project Changed", mainCutlist: "cutlist.tsv" })],
       ["cutlist.tsv", `${window.__expectedHeaders().join("\t")}\nscene\tsc777\t\t1\tLLM Updated Scene\t\t\t\t\t\t\t\t\t\t\t\t\ncut\tct778\tsc777\t1\tLLM Added Cut\t2s\t\t\t\t\t\t\t\t\t\t\t`],
+      ["assets.json", JSON.stringify({ format: "LocalCutBoardAssets", formatVersion: "1.0.0", assets: [
+        { id: "asset_refresh", path: "media/references/refresh-ref.png", type: "reference_image", title: "Refresh Ref" },
+      ] })],
+      ["generate.json", JSON.stringify({ format: "LocalCutBoardGeneratedMedia", formatVersion: "1.0.0", items: [
+        { id: "gen_refresh_image", cutId: "ct778", type: "image", path: "media/images/refresh-cut.png", status: "candidate", isActive: true },
+        { id: "gen_refresh_audio", cutId: "ct778", type: "audio", path: "media/audio/refresh-cut.wav", status: "candidate", isActive: true },
+      ] })],
+      ["prompts.json", JSON.stringify({ format: "LocalCutBoardPrompts", formatVersion: "1.0.0", prompts: [
+        { id: "prompt_refresh_image", ownerId: "ct778", ownerType: "cut", kind: "image", text: "Refreshed image prompt from JSON", status: "active", isActive: true },
+        { id: "prompt_refresh_video", ownerId: "ct778", ownerType: "cut", kind: "video", text: "Refreshed video prompt from JSON", status: "active", isActive: true },
+      ] })],
     ]));
     window.__tauriMockFiles.set(path, Array.from(updated));
   }, recentPath);
   await tauriPage.click("#refreshTsvBtn");
-  await expectPageText(tauriPage, "#projectName", "Recent Project");
+  await expectPageText(tauriPage, "#projectName", "Recent Project Changed");
   await expectPageText(tauriPage, "#counts", "scene 1 / multicut 0 / cut 1");
   await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "LLM Updated Scene");
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="image"]', "media/images/refresh-cut.png");
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="audio_file"]', "media/audio/refresh-cut.wav");
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="image_prompt"]', "Refreshed image prompt from JSON");
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="video_prompt"]', "Refreshed video prompt from JSON");
+  await tauriPage.click('[data-view="assets"]');
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-card [data-asset-field="title"]')?.value === "Refresh Ref");
+  await tauriPage.click('[data-view="table"]');
   await tauriPage.click('tbody tr[data-id="sc777"] td[data-column="title"]');
   await tauriPage.click('tbody tr[data-id="sc777"] td[data-column="title"]');
   await tauriPage.locator('tbody tr[data-id="sc777"] td[data-column="title"] input').fill("Unsaved Local Scene");
@@ -1087,7 +1106,8 @@ async function runTauriWelcomeSmoke(browser) {
     { name: "external-rui.png", type: "image/png", path: "D:\\External\\external-rui.png" },
     { name: "fallback-rui.png", type: "image/png" },
   ]);
-  await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 3);
+  await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length >= 4);
+  const assetCountAfterFileDrops = await tauriPage.locator(".asset-card").count();
   const tauriAssetPaths = await tauriPage.$$eval(".asset-card .prompt-media-card[data-path]", (cards) => cards.map((card) => card.dataset.path));
   for (const expectedPath of ["assets/local-rui.png", "D:/External/external-rui.png", "assets/fallback-rui.png"]) {
     if (!tauriAssetPaths.includes(expectedPath)) throw new Error(`Dropped asset path should preserve project-relative/external policy: ${expectedPath}`);
@@ -1101,10 +1121,15 @@ async function runTauriWelcomeSmoke(browser) {
         "C:\\Projects\\assets\\episode_001\\BG_恒一_ルイ.png",
         "C:\\Users\\huge2\\Downloads\\ChatGPT Image 2026年5月27日 00_31_09.png",
       ],
-      position: { x: rect.right - 20, y: rect.bottom - 20 },
+      position: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
     });
   });
-  await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 5);
+  await tauriPage.waitForFunction(
+    () => document.querySelector('.asset-card .prompt-media-card[data-path="assets/episode_001/BG_恒一_ルイ.png"]') &&
+      document.querySelector('.asset-card .prompt-media-card[data-path="C:/Users/huge2/Downloads/ChatGPT Image 2026年5月27日 00_31_09.png"]'),
+  );
+  const assetCountAfterNativeDrop = await tauriPage.locator(".asset-card").count();
+  if (assetCountAfterNativeDrop < assetCountAfterFileDrops + 1) throw new Error("Native Tauri drop should add dropped assets");
   const nativeDropAssetPaths = await tauriPage.$$eval(".asset-card .prompt-media-card[data-path]", (cards) => cards.map((card) => card.dataset.path));
   for (const expectedPath of [
     "assets/episode_001/BG_恒一_ルイ.png",
@@ -1113,7 +1138,8 @@ async function runTauriWelcomeSmoke(browser) {
     if (!nativeDropAssetPaths.includes(expectedPath)) throw new Error(`Native Tauri drop should preserve full path: ${expectedPath}`);
   }
   await tauriPage.evaluate(() => {
-    const target = document.querySelector(".asset-card");
+    const target = [...document.querySelectorAll(".asset-card")]
+      .find((card) => card.querySelector('[data-asset-field="title"]')?.value === "local-rui");
     const rect = target.getBoundingClientRect();
     window.__emitTauriStandardAssetDrop({
       type: "drop",
@@ -1122,9 +1148,9 @@ async function runTauriWelcomeSmoke(browser) {
       scaleFactor: 1,
     });
   });
-  await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 5);
+  await tauriPage.waitForFunction((count) => document.querySelectorAll(".asset-card").length === count, assetCountAfterNativeDrop);
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="assets/episode_001/updated-native-rui.png"]'));
-  if ((await tauriPage.locator('.asset-card [data-asset-field="title"]').first().inputValue()) !== "local-rui") throw new Error("Native asset drop update should keep title");
+  await tauriPage.waitForFunction(() => [...document.querySelectorAll('.asset-card [data-asset-field="title"]')].some((input) => input.value === "local-rui"));
   await tauriPage.waitForFunction(() => document.querySelector(".app-toast.visible")?.textContent?.includes("Save the project"));
   await tauriPage.evaluate(() => {
     window.__emitTauriStandardAssetDrop({
@@ -1134,7 +1160,7 @@ async function runTauriWelcomeSmoke(browser) {
     });
   });
   await tauriPage.waitForTimeout(120);
-  if ((await tauriPage.locator(".asset-card").count()) !== 5) throw new Error("Native drop outside Assets view should be ignored");
+  if ((await tauriPage.locator(".asset-card").count()) !== assetCountAfterNativeDrop) throw new Error("Native drop outside Assets view should be ignored");
   await tauriPage.evaluate(() => {
     const target = document.querySelector(".assets-drop-zone");
     const rect = target.getBoundingClientRect();
@@ -1144,9 +1170,12 @@ async function runTauriWelcomeSmoke(browser) {
       scaleFactor: 1,
     });
   });
-  await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length === 6);
+  await tauriPage.waitForFunction((count) => document.querySelectorAll(".asset-card").length === count + 1, assetCountAfterNativeDrop);
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="assets/asset-file-drop-fallback.png"]'));
-  await tauriPage.locator(".asset-card").nth(1).locator(".asset-thumb").click();
+  await tauriPage.evaluate(() => {
+    const target = document.querySelector('.asset-card .prompt-media-card[data-path="D:/External/external-rui.png"]')?.closest(".asset-card");
+    target?.querySelector(".asset-thumb")?.click();
+  });
   await tauriPage.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "D:/External/external-rui.png");
   await tauriPage.locator('.asset-modal [data-asset-action="close"]').click();
   const tauriEventFallbackPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
@@ -1190,7 +1219,7 @@ async function runTauriWelcomeSmoke(browser) {
     tauriPage.once("dialog", (dialog) => dialog.accept());
     await tauriPage.evaluate(() => document.querySelector('[data-file-action="createBackup"]')?.click());
   }
-  const backupPaths = await tauriPage.evaluate(() => [...window.__tauriMockFiles.keys()].filter((path) => path.includes("\\.prepro-backups\\Recent Project\\")));
+  const backupPaths = await tauriPage.evaluate(() => [...window.__tauriMockFiles.keys()].filter((path) => path.includes("\\.prepro-backups\\Recent Project Changed\\")));
   if (backupPaths.length !== 10) throw new Error(`External backup rotation should keep 10 backups, saw ${backupPaths.length}`);
   const backupEntries = readZipEntries(Buffer.from(await tauriPage.evaluate((path) => window.__tauriMockFiles.get(path), backupPaths[0])));
   if (!backupEntries.has("cutlist.tsv") || [...backupEntries.keys()].some((name) => name.startsWith(".backups/"))) throw new Error("External backup should store a full lctproj without internal .backups");
