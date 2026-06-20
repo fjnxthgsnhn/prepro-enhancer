@@ -12,12 +12,12 @@ if (!repo) fail("GITHUB_REPOSITORY is required.");
 if (!tag) fail("Release tag is required as GITHUB_REF_NAME or the first argument.");
 if (!token) fail("GITHUB_TOKEN is required.");
 
-const release = await githubJson(`https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`);
+const release = await githubReleaseByTag(tag);
 const version = normalizeVersion(release.tag_name || tag);
 const installer = findWindowsInstaller(release.assets || []);
-if (!installer) fail("Windows installer asset was not found on the GitHub Release.");
+if (!installer) fail(`Windows installer asset was not found on the GitHub Release. Assets: ${assetNames(release.assets)}`);
 const signatureAsset = findSignatureAsset(release.assets || [], installer.name);
-if (!signatureAsset) fail(`Signature asset for ${installer.name} was not found.`);
+if (!signatureAsset) fail(`Signature asset for ${installer.name} was not found. Assets: ${assetNames(release.assets)}`);
 
 const signature = (await fetchAssetText(signatureAsset)).trim();
 const latest = {
@@ -53,6 +53,16 @@ function findSignatureAsset(assets, installerName) {
     || assets.find((asset) => String(asset.name || "").endsWith(".sig"));
 }
 
+async function githubReleaseByTag(tagName) {
+  const tagUrl = `https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tagName)}`;
+  const direct = await githubJsonOrNull(tagUrl);
+  if (direct) return direct;
+  const releases = await githubJson(`https://api.github.com/repos/${repo}/releases?per_page=100`);
+  const release = Array.isArray(releases) ? releases.find((item) => item.tag_name === tagName) : null;
+  if (!release) fail(`GitHub Release for ${tagName} was not found. Draft releases may need contents:write permission.`);
+  return release;
+}
+
 async function githubJson(url) {
   const response = await fetch(url, {
     headers: {
@@ -62,6 +72,20 @@ async function githubJson(url) {
       "X-GitHub-Api-Version": "2022-11-28",
     },
   });
+  if (!response.ok) fail(`GitHub API request failed: ${response.status} ${await response.text()}`);
+  return response.json();
+}
+
+async function githubJsonOrNull(url) {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "User-Agent": "prepro-enhancer-release-script",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  });
+  if (response.status === 404) return null;
   if (!response.ok) fail(`GitHub API request failed: ${response.status} ${await response.text()}`);
   return response.json();
 }
@@ -93,4 +117,8 @@ async function fetchAssetText(asset) {
 function fail(message) {
   console.error(message);
   process.exit(1);
+}
+
+function assetNames(assets = []) {
+  return assets.map((asset) => asset.name).filter(Boolean).join(", ") || "(none)";
 }
