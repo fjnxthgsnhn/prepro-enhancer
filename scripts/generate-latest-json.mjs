@@ -7,6 +7,7 @@ const repo = process.env.GITHUB_REPOSITORY || "";
 const token = process.env.GITHUB_TOKEN || "";
 const tag = process.env.GITHUB_REF_NAME || process.argv[2] || "";
 const outFile = process.argv[3] || "dist/latest.json";
+const releaseId = process.env.GITHUB_RELEASE_ID || "";
 
 if (!repo) fail("GITHUB_REPOSITORY is required.");
 if (!tag) fail("Release tag is required as GITHUB_REF_NAME or the first argument.");
@@ -54,6 +55,7 @@ function findSignatureAsset(assets, installerName) {
 }
 
 async function githubReleaseByTag(tagName) {
+  if (releaseId) return githubJson(`https://api.github.com/repos/${repo}/releases/${encodeURIComponent(releaseId)}`);
   const tagUrl = `https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tagName)}`;
   const direct = await githubJsonOrNull(tagUrl);
   if (direct) return direct;
