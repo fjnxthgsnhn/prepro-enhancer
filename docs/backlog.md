@@ -1,6 +1,6 @@
 # Prepro Enhancer Backlog
 
-このバックログは `docs/previz-enhancer_spec.md` をもとに、MVP実装を優先して整理する。
+このバックログは `docs/prepro-enhancer_spec.md` をもとに、MVP実装を優先して整理する。
 
 ## 優先度
 

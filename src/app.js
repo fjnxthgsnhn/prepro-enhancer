@@ -277,7 +277,8 @@ const I18N = {
     "view.table": "Table", "view.storyboard": "Storyboard", "view.timeline": "Timeline", "view.promptEdit": "PromptEdit", "view.assets": "Assets", "view.agents": "Agents",
     "search.label": "Search", "status.saved": "Saved", "status.unsaved": "Unsaved", "status.never": "Never", "status.noFile": "No file loaded", "status.browserWorkspace": "Browser workspace", "status.missing": "Missing", "status.savedAt": "Saved",
     "settings.title": "Settings", "settings.language": "Language", "settings.theme": "Theme", "settings.dark": "Dark", "settings.light": "Light", "settings.autoBackup": "Auto backup interval", "settings.minutes": "minutes", "settings.close": "Close", "settings.apply": "Apply",
-    "toast.autoBackup": "Auto backup saved", "toast.settingsSaved": "Settings saved",
+    "toast.autoBackup": "Auto backup saved", "toast.settingsSaved": "Settings saved", "toast.updateNotAvailable": "No updates available", "toast.updateInstalled": "Update installed. Restarting...",
+    "update.available": "Version {version} is available. Download and install now?", "update.failed": "Update check failed.",
     "empty.recent": "Recent projects will appear here.", "empty.tree": "Open a TSV or load the sample.", "empty.table": "No rows. Add a row to start.", "empty.search": "No rows match the current search.",
   },
   ja: {
@@ -286,7 +287,8 @@ const I18N = {
     "view.table": "テーブル", "view.storyboard": "絵コンテ", "view.timeline": "タイムライン", "view.promptEdit": "プロンプト編集", "view.assets": "素材", "view.agents": "Agents",
     "search.label": "検索", "status.saved": "保存済み", "status.unsaved": "未保存", "status.never": "未保存", "status.noFile": "ファイル未選択", "status.browserWorkspace": "ブラウザ作業領域", "status.missing": "不足", "status.savedAt": "保存",
     "settings.title": "設定", "settings.language": "言語", "settings.theme": "テーマ", "settings.dark": "ダーク", "settings.light": "ライト", "settings.autoBackup": "自動バックアップ間隔", "settings.minutes": "分", "settings.close": "閉じる", "settings.apply": "適用",
-    "toast.autoBackup": "自動バックアップを保存しました", "toast.settingsSaved": "設定を保存しました",
+    "toast.autoBackup": "自動バックアップを保存しました", "toast.settingsSaved": "設定を保存しました", "toast.updateNotAvailable": "利用可能な更新はありません", "toast.updateInstalled": "更新をインストールしました。再起動します...",
+    "update.available": "バージョン {version} を利用できます。今すぐダウンロードしてインストールしますか？", "update.failed": "更新確認に失敗しました。",
     "empty.recent": "最近使ったプロジェクトが表示されます。", "empty.tree": "TSVを開くかサンプルを読み込んでください。", "empty.table": "行がありません。行を追加してください。", "empty.search": "検索条件に一致する行がありません。",
   },
   zh: {
@@ -295,7 +297,8 @@ const I18N = {
     "view.table": "表格", "view.storyboard": "故事板", "view.timeline": "时间线", "view.promptEdit": "提示编辑", "view.assets": "素材", "view.agents": "Agents",
     "search.label": "搜索", "status.saved": "已保存", "status.unsaved": "未保存", "status.never": "从未", "status.noFile": "未加载文件", "status.browserWorkspace": "浏览器工作区", "status.missing": "缺失", "status.savedAt": "已保存",
     "settings.title": "设置", "settings.language": "语言", "settings.theme": "主题", "settings.dark": "深色", "settings.light": "浅色", "settings.autoBackup": "自动备份间隔", "settings.minutes": "分钟", "settings.close": "关闭", "settings.apply": "应用",
-    "toast.autoBackup": "自动备份已保存", "toast.settingsSaved": "设置已保存",
+    "toast.autoBackup": "自动备份已保存", "toast.settingsSaved": "设置已保存", "toast.updateNotAvailable": "没有可用更新", "toast.updateInstalled": "更新已安装。正在重启...",
+    "update.available": "版本 {version} 可用。现在下载并安装吗？", "update.failed": "检查更新失败。",
     "empty.recent": "最近项目会显示在这里。", "empty.tree": "打开TSV或加载示例。", "empty.table": "没有行。请先添加一行。", "empty.search": "没有匹配当前搜索的行。",
   },
   ko: {
@@ -304,7 +307,8 @@ const I18N = {
     "view.table": "테이블", "view.storyboard": "스토리보드", "view.timeline": "타임라인", "view.promptEdit": "프롬프트 편집", "view.assets": "에셋", "view.agents": "Agents",
     "search.label": "검색", "status.saved": "저장됨", "status.unsaved": "미저장", "status.never": "없음", "status.noFile": "파일 없음", "status.browserWorkspace": "브라우저 작업공간", "status.missing": "누락", "status.savedAt": "저장",
     "settings.title": "설정", "settings.language": "언어", "settings.theme": "테마", "settings.dark": "다크", "settings.light": "라이트", "settings.autoBackup": "자동 백업 간격", "settings.minutes": "분", "settings.close": "닫기", "settings.apply": "적용",
-    "toast.autoBackup": "자동 백업 저장됨", "toast.settingsSaved": "설정 저장됨",
+    "toast.autoBackup": "자동 백업 저장됨", "toast.settingsSaved": "설정 저장됨", "toast.updateNotAvailable": "사용 가능한 업데이트가 없습니다", "toast.updateInstalled": "업데이트를 설치했습니다. 다시 시작합니다...",
+    "update.available": "버전 {version}을 사용할 수 있습니다. 지금 다운로드하고 설치할까요?", "update.failed": "업데이트 확인에 실패했습니다.",
     "empty.recent": "최근 프로젝트가 여기에 표시됩니다.", "empty.tree": "TSV를 열거나 샘플을 불러오세요.", "empty.table": "행이 없습니다. 행을 추가하세요.", "empty.search": "현재 검색과 일치하는 행이 없습니다.",
   },
 };
@@ -358,10 +362,13 @@ const state = {
 };
 
 const tauriInvoke = window.__TAURI__?.core?.invoke || null;
+const tauriUpdater = window.__TAURI__?.updater || null;
+const tauriProcess = window.__TAURI__?.process || null;
 const RECENT_PROJECTS_KEY = "preproEnhancer.recentProjects.v1";
 const MAX_RECENT_PROJECTS = 10;
 const MAX_PROJECT_BACKUPS = 10;
 let autoBackupTimer = 0;
+let updateCheckStarted = false;
 
 const el = {
   projectName: document.querySelector("#projectName"),
@@ -2701,7 +2708,7 @@ function handleResolvedAssetDrop({ assets, target, source, position = null, scal
 }
 
 function debugAssetDrop(message, details = {}) {
-  if (localStorage.getItem("previzDebugDnd") !== "1") return;
+  if (localStorage.getItem("preproDebugDnd") !== "1") return;
   console.debug("[assets-dnd]", message, details);
 }
 
@@ -4610,6 +4617,35 @@ function showToast(message, options = {}) {
   }, duration);
 }
 
+async function checkForAppUpdate(options = {}) {
+  if (!tauriUpdater?.check || updateCheckStarted) return;
+  updateCheckStarted = true;
+  try {
+    const update = await tauriUpdater.check();
+    if (!update) {
+      if (options.notify) showToast(t("toast.updateNotAvailable"));
+      return;
+    }
+    const version = update.version || update.currentVersion || "";
+    const message = t("update.available").replace("{version}", version || "new");
+    if (!confirm(message)) return;
+    if (typeof update.downloadAndInstall === "function") await update.downloadAndInstall();
+    else if (typeof update.download === "function" && typeof update.install === "function") {
+      await update.download();
+      await update.install();
+    } else {
+      throw new Error("Updater API does not expose an install method.");
+    }
+    showToast(t("toast.updateInstalled"));
+    if (tauriProcess?.relaunch) await tauriProcess.relaunch();
+  } catch (error) {
+    console.warn("Update check failed", error);
+    if (options.notify) alert(error?.message ? `${t("update.failed")}\n${error.message}` : t("update.failed"));
+  } finally {
+    updateCheckStarted = false;
+  }
+}
+
 async function restoreProjectBackup() {
   if (!tauriInvoke || !state.projectPath) {
     alert("Open or save a .lctproj project before restoring a backup.");
@@ -4746,7 +4782,7 @@ function buildPremiereXml() {
 <!DOCTYPE xmeml>
 <xmeml version="4">
   <sequence>
-    <name>${xmlEscape(state.manifest.projectName || "Previz Project")}</name>
+    <name>${xmlEscape(state.manifest.projectName || "Prepro Project")}</name>
     <rate><timebase>${fps}</timebase><ntsc>FALSE</ntsc></rate>
     <duration>${frame}</duration>
     ${markers.join("\n    ")}
@@ -4777,7 +4813,7 @@ function downloadBlob(name, blob) {
 }
 
 function safeName(name) {
-  return String(name || "previz-project").replace(/[\\/:*?"<>|]+/g, "_");
+  return String(name || "prepro-project").replace(/[\\/:*?"<>|]+/g, "_");
 }
 
 function escapeHtml(value) {
@@ -5034,7 +5070,7 @@ function sampleSvg(color, label) {
   <circle cx="230" cy="270" r="138" fill="${color}" opacity=".16"/>
   <path d="M112 398 C248 122 432 438 592 172 S778 408 868 148" fill="none" stroke="${color}" stroke-width="10"/>
   <text x="88" y="130" fill="${color}" font-family="Segoe UI, sans-serif" font-size="42" font-weight="800">${label}</text>
-  <text x="88" y="444" fill="#eef1e8" font-family="Segoe UI, sans-serif" font-size="24">Previz sample media</text>
+  <text x="88" y="444" fill="#eef1e8" font-family="Segoe UI, sans-serif" font-size="24">Prepro sample media</text>
 </svg>`;
 }
 
@@ -5116,6 +5152,7 @@ function startApp() {
     state.recentProjects = loadRecentProjects();
     state.isWelcomeVisible = true;
     render();
+    checkForAppUpdate().catch((error) => console.warn("Update check failed", error));
     return;
   }
   loadTsv(SAMPLE_TSV, "Sample Project");

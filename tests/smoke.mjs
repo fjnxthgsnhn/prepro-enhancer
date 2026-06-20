@@ -1347,7 +1347,7 @@ async function runRealTauriAssetDropSmoke(browser) {
   ]));
   const realPage = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
   const consoleMessages = capturePageConsole(realPage);
-  await realPage.addInitScript(() => localStorage.setItem("previzDebugDnd", "1"));
+  await realPage.addInitScript(() => localStorage.setItem("preproDebugDnd", "1"));
   await installTauriMock(realPage, {
     files: [[REAL_TAURI_DND_PROJECT_PATH, Array.from(realProject)]],
     mediaFiles: [[REAL_TAURI_DND_ASSET_PATH, Array.from(realAssetBytes)]],

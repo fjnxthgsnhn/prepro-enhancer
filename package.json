@@ -1,5 +1,5 @@
 {
-  "name": "previz-enhancer",
+  "name": "prepro-enhancer",
   "version": "0.1.0",
   "private": true,
   "description": "Local cut board editor MVP for TSV based previs workflows.",

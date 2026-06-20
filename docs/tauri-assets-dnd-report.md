@@ -153,14 +153,14 @@ Persistence:
 ## Verification Loop Added
 
 - `setupTauriAssetDrop()` は登録できた listener を `[assets-dnd] registered listeners: ...` として console に出す。
-- `localStorage.previzDebugDnd = "1"` を設定すると、drop source、paths、raw position、scaleFactor、CSS pixel、`elementFromPoint()` 結果、target asset id、ignore 理由を console に出す。
+- `localStorage.preproDebugDnd = "1"` を設定すると、drop source、paths、raw position、scaleFactor、CSS pixel、`elementFromPoint()` 結果、target asset id、ignore 理由を console に出す。
 - Playwright smoke は実ファイル `H:\AICreation\project\narushisuto-DK\assets\episode_001\BG_教室.png` の bytes を Tauri mock media fixture として読み込み、以下を検証する。
   - 既存 asset card への標準 Tauri drop でカード数が増えず、`assets/episode_001/BG_教室.png` に path 更新される。
   - `asset-file-drop` fallback で空き領域 drop し、新規 card が追加される。
   - image preview が `read_media_file` 経由で表示される。
   - alias/note が保持される。
   - Save 後の `.lctproj` 内 `assets.json` に path が保存される。
-- 実機確認は `npm run tauri:dev` で起動し、DevTools console で `localStorage.previzDebugDnd = "1"` を設定して reload してから、Assets view に `BG_教室.png` を OS D&D する。
+- 実機確認は `npm run tauri:dev` で起動し、DevTools console で `localStorage.preproDebugDnd = "1"` を設定して reload してから、Assets view に `BG_教室.png` を OS D&D する。
 - 実機で失敗する場合は、console の `[assets-dnd]` ログで「listener 未登録」「native event 未受信」「座標が #assetsView 外」「modal/view により ignore」のどれかを判定する。
 
 ## Evidence

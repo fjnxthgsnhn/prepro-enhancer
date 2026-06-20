@@ -38,7 +38,7 @@ struct AssetDropPosition {
 #[tauri::command]
 fn open_project() -> Result<Option<OpenedFile>, String> {
     let Some(path) = rfd::FileDialog::new()
-        .add_filter("Previz project or TSV", &["lctproj", "tsv", "txt"])
+        .add_filter("Prepro project or TSV", &["lctproj", "tsv", "txt"])
         .pick_file()
     else {
         return Ok(None);
@@ -61,7 +61,7 @@ fn save_project(path: String, bytes: Vec<u8>) -> Result<Option<SavedFile>, Strin
 #[tauri::command]
 fn save_project_as(default_name: String, bytes: Vec<u8>) -> Result<Option<SavedFile>, String> {
     let Some(path) = rfd::FileDialog::new()
-        .add_filter("Previz project", &["lctproj"])
+        .add_filter("Prepro project", &["lctproj"])
         .set_file_name(&default_name)
         .save_file()
     else {
@@ -315,6 +315,8 @@ fn emit_asset_file_drop(app: &tauri::AppHandle, label: &str, paths: &[PathBuf], 
 
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             open_project,
             save_project,
