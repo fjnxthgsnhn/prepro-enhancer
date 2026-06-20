@@ -84,5 +84,6 @@ See [docs/release.md](docs/release.md) for updater signing keys, GitHub Secrets,
 ## Documentation
 
 - [Specification](docs/prepro-enhancer_spec.md)
+- [User Manual](docs/user-manual.md)
 - [Release Guide](docs/release.md)
 - [Backlog](docs/backlog.md)
