@@ -116,6 +116,7 @@ button {
 :root[data-theme="light"] .validation-panel,
 :root[data-theme="light"] .prompt-edit-column,
 :root[data-theme="light"] .prompt-token-editor,
+:root[data-theme="light"] .prompt-textarea,
 :root[data-theme="light"] .prompt-media-strip,
 :root[data-theme="light"] #agentsEditor,
 :root[data-theme="light"] .asset-modal,
@@ -1579,7 +1580,8 @@ button.active {
   white-space: nowrap;
 }
 
-.prompt-token-editor {
+.prompt-token-editor,
+.prompt-textarea {
   min-height: 0;
   padding: 14px;
   overflow: auto;
@@ -1593,8 +1595,49 @@ button.active {
   caret-color: var(--accent);
 }
 
-.prompt-token-editor:focus {
+.prompt-textarea {
+  width: 100%;
+  resize: none;
+  border: 0;
+}
+
+.prompt-token-editor:focus,
+.prompt-textarea:focus {
   box-shadow: inset 0 0 0 2px rgba(215, 255, 87, 0.3);
+}
+
+.prompt-reference-card {
+  position: relative;
+}
+
+.prompt-reference-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-height: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+}
+
+.prompt-reference-add {
+  align-self: stretch;
+  min-width: 124px;
+  justify-content: center;
+  border-style: dashed;
+}
+
+.prompt-reference-plus {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 22px;
+  line-height: 1;
 }
 
 .prompt-path-token {
@@ -1947,6 +1990,45 @@ button.active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.prompt-asset-picker {
+  max-height: 340px;
+  overflow: auto;
+}
+
+.prompt-asset-picker-item {
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.prompt-asset-picker-thumb {
+  display: block;
+}
+
+.prompt-asset-picker-thumb .prompt-media-thumb,
+.prompt-asset-picker-thumb .prompt-media-audio {
+  aspect-ratio: 1;
+  min-height: 0;
+}
+
+.prompt-asset-picker-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prompt-asset-picker-text strong,
+.prompt-asset-picker-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-asset-picker-empty {
+  padding: 12px;
+  color: var(--muted);
 }
 
 @keyframes moved-pulse {

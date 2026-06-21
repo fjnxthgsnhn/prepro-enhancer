@@ -521,36 +521,31 @@ for (const hiddenDetail of ["row_type", "parent_id", "order"]) {
 }
 await page.click('[data-view="promptEdit"]');
 await expectCount(".prompt-edit-column", 2);
-await expectText('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor', "extreme close-up");
-await expectText('.prompt-edit-column[data-field="video_prompt"] .prompt-token-editor', "slow dolly");
-if (await page.locator(".prompt-media-card").count()) throw new Error("PromptEdit should preview only paths written in the editor, not image/audio_file columns");
-const imeEditor = page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor');
-await imeEditor.evaluate((editor) => {
-  editor.focus();
-  editor.innerText = "";
-  editor.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
-  editor.innerText = "テスト";
-  editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "テスト", isComposing: true }));
-  editor.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "テスト" }));
-});
+await expectText('.prompt-edit-column[data-field="image_prompt"] .prompt-textarea', "extreme close-up");
+await expectText('.prompt-edit-column[data-field="video_prompt"] .prompt-textarea', "slow dolly");
+if (await page.locator(".prompt-media-card").count()) throw new Error("PromptEdit should show only linked references in the media strip");
+const imeEditor = page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-textarea');
+await imeEditor.fill("テスト");
 await page.waitForTimeout(250);
-const imeText = await imeEditor.evaluate((editor) => editor.innerText.trim());
+const imeText = await imeEditor.inputValue();
 if (imeText !== "テスト") throw new Error(`IME composition text should not duplicate: ${imeText}`);
 await expectText("#saveState", "Unsaved");
 await page.click('[data-view="table"]');
 await expectText('tbody tr[data-id="ct001"] td[data-column="image_prompt"]', "テスト");
 await page.click('[data-view="promptEdit"]');
-await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill("media/images/cut001.jpg\nstill prompt revised");
-await page.waitForFunction(() => document.querySelector('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]'));
-await page.waitForFunction(() => document.querySelector('.prompt-path-token[data-path="media/images/cut001.jpg"]'));
-await page.locator('.prompt-edit-column[data-field="video_prompt"] .prompt-token-editor').fill("media/audio/cut001.wav\nvideo prompt revised");
-await page.waitForFunction(() => document.querySelector('[data-preview-field="video_prompt"] .prompt-media-card[data-kind="audio"]'));
+await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-textarea').fill("media/images/cut001.jpg\nstill prompt revised");
+await page.waitForTimeout(250);
+if (await page.locator('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]').count()) throw new Error("PromptEdit should not create references from prompt body paths");
+await page.locator('.prompt-edit-column[data-field="video_prompt"] .prompt-textarea').fill("media/audio/cut001.wav\nvideo prompt revised");
+await page.waitForTimeout(250);
+if (await page.locator('[data-preview-field="video_prompt"] .prompt-media-card[data-kind="audio"]').count()) throw new Error("PromptEdit should not create audio references from prompt body paths");
 await page.click('[data-view="table"]');
-await expectText('tbody tr[data-id="ct001"] td[data-column="image_prompt"]', "still prompt revised");
-await expectText('tbody tr[data-id="ct001"] td[data-column="video_prompt"]', "video prompt revised");
+await expectText('tbody tr[data-id="ct001"] td[data-column="image_prompt"]', "media/images/cut001.jpg\nstill prompt revised");
+await expectText('tbody tr[data-id="ct001"] td[data-column="video_prompt"]', "media/audio/cut001.wav\nvideo prompt revised");
 await page.click('[data-view="promptEdit"]');
-await page.locator('.prompt-path-token[data-path="media/images/cut001.jpg"]').hover();
-await page.waitForFunction(() => !document.querySelector(".prompt-hover-preview")?.hidden);
+await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-textarea').fill("A\nB\nC");
+await page.waitForTimeout(250);
+if ((await page.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-textarea').inputValue()) !== "A\nB\nC") throw new Error("PromptEdit textarea should preserve multiline input");
 
 await page.click('[data-view="assets"]');
 await expectText("#assetsView", "Drop reference image files here");
@@ -598,6 +593,7 @@ await dropFiles(".asset-card", [{ name: "rui-updated.png", type: "image/png" }])
 await expectCount(".asset-card", 1);
 const updatedRuiAssetPath = "assets/rui-updated.png";
 await page.waitForFunction((path) => document.querySelector(`.asset-card .prompt-media-card[data-path="${path}"]`), updatedRuiAssetPath);
+const updatedRuiAssetId = await page.locator(".asset-card").first().getAttribute("data-asset-id");
 if ((await page.locator('.asset-card [data-asset-field="title"]').inputValue()) !== "Rui") throw new Error("Asset drop update should keep title");
 await page.locator(".asset-card .asset-thumb").click();
 await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "assets/rui-updated.png");
@@ -610,41 +606,32 @@ await page.locator(".asset-card").nth(1).click();
 await page.keyboard.press("Backspace");
 await expectCount(".asset-card", 1);
 await page.click('[data-view="promptEdit"]');
-const imagePromptEditor = '.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor';
-const videoPromptEditor = '.prompt-edit-column[data-field="video_prompt"] .prompt-token-editor';
-await clearPromptEditor(imagePromptEditor);
-await page.locator(imagePromptEditor).pressSequentially("@rui");
-await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@Rui"));
-await page.keyboard.press("Tab");
-if ((await promptEditorText(imagePromptEditor)) !== updatedRuiAssetPath) throw new Error("PromptEdit @ suggestion should replace on line 1");
-await clearPromptEditor(imagePromptEditor);
-await page.locator(imagePromptEditor).pressSequentially("A");
-await page.keyboard.press("Enter");
-await page.locator(imagePromptEditor).pressSequentially("@rui");
-await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@Rui"));
-await page.keyboard.press("Tab");
-if ((await promptEditorText(imagePromptEditor)) !== `A\n${updatedRuiAssetPath}`) throw new Error("PromptEdit @ suggestion should replace on line 2 without extra spaces");
-await clearPromptEditor(imagePromptEditor);
-await page.locator(imagePromptEditor).pressSequentially("A");
-await page.keyboard.press("Enter");
-await page.locator(imagePromptEditor).pressSequentially("B");
-await page.keyboard.press("Enter");
-await page.locator(imagePromptEditor).pressSequentially("@rui");
-await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@Rui"));
-await page.keyboard.press("Tab");
-if ((await promptEditorText(imagePromptEditor)) !== `A\nB\n${updatedRuiAssetPath}`) throw new Error("PromptEdit @ suggestion should replace on line 3 without extra spaces");
-await page.waitForFunction(() => document.querySelector('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]'));
-await clearPromptEditor(videoPromptEditor);
-await page.locator(videoPromptEditor).pressSequentially("参照:");
-await page.keyboard.press("Enter");
-await page.locator(videoPromptEditor).pressSequentially("@rui");
-await page.waitForFunction(() => document.querySelector(".asset-suggest")?.textContent?.includes("@Rui"));
-await page.locator(".asset-suggest button").first().click();
-if (!((await promptEditorText(videoPromptEditor)).endsWith(`\n${updatedRuiAssetPath}`))) throw new Error("PromptEdit @ suggestion should replace by mouse click after newline");
+const imagePromptEditor = '.prompt-edit-column[data-field="image_prompt"] .prompt-textarea';
+const videoPromptEditor = '.prompt-edit-column[data-field="video_prompt"] .prompt-textarea';
+await page.locator(imagePromptEditor).fill("A\nB\nC");
+await page.waitForTimeout(250);
+if ((await page.locator(imagePromptEditor).inputValue()) !== "A\nB\nC") throw new Error("PromptEdit textarea should preserve line breaks");
+await page.locator('.prompt-edit-column[data-field="image_prompt"] [data-prompt-ref-add]').click();
+await page.waitForFunction(() => document.querySelector(".prompt-asset-picker")?.textContent?.includes("Rui"));
+if (!(await page.locator(".prompt-asset-picker .prompt-media-thumb, .prompt-asset-picker .prompt-media-audio").count())) {
+  throw new Error("PromptEdit asset picker should show thumbnails");
+}
+await page.locator(".prompt-asset-picker button").first().click();
+await page.waitForFunction((path) => document.querySelector(`[data-preview-field="image_prompt"] .prompt-reference-card[data-path="${path}"]`), updatedRuiAssetPath);
+if ((await page.locator(imagePromptEditor).inputValue()) !== "A\nB\nC") throw new Error("Adding references should not modify prompt text");
+await page.locator('[data-preview-field="image_prompt"] [data-prompt-ref-remove]').click();
+await page.waitForFunction(() => !document.querySelector('[data-preview-field="image_prompt"] .prompt-reference-card'));
+await page.locator('.prompt-edit-column[data-field="image_prompt"] [data-prompt-ref-add]').click();
+await page.waitForFunction(() => document.querySelector(".prompt-asset-picker")?.textContent?.includes("Rui"));
+await page.locator(".prompt-asset-picker button").first().click();
+await page.waitForFunction((path) => document.querySelector(`[data-preview-field="image_prompt"] .prompt-reference-card[data-path="${path}"]`), updatedRuiAssetPath);
+await page.locator(videoPromptEditor).fill("参照:\nvideo prompt text");
+await page.waitForTimeout(250);
 await page.click('[data-view="table"]');
 await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
 const detailImagePrompt = page.locator("#detailPanel textarea").nth(0);
-await detailImagePrompt.fill("@rui");
+await detailImagePrompt.fill("");
+await detailImagePrompt.pressSequentially("@rui");
 await page.waitForFunction((path) => (
   document.querySelector(".asset-suggest")?.textContent?.includes("@Rui") ||
   document.querySelectorAll("#detailPanel textarea")[0]?.value.includes(path)
@@ -679,7 +666,11 @@ if (savedAssets.assets?.[0]?.title !== "Rui" || savedAssets.assets?.[0]?.path !=
   throw new Error("assets.json should persist registered assets");
 }
 if (!Array.isArray(savedPrompts.prompts)) throw new Error("prompts.json should persist prompt records");
+const savedImagePrompt = savedPrompts.prompts.find((prompt) => prompt.ownerId === "ct001" && prompt.kind === "image" && prompt.isActive);
+if (!savedImagePrompt?.linkedAssetIds?.includes(updatedRuiAssetId)) throw new Error("prompts.json should persist PromptEdit linkedAssetIds");
 if (!Array.isArray(savedGenerate.items)) throw new Error("generate.json should persist generated media records");
+await page.reload();
+await expectText("#projectName", "Sample Project");
 await page.click('[data-view="table"]');
 if ((await page.locator('td[data-column="title"] input').count()) !== 0) {
   throw new Error("First editable cell click should select the row without opening an input");
@@ -730,7 +721,7 @@ await page.click("#rightPanelToggle");
 await page.waitForFunction(() => !document.querySelector(".app-shell")?.classList.contains("right-collapsed") && [...document.querySelectorAll("#detailPanel label")].some((label) => label.textContent === "title"));
 
 const rowsBeforeDuplicate = await page.locator(".data-table tbody tr[data-id]").count();
-await page.click('tbody tr[data-id="ct004"]', { button: "right" });
+await page.click('tbody tr[data-id="ct003"]', { button: "right" });
 await expectText(".table-context-menu", "Duplicate");
 await expectText(".table-context-menu", "Delete");
 await page.locator(".table-context-menu button", { hasText: "Duplicate" }).click();
@@ -1148,14 +1139,12 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.evaluate(() => document.querySelector('tbody tr[data-id="ct778"] td[data-column="title"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
   await tauriPage.click('[data-view="promptEdit"]');
   const backslashRelativePreviewPath = "project\\narushisuto-DK\\assets\\episode_001\\人物レイアウト案_episode_001_mannequin_16x9.png";
-  await tauriPage.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-token-editor').fill(`C:\\Projects\\media\\absolute-preview.svg\nmedia/relative-preview.svg\n\`project/narushisuto-DK/assets/ルイ.png\`\n${backslashRelativePreviewPath}`);
-  await tauriPage.waitForFunction(() => document.querySelectorAll('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"] img').length === 4);
-  await tauriPage.waitForFunction(() => document.querySelector('.prompt-path-token[data-path="project/narushisuto-DK/assets/ルイ.png"]'));
-  await tauriPage.locator('.prompt-path-token[data-path="project/narushisuto-DK/assets/ルイ.png"]').hover();
-  await tauriPage.waitForFunction(() => document.querySelector(".prompt-hover-preview img"));
-  await tauriPage.waitForFunction((path) => [...document.querySelectorAll(".prompt-path-token")].some((token) => token.dataset.path === path), backslashRelativePreviewPath);
-  await tauriPage.locator(".prompt-path-token", { hasText: backslashRelativePreviewPath }).hover();
-  await tauriPage.waitForFunction(() => document.querySelector(".prompt-hover-preview img"));
+  await tauriPage.locator('.prompt-edit-column[data-field="image_prompt"] .prompt-textarea').fill(`C:\\Projects\\media\\absolute-preview.svg\nmedia/relative-preview.svg\n\`project/narushisuto-DK/assets/ルイ.png\`\n${backslashRelativePreviewPath}`);
+  await tauriPage.waitForTimeout(250);
+  if (await tauriPage.locator('[data-preview-field="image_prompt"] .prompt-media-card[data-kind="image"]').count()) {
+    throw new Error("PromptEdit should not create media previews from prompt body paths");
+  }
+  if (await tauriPage.locator(".prompt-path-token").count()) throw new Error("PromptEdit should not tokenize prompt body paths");
   await tauriPage.click('[data-view="assets"]');
   await dropFilesOnPage(tauriPage, "#assetsView", [
     { name: "local-rui.png", type: "image/png", path: "C:\\Projects\\assets\\local-rui.png" },

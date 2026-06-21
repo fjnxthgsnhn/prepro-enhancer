@@ -1079,7 +1079,27 @@ function activeGeneratedPath(cutId, type) {
 }
 
 function activePromptText(ownerId, kind) {
-  return state.prompts.find((prompt) => prompt.ownerId === ownerId && prompt.kind === kind && prompt.isActive)?.text || "";
+  return activePromptEntry(ownerId, kind)?.text || "";
+}
+
+function activePromptEntry(ownerId, kind) {
+  return state.prompts.find((prompt) => prompt.ownerId === ownerId && prompt.kind === kind && prompt.isActive) || null;
+}
+
+function ensureActivePrompt(ownerId, ownerType, kind) {
+  if (!ownerId || !kind) return null;
+  let prompt = activePromptEntry(ownerId, kind);
+  if (!prompt) {
+    prompt = normalizePrompt({ id: nextPromptId(), ownerId, ownerType, kind, status: "active", isActive: true });
+    state.prompts.push(prompt);
+  }
+  state.prompts.forEach((entry) => {
+    if (entry.ownerId === ownerId && entry.kind === kind && entry !== prompt) entry.isActive = false;
+  });
+  prompt.status = "active";
+  prompt.isActive = true;
+  prompt.updatedAt = new Date().toISOString();
+  return prompt;
 }
 
 function setActiveGeneratedMedia(cutId, type, path) {
@@ -1098,16 +1118,19 @@ function setActiveGeneratedMedia(cutId, type, path) {
 
 function setActivePrompt(ownerId, ownerType, kind, text) {
   if (!ownerId || !kind) return;
+  const current = activePromptEntry(ownerId, kind);
+  const linkedAssetIds = current?.linkedAssetIds?.length ? [...current.linkedAssetIds] : [];
   state.prompts.forEach((prompt) => {
     if (prompt.ownerId === ownerId && prompt.kind === kind) prompt.isActive = false;
   });
-  if (!text) return;
-  let prompt = state.prompts.find((entry) => entry.ownerId === ownerId && entry.kind === kind && entry.text === text);
+  if (!text && !linkedAssetIds.length) return;
+  let prompt = current || state.prompts.find((entry) => entry.ownerId === ownerId && entry.kind === kind && entry.text === text);
   if (!prompt) {
-    prompt = normalizePrompt({ id: nextPromptId(), ownerId, ownerType, kind, text, status: "active", isActive: true });
+    prompt = normalizePrompt({ id: nextPromptId(), ownerId, ownerType, kind, text, status: "active", isActive: true, linkedAssetIds });
     state.prompts.push(prompt);
   }
   prompt.text = text;
+  if (!prompt.linkedAssetIds?.length && linkedAssetIds.length) prompt.linkedAssetIds = linkedAssetIds;
   prompt.status = "active";
   prompt.isActive = true;
   prompt.updatedAt = new Date().toISOString();
@@ -2390,26 +2413,124 @@ function renderPromptEdit() {
   }
   el.promptEdit.innerHTML = `
     <div class="prompt-edit-layout" data-row-id="${escapeAttr(row.id)}">
-      ${promptEditColumnHtml("image_prompt", "Still Image", row.image_prompt || "")}
-      ${promptEditColumnHtml("video_prompt", "Video", row.video_prompt || "")}
+      ${promptEditColumnHtml(row, "image_prompt", "Still Image", row.image_prompt || "")}
+      ${promptEditColumnHtml(row, "video_prompt", "Video", row.video_prompt || "")}
     </div>
     <div class="prompt-hover-preview" hidden></div>`;
-  el.promptEdit.querySelectorAll(".prompt-token-editor").forEach((editor) => {
+  el.promptEdit.querySelectorAll(".prompt-textarea").forEach((editor) => {
     editor.addEventListener("focus", () => startPromptEditSession(editor));
-    editor.addEventListener("input", () => handlePromptEditorInput(editor));
-    editor.addEventListener("keydown", handlePromptEditorKeydown);
-    editor.addEventListener("compositionstart", () => startPromptEditorComposition(editor));
-    editor.addEventListener("compositionend", () => finishPromptEditorComposition(editor));
+    editor.addEventListener("input", () => handlePromptTextareaInput(editor));
     editor.addEventListener("blur", (event) => finishPromptEditSession(editor, event));
-    editor.addEventListener("paste", pastePlainText);
-    attachAssetAutocomplete(editor);
   });
-  el.promptEdit.querySelectorAll(".prompt-path-token").forEach((token) => {
-    token.addEventListener("mouseenter", (event) => showPromptHoverPreview(event, token.dataset.path || ""));
-    token.addEventListener("mousemove", (event) => positionPromptHoverPreview(event));
-    token.addEventListener("mouseleave", hidePromptHoverPreview);
+  el.promptEdit.querySelectorAll("[data-prompt-ref-add]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openPromptAssetPicker(event.currentTarget);
+    });
+  });
+  el.promptEdit.querySelectorAll("[data-prompt-ref-remove]").forEach((button) => {
+    button.addEventListener("click", (event) => removePromptReferenceAsset(event.currentTarget));
   });
   resolvePromptMediaPreviews();
+  resolvePromptReferencePreviews();
+}
+
+function bindPromptReferenceControls(root = el.promptEdit) {
+  root?.querySelectorAll("[data-prompt-ref-add]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openPromptAssetPicker(event.currentTarget);
+    });
+  });
+  root?.querySelectorAll("[data-prompt-ref-remove]").forEach((button) => {
+    button.addEventListener("click", (event) => removePromptReferenceAsset(event.currentTarget));
+  });
+}
+
+function openPromptAssetPicker(button) {
+  closeAssetSuggest();
+  const row = getRow(state.activeId);
+  const field = button?.dataset?.promptRefAdd || "";
+  if (!row || !field) return;
+  const prompt = activePromptEntry(row.id, promptKindFromField(field));
+  const linked = new Set(prompt?.linkedAssetIds || []);
+  const candidates = state.assets.filter((asset) => asset.id && !linked.has(asset.id));
+  const popup = document.createElement("div");
+  popup.className = "asset-suggest prompt-asset-picker";
+  const rect = button.getBoundingClientRect();
+  popup.style.left = `${Math.max(8, rect.left)}px`;
+  popup.style.top = `${Math.min(window.innerHeight - 260, rect.bottom + 8)}px`;
+  popup.innerHTML = candidates.length
+    ? candidates.map((asset, index) => promptAssetPickerItemHtml(asset, index)).join("")
+    : `<div class="prompt-asset-picker-empty">No assets available.</div>`;
+  popup.querySelectorAll("[data-prompt-asset-index]").forEach((item) => {
+    item.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      addPromptReferenceAsset(field, candidates[Number(item.dataset.promptAssetIndex)]?.id || "");
+    });
+  });
+  document.body.appendChild(popup);
+  state.assetSuggest = { popup, target: button, context: { field }, matches: candidates, index: 0 };
+  resolvePromptAssetPickerPreviews(popup);
+}
+
+function promptAssetPickerItemHtml(asset, index) {
+  return `
+    <button type="button" class="prompt-asset-picker-item" data-prompt-asset-index="${index}" data-path="${escapeAttr(asset.path)}">
+      <div class="prompt-asset-picker-thumb">${promptMediaCardBodyHtml(asset.path)}</div>
+      <span class="prompt-asset-picker-text">
+        <strong>${escapeHtml(assetDisplayName(asset))}</strong>
+        <small>${escapeHtml(asset.path || asset.id)}</small>
+      </span>
+    </button>`;
+}
+
+async function resolvePromptAssetPickerPreviews(root) {
+  const items = [...(root?.querySelectorAll?.(".prompt-asset-picker-item[data-path]") || [])];
+  await Promise.all(items.map((item) => resolvePromptMediaPath(item.dataset.path || "")));
+  items.forEach((item) => {
+    const path = item.dataset.path || "";
+    const thumb = item.querySelector(".prompt-asset-picker-thumb");
+    if (thumb) thumb.innerHTML = promptMediaCardBodyHtml(path);
+  });
+}
+
+function addPromptReferenceAsset(field, assetId) {
+  const row = getRow(state.activeId);
+  const asset = assetById(assetId);
+  if (!row || !field || !asset) return;
+  const prompt = ensureActivePrompt(row.id, row.row_type, promptKindFromField(field));
+  if (!prompt) return;
+  if (!prompt.linkedAssetIds.includes(asset.id)) {
+    pushHistory();
+    prompt.linkedAssetIds.push(asset.id);
+    prompt.updatedAt = new Date().toISOString();
+    markDirty();
+  }
+  closeAssetSuggest();
+  syncRowsFromJsonState();
+  renderPromptEdit();
+  renderPrompt();
+  renderStatus(validate());
+}
+
+function removePromptReferenceAsset(button) {
+  const row = getRow(state.activeId);
+  const field = button?.dataset?.promptRefRemove || "";
+  const assetId = button?.dataset?.assetId || "";
+  const prompt = row ? activePromptEntry(row.id, promptKindFromField(field)) : null;
+  if (!prompt || !assetId) return;
+  const next = prompt.linkedAssetIds.filter((id) => id !== assetId);
+  if (next.length === prompt.linkedAssetIds.length) return;
+  pushHistory();
+  prompt.linkedAssetIds = next;
+  prompt.updatedAt = new Date().toISOString();
+  if (!prompt.text && !prompt.linkedAssetIds.length) prompt.isActive = false;
+  markDirty();
+  syncRowsFromJsonState();
+  renderPromptEdit();
+  renderPrompt();
+  renderStatus(validate());
 }
 
 function renderAssets() {
@@ -2972,8 +3093,7 @@ function mediaTypeFromPath(path) {
   return "image";
 }
 
-function promptEditColumnHtml(field, label, value) {
-  const paths = extractPromptMediaPaths(value);
+function promptEditColumnHtml(row, field, label, value) {
   return `
     <section class="prompt-edit-column" data-field="${field}">
       <header class="prompt-edit-header">
@@ -2982,10 +3102,43 @@ function promptEditColumnHtml(field, label, value) {
         <code>${escapeHtml(field)}</code>
       </header>
       <div class="prompt-media-strip" data-preview-field="${field}">
-        ${promptMediaPreviewHtml(paths)}
+        ${promptReferenceStripHtml(row, field)}
       </div>
-      <div class="prompt-token-editor" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" data-field="${field}">${tokenizePromptText(value)}</div>
+      <textarea class="prompt-textarea" spellcheck="false" data-field="${field}" aria-label="${escapeAttr(field)}">${escapeHtml(value)}</textarea>
     </section>`;
+}
+
+function promptReferenceStripHtml(row, field) {
+  const prompt = activePromptEntry(row.id, promptKindFromField(field));
+  const ids = [...new Set(prompt?.linkedAssetIds || [])];
+  const empty = ids.length ? "" : `<div class="prompt-preview-empty">No references selected.</div>`;
+  return `${empty}${ids.map((assetId) => promptReferenceCardHtml(assetId, field)).join("")}<button class="prompt-reference-add" type="button" data-prompt-ref-add="${escapeAttr(field)}" title="Add reference"><span class="prompt-reference-plus">+</span><span class="icon-button-label">Add reference</span></button>`;
+}
+
+function promptReferenceCardHtml(assetId, field) {
+  const asset = assetById(assetId);
+  if (!asset) {
+    return `
+      <article class="prompt-media-card prompt-reference-card missing" data-asset-id="${escapeAttr(assetId)}">
+        <div class="prompt-media-thumb"><span>Missing</span></div>
+        <div class="prompt-media-path" title="${escapeAttr(assetId)}">${escapeHtml(assetId)}</div>
+        <button class="prompt-reference-remove" type="button" data-prompt-ref-remove="${escapeAttr(field)}" data-asset-id="${escapeAttr(assetId)}" title="Remove reference">${iconHtml("close", "small-icon")}</button>
+      </article>`;
+  }
+  return `
+    <article class="prompt-media-card prompt-reference-card" data-asset-id="${escapeAttr(asset.id)}" data-path="${escapeAttr(asset.path)}">
+      ${promptMediaCardBodyHtml(asset.path)}
+      <div class="prompt-media-path" title="${escapeAttr(asset.path || asset.id)}">${escapeHtml(assetDisplayName(asset))}</div>
+      <button class="prompt-reference-remove" type="button" data-prompt-ref-remove="${escapeAttr(field)}" data-asset-id="${escapeAttr(asset.id)}" title="Remove reference">${iconHtml("close", "small-icon")}</button>
+    </article>`;
+}
+
+function promptKindFromField(field) {
+  return field === "video_prompt" ? "video" : "image";
+}
+
+function assetDisplayName(asset) {
+  return asset?.title || fileNameFromPath(asset?.path || "") || asset?.id || "Asset";
 }
 
 function promptMediaPreviewHtml(paths) {
@@ -2999,15 +3152,22 @@ function promptMediaCardHtml(path, compact = false) {
   }
   const kind = promptMediaKind(path);
   const resolved = promptMediaResolution(path);
-  const url = resolved?.url || "";
   const label = escapeHtml(path);
   const missing = resolved?.status === "missing";
   const loading = !resolved && !isBrowserSafeMediaPath(path) && !state.mediaUrls.has(path);
+  return `<article class="prompt-media-card${compact ? " compact" : ""}${missing ? " missing" : ""}${loading ? " loading" : ""}" data-kind="${kind}" data-path="${escapeAttr(path)}">${promptMediaCardBodyHtml(path)}<div class="prompt-media-path" title="${escapeAttr(path)}">${label}</div></article>`;
+}
+
+function promptMediaCardBodyHtml(path) {
+  const kind = promptMediaKind(path);
+  const resolved = promptMediaResolution(path);
+  const url = resolved?.url || "";
+  const missing = resolved?.status === "missing";
+  const loading = !resolved && !isBrowserSafeMediaPath(path) && !state.mediaUrls.has(path);
   const placeholder = missing ? "Missing / not readable" : "Loading preview...";
-  const body = kind === "image"
+  return kind === "image"
     ? `<div class="prompt-media-thumb">${url ? `<img src="${escapeAttr(url)}" alt="">` : `<span>${placeholder}</span>`}</div>`
     : `<div class="prompt-media-audio">${url ? `<audio controls src="${escapeAttr(url)}"></audio>` : `<span>${placeholder}</span>`}</div>`;
-  return `<article class="prompt-media-card${compact ? " compact" : ""}${missing ? " missing" : ""}${loading ? " loading" : ""}" data-kind="${kind}" data-path="${escapeAttr(path)}">${body}<div class="prompt-media-path" title="${escapeAttr(path)}">${label}</div></article>`;
 }
 
 function tokenizePromptText(text) {
@@ -3053,6 +3213,14 @@ function handlePromptEditorInput(editor) {
     retokenizePromptEditor(editor);
   }, 160);
   renderPromptEditorPreview(editor.dataset.field, promptEditorText(editor));
+}
+
+function handlePromptTextareaInput(editor) {
+  const key = promptEditorKey(editor);
+  const session = state.promptEditSessions.get(key) || { rowId: state.activeId, field: editor.dataset.field, historyPushed: false, timer: null };
+  clearTimeout(session.timer);
+  state.promptEditSessions.set(key, session);
+  session.timer = setTimeout(() => commitPromptEditor(editor), 120);
 }
 
 function startPromptEditorComposition(editor) {
@@ -3116,8 +3284,13 @@ function commitPromptEditor(editor) {
 function renderPromptEditorPreview(field, text) {
   const preview = el.promptEdit?.querySelector(`[data-preview-field="${field}"]`);
   if (preview) {
-    preview.innerHTML = promptMediaPreviewHtml(extractPromptMediaPaths(text));
-    resolvePromptMediaPreviews(preview);
+    const row = getRow(state.activeId);
+    if (row) {
+      preview.innerHTML = promptReferenceStripHtml(row, field);
+      bindPromptReferenceControls(preview);
+      resolvePromptMediaPreviews(preview);
+      resolvePromptReferencePreviews(preview);
+    }
   }
 }
 
@@ -3131,6 +3304,7 @@ function retokenizePromptEditor(editor) {
 }
 
 function promptEditorText(editor) {
+  if (editor?.tagName === "TEXTAREA") return normalizePromptEditorText(editor.value);
   return normalizePromptEditorText(promptEditorPlainText(editor));
 }
 
@@ -3439,11 +3613,22 @@ function promptMediaResolution(path) {
 }
 
 async function resolvePromptMediaPreviews(root = el.promptEdit) {
-  const cards = [...(root?.querySelectorAll?.(".prompt-media-card[data-path]") || [])];
+  const cards = [...(root?.querySelectorAll?.(".prompt-media-card[data-path]:not(.prompt-reference-card)") || [])];
   await Promise.all(cards.map((card) => resolvePromptMediaPath(card.dataset.path || "")));
   cards.forEach((card) => {
     const path = card.dataset.path || "";
     card.outerHTML = promptMediaCardHtml(path, card.classList.contains("compact"));
+  });
+}
+
+async function resolvePromptReferencePreviews(root = el.promptEdit) {
+  const cards = [...(root?.querySelectorAll?.(".prompt-reference-card[data-path]") || [])];
+  await Promise.all(cards.map((card) => resolvePromptMediaPath(card.dataset.path || "")));
+  cards.forEach((card) => {
+    const path = card.dataset.path || "";
+    const body = card.querySelector(".prompt-media-thumb, .prompt-media-audio");
+    if (body) body.outerHTML = promptMediaCardBodyHtml(path);
+    card.classList.toggle("missing", promptMediaResolution(path)?.status === "missing");
   });
 }
 
