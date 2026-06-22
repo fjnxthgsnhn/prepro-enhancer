@@ -7,7 +7,7 @@ import { deflateRawSync } from "node:zlib";
 
 const REAL_TAURI_DND_ASSET_PATH = "H:\\AICreation\\project\\narushisuto-DK\\assets\\episode_001\\BG_教室.png";
 const REAL_TAURI_DND_PROJECT_PATH = "H:\\AICreation\\project\\narushisuto-DK\\episode_001_03.lctproj";
-const REAL_TAURI_DND_REGISTERED_PATH = "assets/episode_001/BG_教室.png";
+const REAL_TAURI_DND_REGISTERED_PATH = REAL_TAURI_DND_ASSET_PATH.replace(/\\/g, "/");
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
@@ -1035,7 +1035,9 @@ function expectAgentsMd(content, label) {
   if (!content.includes("グループ元の multicut に `image_prompt`")) throw new Error(`${label} AGENTS.md should document multicut image prompt policy`);
   if (!content.includes("gpt-image-2")) throw new Error(`${label} AGENTS.md should document gpt-image-2 reference handling`);
   if (!content.includes("nanobanana")) throw new Error(`${label} AGENTS.md should document nanobanana reference handling`);
-  if (!content.includes("reference image パス文字列は削除")) throw new Error(`${label} AGENTS.md should document generation prompt cleanup`);
+  if (!content.includes("ファイルパスを登録する場合は、可能な限り相対パスではなくフルパス")) throw new Error(`${label} AGENTS.md should document full-path media registration`);
+  if (!content.includes("プロンプト本文には reference image のファイルパスを列挙しない")) throw new Error(`${label} AGENTS.md should document PromptEdit reference separation`);
+  if (!content.includes("`linkedAssetIds` から `assets.json` のフルパスを解決")) throw new Error(`${label} AGENTS.md should document linkedAssetIds reference resolution`);
   if (!content.includes("`.lctproj` is a ZIP archive")) throw new Error(`${label} AGENTS.md should document lctproj zip archive format`);
   if (!content.includes("At the ZIP root, at minimum `manifest.json` and `cutlist.tsv`")) throw new Error(`${label} AGENTS.md should document required zip root files`);
   if (!content.includes("Compress-Archive")) throw new Error(`${label} AGENTS.md should include a PowerShell rearchive example`);
@@ -1093,11 +1095,11 @@ async function runTauriWelcomeSmoke(browser) {
       ["manifest.json", JSON.stringify({ projectName: "Recent Project Changed", mainCutlist: "cutlist.tsv" })],
       ["cutlist.tsv", `${window.__expectedHeaders().join("\t")}\nscene\tsc777\t\t1\tLLM Updated Scene\t\t\t\t\t\t\t\t\t\t\t\t\ncut\tct778\tsc777\t1\tLLM Added Cut\t2s\t\t\t\t\t\t\t\t\t\t\t`],
       ["assets.json", JSON.stringify({ format: "LocalCutBoardAssets", formatVersion: "1.0.0", assets: [
-        { id: "asset_refresh", path: "media/references/refresh-ref.png", type: "reference_image", title: "Refresh Ref" },
+        { id: "asset_refresh", path: "C:/Missing/refresh-ref.png", type: "reference_image", title: "Refresh Ref" },
       ] })],
       ["generate.json", JSON.stringify({ format: "LocalCutBoardGeneratedMedia", formatVersion: "1.0.0", items: [
-        { id: "gen_refresh_image", cutId: "ct778", type: "image", path: "media/images/refresh-cut.png", status: "candidate", isActive: true },
-        { id: "gen_refresh_audio", cutId: "ct778", type: "audio", path: "media/audio/refresh-cut.wav", status: "candidate", isActive: true },
+        { id: "gen_refresh_image", cutId: "ct778", type: "image", path: "C:/Missing/refresh-cut.png", status: "candidate", isActive: true },
+        { id: "gen_refresh_audio", cutId: "ct778", type: "audio", path: "C:/Missing/refresh-cut.wav", status: "candidate", isActive: true },
       ] })],
       ["prompts.json", JSON.stringify({ format: "LocalCutBoardPrompts", formatVersion: "1.0.0", prompts: [
         { id: "prompt_refresh_image", ownerId: "ct778", ownerType: "cut", kind: "image", text: "Refreshed image prompt from JSON", status: "active", isActive: true },
@@ -1111,11 +1113,32 @@ async function runTauriWelcomeSmoke(browser) {
   await expectPageText(tauriPage, "#projectName", "Recent Project Changed");
   await expectPageText(tauriPage, "#counts", "scene 1 / multicut 0 / cut 1");
   await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "LLM Updated Scene");
-  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="image"]', "media/images/refresh-cut.png");
-  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="audio_file"]', "media/audio/refresh-cut.wav");
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="image"]', "C:/Missing/refresh-cut.png");
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="audio_file"]', "C:/Missing/refresh-cut.wav");
   await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="image_prompt"]', "Refreshed image prompt from JSON");
   await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="video_prompt"]', "Refreshed video prompt from JSON");
+  await tauriPage.waitForFunction(() => document.querySelector("#validationPanel")?.textContent?.includes("audio may be missing"));
+  await tauriPage.waitForFunction(() => document.querySelector("#validationPanel")?.textContent?.includes("image may be missing"));
+  await tauriPage.waitForFunction(() => document.querySelector("#validationPanel")?.textContent?.includes("asset may be missing"));
+  await tauriPage.evaluate(() => {
+    window.__tauriMockMediaFiles.set("C:\\RepairRoot\\found\\refresh-cut.png", new Uint8Array([137, 80, 78, 71]));
+    window.__tauriMockMediaFiles.set("C:\\RepairRoot\\found\\refresh-cut.wav", new Uint8Array([82, 73, 70, 70]));
+    window.__tauriMockMediaFiles.set("C:\\RepairRoot\\found\\refresh-ref.png", new Uint8Array([137, 80, 78, 71]));
+  });
+  tauriPage.once("dialog", async (dialog) => {
+    if (!dialog.message().includes("Repaired 3 file links")) throw new Error(`Unexpected repair alert: ${dialog.message()}`);
+    await dialog.accept();
+  });
+  await tauriPage.evaluate(() => document.querySelector('[data-file-action="repairFileLinks"]')?.click());
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="image"]', "C:/RepairRoot/found/refresh-cut.png");
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="audio_file"]', "C:/RepairRoot/found/refresh-cut.wav");
+  await tauriPage.waitForFunction(() => !document.querySelector("#validationPanel")?.textContent?.includes("audio may be missing"));
+  await tauriPage.waitForFunction(() => !document.querySelector("#validationPanel")?.textContent?.includes("image may be missing"));
   await tauriPage.click('[data-view="assets"]');
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/RepairRoot/found/refresh-ref.png"]'));
+  await tauriPage.waitForFunction(() => !document.querySelector("#validationPanel")?.textContent?.includes("asset may be missing"));
+  const linkRepairBackupPaths = await tauriPage.evaluate(() => [...window.__tauriMockFiles.keys()].filter((path) => path.includes("_before-repair-links.lctproj")));
+  if (!linkRepairBackupPaths.length) throw new Error("Repair File Links should create a before-repair backup");
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card [data-asset-field="title"]')?.value === "Refresh Ref");
   await tauriPage.click('[data-view="agents"]');
   await tauriPage.waitForFunction(() => document.querySelector("#agentsEditor")?.value.includes("# Refreshed Agents"));
@@ -1154,8 +1177,8 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length >= 4);
   const assetCountAfterFileDrops = await tauriPage.locator(".asset-card").count();
   const tauriAssetPaths = await tauriPage.$$eval(".asset-card .prompt-media-card[data-path]", (cards) => cards.map((card) => card.dataset.path));
-  for (const expectedPath of ["assets/local-rui.png", "D:/External/external-rui.png", "assets/fallback-rui.png"]) {
-    if (!tauriAssetPaths.includes(expectedPath)) throw new Error(`Dropped asset path should preserve project-relative/external policy: ${expectedPath}`);
+  for (const expectedPath of ["C:/Projects/assets/local-rui.png", "D:/External/external-rui.png", "assets/fallback-rui.png"]) {
+    if (!tauriAssetPaths.includes(expectedPath)) throw new Error(`Dropped asset path should preserve full-path policy: ${expectedPath}`);
   }
   await tauriPage.evaluate(() => {
     const target = document.querySelector(".assets-drop-zone");
@@ -1170,14 +1193,14 @@ async function runTauriWelcomeSmoke(browser) {
     });
   });
   await tauriPage.waitForFunction(
-    () => document.querySelector('.asset-card .prompt-media-card[data-path="assets/episode_001/BG_恒一_ルイ.png"]') &&
+    () => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/assets/episode_001/BG_恒一_ルイ.png"]') &&
       document.querySelector('.asset-card .prompt-media-card[data-path="C:/Users/huge2/Downloads/ChatGPT Image 2026年5月27日 00_31_09.png"]'),
   );
   const assetCountAfterNativeDrop = await tauriPage.locator(".asset-card").count();
   if (assetCountAfterNativeDrop < assetCountAfterFileDrops + 1) throw new Error("Native Tauri drop should add dropped assets");
   const nativeDropAssetPaths = await tauriPage.$$eval(".asset-card .prompt-media-card[data-path]", (cards) => cards.map((card) => card.dataset.path));
   for (const expectedPath of [
-    "assets/episode_001/BG_恒一_ルイ.png",
+    "C:/Projects/assets/episode_001/BG_恒一_ルイ.png",
     "C:/Users/huge2/Downloads/ChatGPT Image 2026年5月27日 00_31_09.png",
   ]) {
     if (!nativeDropAssetPaths.includes(expectedPath)) throw new Error(`Native Tauri drop should preserve full path: ${expectedPath}`);
@@ -1194,7 +1217,7 @@ async function runTauriWelcomeSmoke(browser) {
     });
   });
   await tauriPage.waitForFunction((count) => document.querySelectorAll(".asset-card").length === count, assetCountAfterNativeDrop);
-  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="assets/episode_001/updated-native-rui.png"]'));
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/assets/episode_001/updated-native-rui.png"]'));
   await tauriPage.waitForFunction(() => [...document.querySelectorAll('.asset-card [data-asset-field="title"]')].some((input) => input.value === "local-rui"));
   await tauriPage.waitForFunction(() => document.querySelector(".app-toast.visible")?.textContent?.includes("Save the project"));
   await tauriPage.evaluate(() => {
@@ -1216,7 +1239,7 @@ async function runTauriWelcomeSmoke(browser) {
     });
   });
   await tauriPage.waitForFunction((count) => document.querySelectorAll(".asset-card").length === count + 1, assetCountAfterNativeDrop);
-  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="assets/asset-file-drop-fallback.png"]'));
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/assets/asset-file-drop-fallback.png"]'));
   await tauriPage.evaluate(() => {
     const target = document.querySelector('.asset-card .prompt-media-card[data-path="D:/External/external-rui.png"]')?.closest(".asset-card");
     target?.querySelector(".asset-thumb")?.click();
@@ -1243,7 +1266,7 @@ async function runTauriWelcomeSmoke(browser) {
       scaleFactor: 1,
     });
   });
-  await tauriEventFallbackPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="assets/tauri-event-fallback.png"]'));
+  await tauriEventFallbackPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/assets/tauri-event-fallback.png"]'));
   await tauriEventFallbackPage.close();
   await runRealTauriAssetDropSmoke(browser);
   await tauriPage.click('[data-view="table"]');
@@ -1540,7 +1563,7 @@ async function installTauriMock(targetPage, options = {}) {
             const mediaPath = args.mediaPath || args.media_path;
             const normalized = mediaPath.replace(/\//g, "\\");
             const base = projectPath.replace(/[\\/][^\\/]+$/, "");
-            const candidates = [/^[A-Za-z]:[\\/]/.test(mediaPath) || mediaPath.startsWith("/") ? [mediaPath] : [
+            const candidates = [/^[A-Za-z]:[\\/]/.test(mediaPath) || mediaPath.startsWith("/") ? [mediaPath, normalized] : [
               `${base}\\${normalized}`,
               `C:\\${normalized}`,
               mediaPath,
@@ -1553,7 +1576,27 @@ async function installTauriMock(targetPage, options = {}) {
           if (command === "pick_asset_file") {
             const path = config.pickAssetPath || "C:\\Projects\\media\\picked-asset.png";
             const bytes = mediaFiles.get(path) || new Uint8Array([137, 80, 78, 71]);
-            return { path: "media/picked-asset.png", file_name: path.split(/[\\/]/).pop(), bytes };
+            return { path, file_name: path.split(/[\\/]/).pop(), bytes };
+          }
+          if (command === "path_exists") {
+            const path = args.path || "";
+            return mediaFiles.has(path) || mediaFiles.has(path.replace(/\//g, "\\")) || files.has(path);
+          }
+          if (command === "pick_repair_root") {
+            const path = config.repairRoot || "C:\\RepairRoot";
+            return { path, file_name: path.split(/[\\/]/).pop() };
+          }
+          if (command === "find_files_by_names") {
+            const root = args.root || "";
+            const wanted = new Set((args.names || []).map((name) => String(name).toLowerCase()));
+            const matches = new Map([...wanted].map((name) => [name, []]));
+            for (const path of mediaFiles.keys()) {
+              const normalizedPath = path.replace(/\//g, "\\");
+              if (!normalizedPath.toLowerCase().startsWith(root.toLowerCase())) continue;
+              const name = normalizedPath.split(/[\\/]/).pop().toLowerCase();
+              if (matches.has(name)) matches.get(name).push(path);
+            }
+            return [...matches.entries()].map(([name, paths]) => ({ name, paths }));
           }
           if (command === "save_project_backup") {
             const projectPath = args.projectPath || args.project_path;

@@ -109,7 +109,7 @@ const DEFAULT_MANIFEST = {
   prompts: "prompts.json",
   timeline: "timeline.json",
   settings: "settings.json",
-  pathMode: "relative",
+  pathMode: "absolute",
   mediaRoots: {
     project: ".",
     media: "media",
@@ -204,7 +204,9 @@ const PROJECT_AGENTS_MD = [
   "画像生成へ進む前に、API や skill を使って画像生成するかをユーザーに確認する。",
   "画像生成する場合は、ユーザー環境で利用できる API や skill を調べ、どの手段で生成するかをユーザーに質問して決定する。",
   "API や skill で生成した画像は、作業フォルダに `assets/<project-file-name>/` を作成し、用途が分かるファイル名へリネームして保存またはコピーする。",
-  "保存した画像ファイルのパスを、対応する assets 登録アイテムの `path` に記録する。",
+  "保存した画像ファイルのパスを、対応する assets 登録アイテムの `path` にフルパスで記録する。",
+  "アプリ内で参照する外部ファイルはフルパス優先で管理する。`assets.json` の `assets[].path`、`generate.json` の `items[].path`、`cutlist.tsv` の `image` / `audio_file` / `video_file` にファイルパスを登録する場合は、可能な限り相対パスではなくフルパスを使う。",
+  "例外として、`.lctproj` 内に同梱された `media/...` はZIP内部パスのまま扱う。",
   "複数枚を生成する場合はバッチスクリプトを作成し、バックグラウンドスクリプトとして実行する。LLM は生成完了のレスポンス待ちでブロックしない。",
   "",
   "### Still image prompt creation",
@@ -216,12 +218,12 @@ const PROJECT_AGENTS_MD = [
   "人物やサブジェクトの reference asset がある場合は、`assets.json` に登録されているファイルパスを使用する。",
   "画像生成エンジンが reference image 指定記法を必要とする場合は、その記法に置き換える。gpt-image-2 ではアップロード順に `image 1`, `image 2`, `image 3` のように参照する。",
   "nanobanana の場合は自然言語で直接参照できるため、reference image 指定記法への置き換えはしない。",
-  "プロンプトの最後には、使用する reference image のファイルパスを列挙し、アプリ側がプレビュー対象として参照できるようにする。",
+  "アプリ側で使用する reference image は PromptEdit の上部メディア欄、または `prompts.json` の `linkedAssetIds` で管理する。プロンプト本文には reference image のファイルパスを列挙しない。",
   "",
   "### Still image generation",
   "",
   "API や skill で静止画生成する場合は、作成済みの `image_prompt` と reference image を使用して生成する。",
-  "生成 API や skill に渡す直前に、プロンプト末尾へ列挙した reference image パス文字列は削除する。",
+  "生成 API や skill に渡す reference image は、`linkedAssetIds` から `assets.json` のフルパスを解決して使用する。",
   "複数枚を生成する場合はバッチスクリプトを作成し、バックグラウンドスクリプトとして実行する。LLM は生成完了のレスポンス待ちでブロックしない。",
   "",
   "## Final Delivery for Chat AI Editing",
@@ -272,7 +274,7 @@ const UI_SETTINGS_KEY = "preproEnhancer.uiSettings.v1";
 
 const I18N = {
   en: {
-    "menu.file": "File", "menu.new": "NewProject", "menu.open": "OpenProject", "menu.save": "Save", "menu.saveAs": "Save as", "menu.settings": "Settings", "menu.recovery": "Recovery", "menu.createBackup": "Create Backup Now", "menu.restoreBackup": "Restore Backup", "menu.repairCurrentTsv": "Repair Current TSV", "menu.repairTsvFile": "Repair TSV File", "menu.export": "Export", "menu.llmTsv": "LLM TSV",
+    "menu.file": "File", "menu.new": "NewProject", "menu.open": "OpenProject", "menu.save": "Save", "menu.saveAs": "Save as", "menu.settings": "Settings", "menu.recovery": "Recovery", "menu.createBackup": "Create Backup Now", "menu.restoreBackup": "Restore Backup", "menu.repairFileLinks": "Repair File Links", "menu.repairCurrentTsv": "Repair Current TSV", "menu.repairTsvFile": "Repair TSV File", "menu.export": "Export", "menu.llmTsv": "LLM TSV",
     "action.refreshProject": "Refresh Project", "action.refreshProjectTitle": "Refresh project",
     "view.table": "Table", "view.storyboard": "Storyboard", "view.timeline": "Timeline", "view.promptEdit": "PromptEdit", "view.assets": "Assets", "view.agents": "Agents",
     "search.label": "Search", "status.saved": "Saved", "status.unsaved": "Unsaved", "status.never": "Never", "status.noFile": "No file loaded", "status.browserWorkspace": "Browser workspace", "status.missing": "Missing", "status.savedAt": "Saved",
@@ -282,7 +284,7 @@ const I18N = {
     "empty.recent": "Recent projects will appear here.", "empty.tree": "Open a TSV or load the sample.", "empty.table": "No rows. Add a row to start.", "empty.search": "No rows match the current search.",
   },
   ja: {
-    "menu.file": "ファイル", "menu.new": "新規プロジェクト", "menu.open": "プロジェクトを開く", "menu.save": "保存", "menu.saveAs": "別名保存", "menu.settings": "設定", "menu.recovery": "復旧", "menu.createBackup": "今すぐバックアップ", "menu.restoreBackup": "バックアップ復元", "menu.repairCurrentTsv": "現在のTSVを修復", "menu.repairTsvFile": "TSVファイルを修復", "menu.export": "書き出し", "menu.llmTsv": "LLM TSV",
+    "menu.file": "ファイル", "menu.new": "新規プロジェクト", "menu.open": "プロジェクトを開く", "menu.save": "保存", "menu.saveAs": "別名保存", "menu.settings": "設定", "menu.recovery": "復旧", "menu.createBackup": "今すぐバックアップ", "menu.restoreBackup": "バックアップ復元", "menu.repairFileLinks": "ファイルリンクを修復", "menu.repairCurrentTsv": "現在のTSVを修復", "menu.repairTsvFile": "TSVファイルを修復", "menu.export": "書き出し", "menu.llmTsv": "LLM TSV",
     "action.refreshProject": "プロジェクト更新", "action.refreshProjectTitle": "プロジェクトを更新",
     "view.table": "テーブル", "view.storyboard": "絵コンテ", "view.timeline": "タイムライン", "view.promptEdit": "プロンプト編集", "view.assets": "素材", "view.agents": "Agents",
     "search.label": "検索", "status.saved": "保存済み", "status.unsaved": "未保存", "status.never": "未保存", "status.noFile": "ファイル未選択", "status.browserWorkspace": "ブラウザ作業領域", "status.missing": "不足", "status.savedAt": "保存",
@@ -292,7 +294,7 @@ const I18N = {
     "empty.recent": "最近使ったプロジェクトが表示されます。", "empty.tree": "TSVを開くかサンプルを読み込んでください。", "empty.table": "行がありません。行を追加してください。", "empty.search": "検索条件に一致する行がありません。",
   },
   zh: {
-    "menu.file": "文件", "menu.new": "新建项目", "menu.open": "打开项目", "menu.save": "保存", "menu.saveAs": "另存为", "menu.settings": "设置", "menu.recovery": "恢复", "menu.createBackup": "立即备份", "menu.restoreBackup": "恢复备份", "menu.repairCurrentTsv": "修复当前TSV", "menu.repairTsvFile": "修复TSV文件", "menu.export": "导出", "menu.llmTsv": "LLM TSV",
+    "menu.file": "文件", "menu.new": "新建项目", "menu.open": "打开项目", "menu.save": "保存", "menu.saveAs": "另存为", "menu.settings": "设置", "menu.recovery": "恢复", "menu.createBackup": "立即备份", "menu.restoreBackup": "恢复备份", "menu.repairFileLinks": "修复文件链接", "menu.repairCurrentTsv": "修复当前TSV", "menu.repairTsvFile": "修复TSV文件", "menu.export": "导出", "menu.llmTsv": "LLM TSV",
     "action.refreshProject": "刷新项目", "action.refreshProjectTitle": "刷新项目",
     "view.table": "表格", "view.storyboard": "故事板", "view.timeline": "时间线", "view.promptEdit": "提示编辑", "view.assets": "素材", "view.agents": "Agents",
     "search.label": "搜索", "status.saved": "已保存", "status.unsaved": "未保存", "status.never": "从未", "status.noFile": "未加载文件", "status.browserWorkspace": "浏览器工作区", "status.missing": "缺失", "status.savedAt": "已保存",
@@ -302,7 +304,7 @@ const I18N = {
     "empty.recent": "最近项目会显示在这里。", "empty.tree": "打开TSV或加载示例。", "empty.table": "没有行。请先添加一行。", "empty.search": "没有匹配当前搜索的行。",
   },
   ko: {
-    "menu.file": "파일", "menu.new": "새 프로젝트", "menu.open": "프로젝트 열기", "menu.save": "저장", "menu.saveAs": "다른 이름 저장", "menu.settings": "설정", "menu.recovery": "복구", "menu.createBackup": "지금 백업", "menu.restoreBackup": "백업 복원", "menu.repairCurrentTsv": "현재 TSV 복구", "menu.repairTsvFile": "TSV 파일 복구", "menu.export": "내보내기", "menu.llmTsv": "LLM TSV",
+    "menu.file": "파일", "menu.new": "새 프로젝트", "menu.open": "프로젝트 열기", "menu.save": "저장", "menu.saveAs": "다른 이름 저장", "menu.settings": "설정", "menu.recovery": "복구", "menu.createBackup": "지금 백업", "menu.restoreBackup": "백업 복원", "menu.repairFileLinks": "파일 링크 복구", "menu.repairCurrentTsv": "현재 TSV 복구", "menu.repairTsvFile": "TSV 파일 복구", "menu.export": "내보내기", "menu.llmTsv": "LLM TSV",
     "action.refreshProject": "프로젝트 새로고침", "action.refreshProjectTitle": "프로젝트 새로고침",
     "view.table": "테이블", "view.storyboard": "스토리보드", "view.timeline": "타임라인", "view.promptEdit": "프롬프트 편집", "view.assets": "에셋", "view.agents": "Agents",
     "search.label": "검색", "status.saved": "저장됨", "status.unsaved": "미저장", "status.never": "없음", "status.noFile": "파일 없음", "status.browserWorkspace": "브라우저 작업공간", "status.missing": "누락", "status.savedAt": "저장",
@@ -327,6 +329,8 @@ const state = {
   projectPath: "",
   mediaUrls: new Map(),
   mediaBlobs: new Map(),
+  mediaPathStatus: new Map(),
+  mediaPathStatusRunId: 0,
   promptPreviewUrls: new Map(),
   assets: [],
   generatedMedia: [],
@@ -664,6 +668,7 @@ async function handleFileAction(action) {
   if (action === "settings") return openSettingsModal();
   if (action === "createBackup") return createProjectBackup("manual");
   if (action === "restoreBackup") return restoreProjectBackup();
+  if (action === "repairFileLinks") return repairFileLinks();
   if (action === "repairCurrentTsv") return repairCurrentTsv();
   if (action === "repairTsvFile") return repairTsvFile();
   if (action === "exportTsv") return exportTsv();
@@ -804,6 +809,7 @@ function loadTsv(text, name) {
   clearAssetSelection();
   state.mediaUrls = new Map();
   state.mediaBlobs = new Map();
+  clearMediaPathStatus();
   if (text === SAMPLE_TSV) seedSampleMedia();
   state.projectFileName = name || "";
   state.projectPath = "";
@@ -871,6 +877,7 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
   clearAssetSelection();
   state.mediaUrls = new Map();
   state.mediaBlobs = new Map();
+  clearMediaPathStatus();
   entries.forEach((entry, name) => {
     if (!name.startsWith("media/")) return;
     const blob = new Blob([entry.data], { type: mimeFromPath(name) });
@@ -1656,6 +1663,7 @@ function setStatusItem(element, icon, text) {
 
 function render() {
   const issues = validate();
+  scheduleMediaPathStatusChecks();
   renderWelcome();
   renderStatus(issues);
   renderTree();
@@ -1695,6 +1703,7 @@ function renderWelcome() {
 }
 
 function renderStatus(issues) {
+  scheduleMediaPathStatusChecks();
   const counts = countRows();
   el.projectName.textContent = state.manifest.projectName || "Untitled Project";
   setStatusItem(el.projectPath, "folder", state.projectPath || state.projectFileName || (tauriInvoke ? t("status.noFile") : t("status.browserWorkspace")));
@@ -2663,6 +2672,10 @@ function assetPreviewHtml(asset) {
 function updateAsset(id, field, value) {
   const asset = assetById(id);
   if (!asset) return;
+  if (field === "path") {
+    invalidateMediaPathStatus(asset.path);
+    invalidateMediaPathStatus(value);
+  }
   asset[field] = field === "tags" ? String(value).split(",").map((tag) => tag.trim()).filter(Boolean) : value;
   if (field === "path") asset.type = assetTypeFromPath(value);
   if (field === "path" && !asset.title) asset.title = fileStem(value);
@@ -2867,6 +2880,8 @@ function addDroppedAssets(added) {
 function applyDroppedAssetToExistingAsset(assetId, droppedAsset) {
   const asset = assetById(assetId);
   if (!asset || !droppedAsset?.path) return;
+  invalidateMediaPathStatus(asset.path);
+  invalidateMediaPathStatus(droppedAsset.path);
   asset.path = droppedAsset.path;
   asset.type = assetTypeFromPath(droppedAsset.path);
   if (!asset.title) asset.title = fileStem(droppedAsset.path);
@@ -2904,9 +2919,7 @@ function assetFromDroppedPath(droppedPath) {
 
 function assetPathFromDroppedFile(file) {
   const rawPath = normalizeAssetPathSeparators(file.path || "");
-  const relativeFromProject = rawPath ? relativeAssetPathFromProject(rawPath) : "";
-  if (relativeFromProject) return relativeFromProject;
-  if (rawPath && isAbsoluteAssetPath(rawPath)) return rawPath;
+  if (tauriInvoke && rawPath && isAbsoluteAssetPath(rawPath)) return rawPath;
   const webkitPath = normalizeAssetPathSeparators(file.webkitRelativePath || "");
   if (webkitPath) return webkitPath;
   return `assets/${normalizeAssetPathSeparators(file.name || "asset")}`;
@@ -2914,7 +2927,7 @@ function assetPathFromDroppedFile(file) {
 
 function assetPathFromDroppedPath(path) {
   const normalized = normalizeAssetPathSeparators(path);
-  return relativeAssetPathFromProject(normalized) || normalized;
+  return normalized;
 }
 
 function relativeAssetPathFromProject(path) {
@@ -2947,6 +2960,8 @@ async function handleAssetAction(action, id) {
     const picked = await tauriInvoke("pick_asset_file", { projectPath: state.projectPath, project_path: state.projectPath });
     if (!picked) return;
     const file = normalizeTauriFile(picked);
+    invalidateMediaPathStatus(asset.path);
+    invalidateMediaPathStatus(file.path);
     asset.path = file.path;
     asset.type = assetTypeFromPath(file.path);
     if (!asset.title) asset.title = file.fileName.replace(/\.[^.]+$/, "");
@@ -3643,8 +3658,10 @@ async function resolvePromptMediaPath(path) {
     const blob = new Blob([new Uint8Array(opened.bytes || [])], { type: mimeFromPath(path) });
     const url = URL.createObjectURL(blob);
     state.promptPreviewUrls.set(path, { status: "ready", url, kind: promptMediaKind(path) });
+    state.mediaPathStatus.set(path, "exists");
   } catch {
     state.promptPreviewUrls.set(path, { status: "missing", url: "", kind: promptMediaKind(path) });
+    state.mediaPathStatus.set(path, "missing");
   }
   return state.promptPreviewUrls.get(path);
 }
@@ -3841,6 +3858,7 @@ function updateRow(id, patch) {
   const row = getRow(id);
   if (!row) return;
   pushHistory();
+  invalidateRowMediaPatchStatus(row, patch);
   if (row.row_type === "cut") {
     if (Object.hasOwn(patch, "image")) setActiveGeneratedMedia(row.id, "image", patch.image);
     if (Object.hasOwn(patch, "audio_file")) setActiveGeneratedMedia(row.id, "audio", patch.audio_file);
@@ -3852,6 +3870,14 @@ function updateRow(id, patch) {
   syncRowsFromJsonState();
   markDirty();
   render();
+}
+
+function invalidateRowMediaPatchStatus(row, patch) {
+  ["image", "audio_file", "video_file"].forEach((field) => {
+    if (!Object.hasOwn(patch, field)) return;
+    invalidateMediaPathStatus(row[field]);
+    invalidateMediaPathStatus(patch[field]);
+  });
 }
 
 function addRow(type) {
@@ -4328,12 +4354,12 @@ function handleMediaDrop(event, target) {
   if (!image && !audio) return;
   const patch = {};
   if (image) {
-    patch.image = image.name;
-    setSessionMediaUrl(image.name, image);
+    patch.image = mediaPathFromDroppedFile(image);
+    setSessionMediaUrl(patch.image, image);
   }
   if (audio) {
-    patch.audio_file = audio.name;
-    setSessionMediaUrl(audio.name, audio);
+    patch.audio_file = mediaPathFromDroppedFile(audio);
+    setSessionMediaUrl(patch.audio_file, audio);
   }
   updateRow(target.id, patch);
   state.activeId = target.id;
@@ -4342,10 +4368,16 @@ function handleMediaDrop(event, target) {
   render();
 }
 
+function mediaPathFromDroppedFile(file) {
+  const rawPath = normalizeAssetPathSeparators(file.path || "");
+  return tauriInvoke && rawPath && isAbsoluteAssetPath(rawPath) ? rawPath : file.name;
+}
+
 function setSessionMediaUrl(path, file) {
   const previous = state.mediaUrls.get(path);
   if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
   state.mediaUrls.set(path, URL.createObjectURL(file));
+  state.mediaPathStatus.set(path, "exists");
 }
 
 function isImageFile(file) {
@@ -4517,8 +4549,9 @@ function validate() {
     if (row.row_type === "multicut" && (!parent || parent.row_type !== "scene")) issues.push(error(`${row.id}: multicut parent_id must reference scene.`));
     if (row.row_type === "cut" && (!parent || !["scene", "multicut"].includes(parent.row_type))) issues.push(error(`${row.id}: cut parent_id must reference scene or multicut.`));
     if (row.row_type === "cut" && durationSeconds(row.duration) <= 0) issues.push(warn(`${row.id}: invalid duration, default 3s will be used.`));
-    if (row.row_type === "cut" && row.image && !mediaUrl(row.image)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: image may be missing (${row.image}).` });
-    if (row.row_type === "cut" && row.audio_file && !mediaUrl(row.audio_file)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: audio may be missing (${row.audio_file}).` });
+    if (row.row_type === "cut" && isMissingMediaPath(row.image)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: image may be missing (${row.image}).` });
+    if (row.row_type === "cut" && isMissingMediaPath(row.audio_file)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: audio may be missing (${row.audio_file}).` });
+    if (row.row_type === "cut" && isMissingMediaPath(row.video_file)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: video may be missing (${row.video_file}).` });
   });
   const assetIds = new Set();
   state.assets.forEach((asset, index) => {
@@ -4526,6 +4559,7 @@ function validate() {
     if (asset.id && assetIds.has(asset.id)) issues.push(error(`${asset.id}: duplicate asset id.`));
     if (asset.id) assetIds.add(asset.id);
     if (!asset.path) issues.push(warn(`Asset ${asset.id || index + 1}: path is empty.`));
+    if (isMissingMediaPath(asset.path)) issues.push({ level: "warning", kind: "missing-media", message: `Asset ${asset.id || index + 1}: asset may be missing (${asset.path}).` });
   });
   const promptIds = new Set(state.prompts.map((prompt) => prompt.id).filter(Boolean));
   const activeMediaKeys = new Set();
@@ -4535,6 +4569,7 @@ function validate() {
     item.referenceAssetIds.forEach((assetId) => {
       if (!assetIds.has(assetId)) issues.push(error(`${item.id}: referenceAssetId does not exist (${assetId}).`));
     });
+    if (isMissingMediaPath(item.path)) issues.push({ level: "warning", kind: "missing-media", message: `${item.id}: generated media may be missing (${item.path}).` });
     if (item.isActive) {
       const key = `${item.cutId}:${item.type}`;
       if (activeMediaKeys.has(key)) issues.push(error(`${item.cutId}: multiple active ${item.type} generated media items.`));
@@ -4627,6 +4662,81 @@ function displayDuration(row) {
 function formatDuration(seconds) {
   const rounded = Math.round((Number(seconds) || 0) * 10) / 10;
   return `${Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)}s`;
+}
+
+function isMissingMediaPath(path) {
+  if (!path || pathExistsWithoutCheck(path)) return false;
+  return state.mediaPathStatus.get(path) === "missing";
+}
+
+function pathExistsWithoutCheck(path) {
+  return isBrowserSafeMediaPath(path) || isInternalProjectMediaPath(path) || state.mediaUrls.has(path) || state.mediaBlobs.has(path);
+}
+
+function shouldCheckMediaPath(path) {
+  return Boolean(tauriInvoke && path && !pathExistsWithoutCheck(path));
+}
+
+function collectMediaPathsForStatusCheck() {
+  const paths = new Set();
+  state.rows.forEach((row) => {
+    if (row.row_type !== "cut") return;
+    [row.image, row.audio_file, row.video_file].forEach((path) => {
+      if (shouldCheckMediaPath(path)) paths.add(path);
+    });
+  });
+  state.assets.forEach((asset) => {
+    if (shouldCheckMediaPath(asset.path)) paths.add(asset.path);
+  });
+  state.generatedMedia.forEach((item) => {
+    if (shouldCheckMediaPath(item.path)) paths.add(item.path);
+  });
+  return [...paths];
+}
+
+function scheduleMediaPathStatusChecks() {
+  if (!tauriInvoke) return;
+  const pending = collectMediaPathsForStatusCheck().filter((path) => !state.mediaPathStatus.has(path));
+  if (!pending.length) return;
+  pending.forEach((path) => state.mediaPathStatus.set(path, "checking"));
+  const runId = ++state.mediaPathStatusRunId;
+  Promise.all(pending.map(async (path) => {
+    try {
+      const exists = await tauriInvoke("path_exists", { path });
+      return [path, exists ? "exists" : "missing"];
+    } catch {
+      return [path, "missing"];
+    }
+  })).then((results) => {
+    if (runId < state.mediaPathStatusRunId) return;
+    let changed = false;
+    results.forEach(([path, status]) => {
+      if (state.mediaPathStatus.get(path) !== status) {
+        state.mediaPathStatus.set(path, status);
+        changed = true;
+      }
+    });
+    if (changed) renderAfterMediaPathStatusUpdate();
+  });
+}
+
+function renderAfterMediaPathStatusUpdate() {
+  const issues = validate();
+  renderStatus(issues);
+  renderValidation(issues);
+  renderMedia();
+  if (state.view === "assets") renderAssets();
+  if (state.view === "promptEdit") renderPromptEdit();
+}
+
+function invalidateMediaPathStatus(path = "") {
+  if (path) state.mediaPathStatus.delete(path);
+  else clearMediaPathStatus();
+}
+
+function clearMediaPathStatus() {
+  state.mediaPathStatus = new Map();
+  state.mediaPathStatusRunId += 1;
 }
 
 function mediaUrl(path) {
@@ -4857,6 +4967,104 @@ async function restoreProjectBackup() {
   await loadProjectFromBytes(new Uint8Array(opened.bytes || []), state.projectFileName || opened.fileName, state.projectPath);
   state.dirty = true;
   render();
+}
+
+async function repairFileLinks() {
+  if (!tauriInvoke || !state.projectPath) {
+    alert("Open a saved .lctproj project to repair file links.");
+    return;
+  }
+  const missing = await collectMissingFileLinks();
+  if (!missing.length) {
+    alert("No broken file links found.");
+    return;
+  }
+  const root = normalizeTauriFile(await tauriInvoke("pick_repair_root"));
+  if (!root?.path) return;
+  const names = [...new Set(missing.map((item) => fileNameFromPath(item.path)).filter(Boolean))];
+  const found = await tauriInvoke("find_files_by_names", { root: root.path, names });
+  const replacements = new Map();
+  (found || []).forEach((item) => {
+    const paths = item.paths || [];
+    if (paths.length) replacements.set(String(item.name || "").toLowerCase(), normalizeAssetPathSeparators(paths[0]));
+  });
+  if (!missing.some((item) => replacements.has(fileNameFromPath(item.path).toLowerCase()))) {
+    alert(`No matching files were found under:\n${root.path}`);
+    return;
+  }
+  await createProjectBackup("before-repair-links", { silent: true });
+  const applied = applyFileLinkRepairs(missing, replacements);
+  if (!applied) {
+    alert(`No matching files were found under:\n${root.path}`);
+    return;
+  }
+  markDirty();
+  syncRowsFromJsonState();
+  render();
+  alert(`Repaired ${applied} file link${applied === 1 ? "" : "s"}.`);
+}
+
+async function collectMissingFileLinks() {
+  const candidates = collectFileLinkReferences();
+  const missing = [];
+  for (const item of candidates) {
+    if (shouldSkipFileLinkRepair(item.path)) continue;
+    try {
+      const exists = await tauriInvoke("path_exists", { path: item.path });
+      if (!exists) missing.push(item);
+    } catch {
+      missing.push(item);
+    }
+  }
+  return missing;
+}
+
+function collectFileLinkReferences() {
+  const refs = [];
+  state.rows.forEach((row) => {
+    ["image", "audio_file", "video_file"].forEach((field) => {
+      if (row[field]) refs.push({ kind: "row", row, field, path: row[field] });
+    });
+  });
+  state.assets.forEach((asset) => {
+    if (asset.path) refs.push({ kind: "asset", asset, path: asset.path });
+  });
+  state.generatedMedia.forEach((item) => {
+    if (item.path) refs.push({ kind: "generated", item, path: item.path });
+  });
+  return refs;
+}
+
+function shouldSkipFileLinkRepair(path) {
+  if (!path || isBrowserSafeMediaPath(path)) return true;
+  return isInternalProjectMediaPath(path);
+}
+
+function isInternalProjectMediaPath(path) {
+  const normalized = normalizeAssetPathSeparators(path);
+  return normalized.startsWith("media/");
+}
+
+function applyFileLinkRepairs(missing, replacements) {
+  const appliedPaths = new Set();
+  missing.forEach((ref) => {
+    const name = fileNameFromPath(ref.path).toLowerCase();
+    const replacement = replacements.get(name);
+    if (!replacement || replacement === ref.path) return;
+    invalidateMediaPathStatus(ref.path);
+    invalidateMediaPathStatus(replacement);
+    if (ref.kind === "row") ref.row[ref.field] = replacement;
+    if (ref.kind === "asset") {
+      ref.asset.path = replacement;
+      ref.asset.type = assetTypeFromPath(replacement);
+    }
+    if (ref.kind === "generated") {
+      ref.item.path = replacement;
+      ref.item.type = mediaTypeFromPath(replacement);
+    }
+    appliedPaths.add(ref.path);
+  });
+  return appliedPaths.size;
 }
 
 async function repairCurrentTsv() {

@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::{fs, path::{Path, PathBuf}};
+use std::{collections::{HashMap, HashSet}, fs, path::{Path, PathBuf}};
 use tauri::{DragDropEvent, Emitter, Manager, RunEvent, WindowEvent};
 
 #[derive(Serialize)]
@@ -20,6 +20,12 @@ struct BackupFile {
     name: String,
     path: String,
     timestamp: u64,
+}
+
+#[derive(Serialize)]
+struct FileSearchResult {
+    name: String,
+    paths: Vec<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -102,20 +108,14 @@ fn read_media_file(project_path: String, media_path: String) -> Result<OpenedFil
 }
 
 #[tauri::command]
-fn pick_asset_file(project_path: String) -> Result<Option<OpenedFile>, String> {
+fn pick_asset_file(_project_path: String) -> Result<Option<OpenedFile>, String> {
     let Some(path) = rfd::FileDialog::new().pick_file() else {
         return Ok(None);
     };
     let bytes = fs::read(&path).map_err(|error| error.to_string())?;
-    let project_path = PathBuf::from(project_path);
-    let parent = project_path.parent();
-    let display_path = parent
-        .and_then(|base| path.strip_prefix(base).ok())
-        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_else(|| path.to_string_lossy().to_string());
     Ok(Some(OpenedFile {
         file_name: file_name(&path),
-        path: display_path,
+        path: path.to_string_lossy().to_string(),
         bytes,
     }))
 }
@@ -134,6 +134,77 @@ fn resolve_relative_media_path(project_dir: &Path, media_path: &Path) -> PathBuf
         current = dir.parent();
     }
     direct
+}
+
+#[tauri::command]
+fn path_exists(path: String) -> bool {
+    PathBuf::from(path).exists()
+}
+
+#[tauri::command]
+fn pick_repair_root() -> Result<Option<SavedFile>, String> {
+    let Some(path) = rfd::FileDialog::new().pick_folder() else {
+        return Ok(None);
+    };
+    Ok(Some(saved_file(path)))
+}
+
+#[tauri::command]
+fn find_files_by_names(root: String, names: Vec<String>) -> Result<Vec<FileSearchResult>, String> {
+    const MAX_RESULTS_PER_NAME: usize = 8;
+    const MAX_VISITED_ENTRIES: usize = 50_000;
+    let wanted: HashSet<String> = names
+        .into_iter()
+        .map(|name| name.to_lowercase())
+        .filter(|name| !name.is_empty())
+        .collect();
+    if wanted.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut results: HashMap<String, Vec<String>> = wanted.iter().map(|name| (name.clone(), Vec::new())).collect();
+    let mut stack = vec![PathBuf::from(root)];
+    let mut visited = 0usize;
+    while let Some(dir) = stack.pop() {
+        if visited >= MAX_VISITED_ENTRIES {
+            break;
+        }
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            if visited >= MAX_VISITED_ENTRIES {
+                break;
+            }
+            visited += 1;
+            let path = entry.path();
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            if file_name.starts_with('.') {
+                continue;
+            }
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if !file_type.is_file() {
+                continue;
+            }
+            let key = file_name.to_lowercase();
+            if let Some(paths) = results.get_mut(&key) {
+                if paths.len() < MAX_RESULTS_PER_NAME {
+                    paths.push(path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    let mut list: Vec<FileSearchResult> = results
+        .into_iter()
+        .map(|(name, paths)| FileSearchResult { name, paths })
+        .collect();
+    list.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(list)
 }
 
 #[tauri::command]
@@ -324,6 +395,9 @@ fn main() {
             read_project_file,
             read_media_file,
             pick_asset_file,
+            path_exists,
+            pick_repair_root,
+            find_files_by_names,
             save_project_backup,
             list_project_backups,
             read_project_backup,
