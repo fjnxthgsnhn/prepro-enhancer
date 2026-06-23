@@ -1134,6 +1134,12 @@ async function runTauriWelcomeSmoke(browser) {
   await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="audio_file"]', "C:/RepairRoot/found/refresh-cut.wav");
   await tauriPage.waitForFunction(() => !document.querySelector("#validationPanel")?.textContent?.includes("audio may be missing"));
   await tauriPage.waitForFunction(() => !document.querySelector("#validationPanel")?.textContent?.includes("image may be missing"));
+  await tauriPage.click('tbody tr[data-id="ct778"] td[data-column="title"]');
+  await tauriPage.waitForFunction(() => document.querySelector("#mediaPanel audio")?.src?.startsWith("blob:"));
+  await tauriPage.waitForFunction(() => document.querySelector("#mediaPanel .image-preview img")?.src?.startsWith("blob:"));
+  await tauriPage.click('[data-view="timeline"]');
+  await tauriPage.waitForFunction(() => document.querySelector("#timelineAudio")?.src?.startsWith("blob:"));
+  await tauriPage.waitForFunction(() => document.querySelector(".timeline-preview img")?.src?.startsWith("blob:"));
   await tauriPage.click('[data-view="assets"]');
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/RepairRoot/found/refresh-ref.png"]'));
   await tauriPage.waitForFunction(() => !document.querySelector("#validationPanel")?.textContent?.includes("asset may be missing"));
@@ -1159,6 +1165,51 @@ async function runTauriWelcomeSmoke(browser) {
   });
   await tauriPage.click("#refreshTsvBtn");
   await expectPageText(tauriPage, 'tbody tr[data-id="sc777"] td[data-column="title"]', "LLM Updated Scene");
+  await tauriPage.evaluate(() => {
+    window.__tauriMockMediaFiles.set("C:\\Projects\\media\\native-table.png", new Uint8Array([137, 80, 78, 71]));
+    window.__tauriMockMediaFiles.set("C:\\Projects\\media\\native-table.wav", new Uint8Array([82, 73, 70, 70]));
+    window.__tauriMockMediaFiles.set("C:\\Projects\\media\\native-story.mp3", new Uint8Array([73, 68, 51]));
+    window.__tauriMockMediaFiles.set("C:\\Projects\\media\\native-timeline.mov", new Uint8Array([0, 0, 0, 20]));
+  });
+  await tauriPage.click('[data-view="table"]');
+  await tauriPage.evaluate(() => {
+    const target = document.querySelector('tbody tr[data-id="ct778"]');
+    const rect = target.getBoundingClientRect();
+    window.__emitTauriStandardAssetDrop({
+      type: "drop",
+      paths: ["C:\\Projects\\media\\native-table.png", "C:\\Projects\\media\\native-table.wav"],
+      position: { x: rect.left + 32, y: rect.top + rect.height / 2 },
+      scaleFactor: 1,
+    });
+  });
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="image"]', "C:/Projects/media/native-table.png");
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="audio_file"]', "C:/Projects/media/native-table.wav");
+  await tauriPage.click('[data-view="storyboard"]');
+  await tauriPage.evaluate(() => {
+    const target = document.querySelector('.cut-card[data-id="ct778"]');
+    const rect = target.getBoundingClientRect();
+    window.__emitTauriStandardAssetDrop({
+      type: "drop",
+      paths: ["C:\\Projects\\media\\native-story.mp3"],
+      position: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      scaleFactor: 1,
+    });
+  });
+  await tauriPage.click('[data-view="table"]');
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="audio_file"]', "C:/Projects/media/native-story.mp3");
+  await tauriPage.click('[data-view="timeline"]');
+  await tauriPage.evaluate(() => {
+    const target = document.querySelector('.timeline-clip.cut[data-id="ct778"]');
+    const rect = target.getBoundingClientRect();
+    window.__emitTauriStandardAssetDrop({
+      type: "drop",
+      paths: ["C:\\Projects\\media\\native-timeline.mov"],
+      position: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      scaleFactor: 1,
+    });
+  });
+  await tauriPage.click('[data-view="table"]');
+  await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="video_file"]', "C:/Projects/media/native-timeline.mov");
   await tauriPage.evaluate(() => document.querySelector('tbody tr[data-id="ct778"] td[data-column="title"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
   await tauriPage.click('[data-view="promptEdit"]');
   const backslashRelativePreviewPath = "project\\narushisuto-DK\\assets\\episode_001\\人物レイアウト案_episode_001_mannequin_16x9.png";
@@ -1240,6 +1291,19 @@ async function runTauriWelcomeSmoke(browser) {
   });
   await tauriPage.waitForFunction((count) => document.querySelectorAll(".asset-card").length === count + 1, assetCountAfterNativeDrop);
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/assets/asset-file-drop-fallback.png"]'));
+  await tauriPage.locator('.asset-card [data-asset-action="browse"]').first().click();
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/media/picked-asset.png"]'));
+  await tauriPage.evaluate(() => {
+    const target = document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/media/picked-asset.png"]')?.closest(".asset-card");
+    target?.querySelector(".asset-thumb")?.click();
+  });
+  await tauriPage.locator('.asset-modal [data-asset-field="path"]').fill("manual/relative.png");
+  await tauriPage.locator('.asset-modal [data-asset-field="path"]').press("Tab");
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "C:/Projects/manual/relative.png");
+  await tauriPage.locator('.asset-modal [data-asset-field="path"]').fill("media/internal.png");
+  await tauriPage.locator('.asset-modal [data-asset-field="path"]').press("Tab");
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "media/internal.png");
+  await tauriPage.locator('.asset-modal [data-asset-action="close"]').click();
   await tauriPage.evaluate(() => {
     const target = document.querySelector('.asset-card .prompt-media-card[data-path="D:/External/external-rui.png"]')?.closest(".asset-card");
     target?.querySelector(".asset-thumb")?.click();

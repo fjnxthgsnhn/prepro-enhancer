@@ -2053,17 +2053,27 @@ function timelineRulerHtml(model) {
 
 function timelinePreviewHtml(cut, offset) {
   if (!cut) return `<div class="timeline-preview"><div class="timeline-text-preview"><strong>No cut</strong></div></div>`;
-  const image = displayMediaUrl(cut.image);
-  const audio = displayMediaUrl(cut.audio_file);
+  const image = promptMediaResolution(cut.image);
+  const audio = promptMediaResolution(cut.audio_file);
   const textRows = ["title", "scene", "subject", "composition", "action", "camera", "audio"]
     .map((field) => [field, field === "title" ? rowLabel(cut) : cut[field]])
     .filter(([, value]) => value)
     .map(([field, value]) => `<div><span>${escapeHtml(field)}</span><strong>${escapeHtml(value)}</strong></div>`);
   if (!textRows.length) textRows.push(`<div><span>title</span><strong>${escapeHtml(cut.id)}</strong></div>`);
+  const imageHtml = image?.status === "ready"
+    ? `<img src="${escapeAttr(image.url)}" alt="">`
+    : cut.image
+      ? `<div class="timeline-text-preview"><strong>${image?.status === "missing" ? "Missing image" : "Loading image..."}</strong>${textRows.join("")}</div>`
+      : `<div class="timeline-text-preview">${textRows.join("")}</div>`;
+  const audioHtml = audio?.status === "ready"
+    ? `<audio id="timelineAudio" src="${escapeAttr(audio.url)}" preload="auto"></audio>`
+    : cut.audio_file
+      ? `<div class="timeline-audio-state">${escapeHtml(audio?.status === "missing" ? "Missing audio" : "Loading audio...")}</div>`
+      : "";
   return `
     <div class="timeline-preview" data-cut-id="${escapeHtml(cut.id)}" data-cut-offset="${offset}">
-      ${image ? `<img src="${image}" alt="">` : `<div class="timeline-text-preview">${textRows.join("")}</div>`}
-      ${audio ? `<audio id="timelineAudio" src="${audio}" preload="auto"></audio>` : ""}
+      ${imageHtml}
+      ${audioHtml}
     </div>`;
 }
 
@@ -2178,7 +2188,18 @@ function updateTimelinePlaybackUi({ forcePreview = false, model = timelineModel(
   } else if (preview) {
     preview.dataset.cutOffset = String(offset);
   }
+  resolveTimelinePreviewMedia(cut);
   syncTimelineAudio(cut, offset);
+}
+
+async function resolveTimelinePreviewMedia(cut) {
+  if (!cut) return;
+  const paths = [cut.image, cut.audio_file, cut.video_file].filter((path) => path && !promptMediaResolution(path));
+  if (!paths.length) return;
+  await Promise.all(paths.map(resolvePromptMediaPath));
+  const active = activeCutAt(currentPlaybackTime(), timelineModel().cuts);
+  if (active?.cut?.id !== cut.id || state.view !== "timeline") return;
+  updateTimelinePlaybackUi({ forcePreview: true, active });
 }
 
 function centerTimelineOnPlayhead() {
@@ -2399,14 +2420,37 @@ function renderMedia() {
     el.media.innerHTML = `<div class="empty-state">Select a cut.</div>`;
     return;
   }
-  const image = displayMediaUrl(row.image);
-  const audio = displayMediaUrl(row.audio_file);
   el.media.innerHTML = `
-    <div class="media-preview">
-      <div class="image-preview">${image ? `<img src="${image}" alt="">` : `<span>${row.image ? "Missing image" : "No image"}</span>`}</div>
+    <div class="media-preview" data-row-id="${escapeAttr(row.id)}">
+      <div class="image-preview">${mediaPreviewImageHtml(row.image)}</div>
       <div>${escapeHtml(row.image || "No image path")}</div>
-      ${audio ? `<audio controls src="${audio}"></audio>` : `<div>${escapeHtml(row.audio_file || "No audio path")}</div>`}
+      ${mediaPreviewAudioHtml(row.audio_file)}
+      ${row.video_file ? `<div>${escapeHtml(row.video_file)}</div>` : ""}
     </div>`;
+  resolveMediaPanelPaths(row.id, [row.image, row.audio_file, row.video_file].filter(Boolean));
+}
+
+function mediaPreviewImageHtml(path) {
+  if (!path) return "<span>No image</span>";
+  const resolved = promptMediaResolution(path);
+  if (resolved?.status === "ready") return `<img src="${escapeAttr(resolved.url)}" alt="">`;
+  if (resolved?.status === "missing") return "<span>Missing image</span>";
+  return "<span>Loading image...</span>";
+}
+
+function mediaPreviewAudioHtml(path) {
+  if (!path) return `<div>No audio path</div>`;
+  const resolved = promptMediaResolution(path);
+  if (resolved?.status === "ready") return `<audio controls src="${escapeAttr(resolved.url)}"></audio>`;
+  if (resolved?.status === "missing") return `<div>Missing audio</div>`;
+  return `<div>Loading audio...</div>`;
+}
+
+async function resolveMediaPanelPaths(rowId, paths) {
+  const unresolved = paths.filter((path) => path && !promptMediaResolution(path));
+  if (!unresolved.length) return;
+  await Promise.all(unresolved.map(resolvePromptMediaPath));
+  if (state.activeId === rowId && state.view) renderMedia();
 }
 
 function renderPromptEdit() {
@@ -2583,7 +2627,10 @@ function renderAssets() {
     attachAssetAutocomplete(input);
   });
   el.assetsView.querySelectorAll("[data-asset-action]").forEach((button) => {
-    button.addEventListener("click", () => handleAssetAction(button.dataset.assetAction, button.dataset.assetId));
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      handleAssetAction(button.dataset.assetAction, button.dataset.assetId);
+    });
   });
   el.assetsView.querySelector(".asset-modal-backdrop")?.addEventListener("click", (event) => {
     if (event.target.classList.contains("asset-modal-backdrop")) closeAssetModal();
@@ -2636,6 +2683,7 @@ function assetCardHtml(asset, index) {
       <div class="asset-thumb" title="Open details">${assetPreviewHtml(asset)}</div>
       <label>title<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="title" value="${escapeAttr(asset.title)}"></label>
       <label>tags<input data-asset-id="${escapeAttr(asset.id)}" data-asset-field="tags" value="${escapeAttr(asset.tags.join(", "))}"></label>
+      <button type="button" class="asset-card-browse" data-asset-action="browse" data-asset-id="${escapeAttr(asset.id)}">${iconHtml("folder_open", "small-icon")}<span class="icon-button-label">Browse</span></button>
     </article>`;
 }
 
@@ -2672,16 +2720,25 @@ function assetPreviewHtml(asset) {
 function updateAsset(id, field, value) {
   const asset = assetById(id);
   if (!asset) return;
+  const nextValue = field === "path" ? normalizeManualAssetPath(value) : value;
   if (field === "path") {
     invalidateMediaPathStatus(asset.path);
-    invalidateMediaPathStatus(value);
+    invalidateMediaPathStatus(nextValue);
   }
-  asset[field] = field === "tags" ? String(value).split(",").map((tag) => tag.trim()).filter(Boolean) : value;
-  if (field === "path") asset.type = assetTypeFromPath(value);
-  if (field === "path" && !asset.title) asset.title = fileStem(value);
+  asset[field] = field === "tags" ? String(nextValue).split(",").map((tag) => tag.trim()).filter(Boolean) : nextValue;
+  if (field === "path") asset.type = assetTypeFromPath(nextValue);
+  if (field === "path" && !asset.title) asset.title = fileStem(nextValue);
   markDirty();
   renderAssets();
   renderStatus(validate());
+}
+
+function normalizeManualAssetPath(value) {
+  const path = normalizeAssetPathSeparators(String(value || "").trim());
+  if (!path || !tauriInvoke || !state.projectPath) return path;
+  if (isBrowserSafeMediaPath(path) || isInternalProjectMediaPath(path) || isAbsoluteAssetPath(path)) return path;
+  const projectDir = normalizeAssetPathSeparators(state.projectPath).replace(/\/[^/]*$/, "");
+  return projectDir ? `${projectDir}/${path}` : path;
 }
 
 function handleAssetDrop(event) {
@@ -2762,19 +2819,28 @@ function handleTauriAssetDropEvent(event, source = "tauri") {
     debugAssetDrop("ignored empty drop", drop);
     return;
   }
-  const target = assetDropTargetFromPosition(drop.position, drop.scaleFactor);
+  const target = nativeDropTargetFromPosition(drop.position, drop.scaleFactor);
   if (!target) {
-    debugAssetDrop("ignored drop outside assets view", drop);
+    debugAssetDrop("ignored drop outside supported views", drop);
     return;
   }
-  const targetAssetId = assetDropCardIdFromElement(target);
-  handleResolvedAssetDrop({
-    assets: targetAssetId ? [assetFromDroppedPath(drop.paths[0])] : drop.paths.map(assetFromDroppedPath),
-    target,
-    source: drop.source,
-    position: drop.position,
-    scaleFactor: drop.scaleFactor,
-  });
+  if (state.view === "assets" && target.closest?.("#assetsView")) {
+    const targetAssetId = assetDropCardIdFromElement(target);
+    handleResolvedAssetDrop({
+      assets: targetAssetId ? [assetFromDroppedPath(drop.paths[0])] : drop.paths.map(assetFromDroppedPath),
+      target,
+      source: drop.source,
+      position: drop.position,
+      scaleFactor: drop.scaleFactor,
+    });
+    return;
+  }
+  const row = cutRowFromNativeDropTarget(target);
+  if (row) {
+    applyNativeMediaDropToCut(row, drop.paths);
+    return;
+  }
+  debugAssetDrop("ignored native drop target", { target: describeAssetDropElement(target), currentView: state.view });
 }
 
 function normalizeTauriAssetDropEvent(event, source = "tauri") {
@@ -2821,6 +2887,38 @@ function assetDropTargetFromPosition(position, scaleFactor = 1) {
     targetAssetId: assetDropCardIdFromElement(element),
   });
   return element;
+}
+
+function nativeDropTargetFromPosition(position, scaleFactor = 1) {
+  if (state.view === "assets") return assetDropTargetFromPosition(position, scaleFactor);
+  if (!position || position.x == null || position.y == null) return null;
+  const scale = Number(scaleFactor) || window.devicePixelRatio || 1;
+  return document.elementFromPoint(position.x / scale, position.y / scale);
+}
+
+function cutRowFromNativeDropTarget(element) {
+  const node = element?.closest?.("tbody tr[data-id], .cut-card[data-id], .timeline-clip.cut[data-id]");
+  const row = getRow(node?.dataset?.id || "");
+  return row?.row_type === "cut" ? row : null;
+}
+
+function applyNativeMediaDropToCut(row, paths) {
+  const normalized = paths.map(normalizeAssetPathSeparators).filter(Boolean);
+  const image = normalized.find(isImagePath);
+  const audio = normalized.find(isAudioPath);
+  const video = normalized.find(isVideoPath);
+  const patch = {};
+  if (image) patch.image = image;
+  if (audio) patch.audio_file = audio;
+  if (video) patch.video_file = video;
+  if (!Object.keys(patch).length) return;
+  state.activeId = row.id;
+  state.selectedIds = new Set([row.id]);
+  state.selectionAnchorId = row.id;
+  updateRow(row.id, patch);
+  Object.values(patch).forEach((path) => state.mediaPathStatus.set(path, "exists"));
+  renderAfterMediaPathStatusUpdate();
+  showToast("Media path updated. Save the project to write it to the .lctproj file.");
 }
 
 function assetDropCardIdFromElement(element) {
@@ -4381,11 +4479,23 @@ function setSessionMediaUrl(path, file) {
 }
 
 function isImageFile(file) {
-  return file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|svg)$/i.test(file.name);
+  return file.type.startsWith("image/") || isImagePath(file.name);
 }
 
 function isAudioFile(file) {
-  return file.type.startsWith("audio/") || /\.(wav|mp3|m4a|aac|ogg|flac)$/i.test(file.name);
+  return file.type.startsWith("audio/") || isAudioPath(file.name);
+}
+
+function isImagePath(path) {
+  return /\.(png|jpe?g|webp|gif|svg)$/i.test(path);
+}
+
+function isAudioPath(path) {
+  return /\.(wav|mp3|m4a|aac|ogg|flac)$/i.test(path);
+}
+
+function isVideoPath(path) {
+  return /\.(mp4|mov|m4v|webm)$/i.test(path);
 }
 
 function dropMode(event, dragged, target) {
@@ -4727,6 +4837,7 @@ function renderAfterMediaPathStatusUpdate() {
   renderMedia();
   if (state.view === "assets") renderAssets();
   if (state.view === "promptEdit") renderPromptEdit();
+  if (state.view === "timeline") renderTimeline();
 }
 
 function invalidateMediaPathStatus(path = "") {

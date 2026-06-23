@@ -1847,7 +1847,7 @@ button.active {
 
 .asset-card {
   display: grid;
-  grid-template-rows: 128px auto auto;
+  grid-template-rows: 128px auto auto auto;
   gap: 8px;
   padding: 10px;
   border: 1px solid var(--line);
@@ -1891,6 +1891,11 @@ button.active {
 .asset-modal-fields select,
 .asset-modal-fields textarea {
   min-width: 0;
+}
+
+.asset-card-browse {
+  min-height: 32px;
+  justify-content: center;
 }
 
 .asset-modal-backdrop {
