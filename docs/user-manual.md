@@ -193,19 +193,21 @@ ProjectFolder/
 
 ## 10. Agents View
 
-Agents Viewでは、プロジェクト内の `AGENTS.md` を編集できます。
+Agents Viewでは、プロジェクト内の `AGENTS.md` に保存されるプロジェクト固有のユーザー指示を編集できます。
 
-`AGENTS.md` は、LLMやAIコーディングエージェントにプロジェクトの編集方針を伝えるためのMarkdown文書です。
+`AGENTS.md` は、アプリ管理の読み取り専用システム指示と、編集可能なユーザー指示から構成されます。
 
 ### 編集する
 
 1. `Agents` タブを開きます。
-2. テキストエリアでMarkdownを編集します。
+2. User instructions欄でMarkdownを編集します。固定System instructionsは画面には表示されません。
 3. 保存すると `.lctproj` 内の `AGENTS.md` に書き込まれます。
+
+`Save as New Project Default`を押すと、現在のUser instructionsをこの端末で今後作成する新規プロジェクトの既定値として保存できます。既存プロジェクトには適用されません。
 
 ### Resetする
 
-`Reset` を押すと、既定のAGENTSテンプレートに戻せます。実行前に確認ダイアログが表示されます。
+`Restore Built-in Default`を押すと、保存済みの新規プロジェクト用カスタム既定値を削除し、現在のUser instructionsも組み込み既定値へ戻せます。固定システム指示は変更されません。実行前に確認ダイアログが表示されます。
 
 ## 11. Refresh Project
 

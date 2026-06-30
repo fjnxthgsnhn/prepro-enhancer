@@ -126,7 +126,7 @@ const DEFAULT_MANIFEST = {
   },
 };
 
-const PROJECT_AGENTS_MD = [
+const PROJECT_AGENTS_TEMPLATE_MD = [
   "# Prepro Enhancer Project Agent Instructions",
   "",
   "You are a cutlist production agent for Prepro Enhancer.",
@@ -137,6 +137,24 @@ const PROJECT_AGENTS_MD = [
   "Edit `cutlist.tsv` only. Keep this column order exactly:",
   "",
   "row_type\tid\tparent_id\torder\ttitle\tduration\tstatus\timage\taudio_file\tvideo_file\timage_prompt\tvideo_prompt\tscene\tsubject\tcomposition\taction\tcamera\taudio\tnote",
+  "",
+  "## TSV Integrity and Dialogue Coverage",
+  "",
+  "Do not build TSV rows by concatenating strings or manually counting tab characters. Construct every row as an array of exactly 19 cells and serialize it with a CSV/TSV library using tab as the delimiter.",
+  "Keep empty and trailing cells. Every scene, multicut, and cut record must contain exactly the same 19 columns as the header.",
+  "Use these row shapes before serialization:",
+  "",
+  "- scene: `[row_type, id, parent_id, order, title, duration, status, image, audio_file, video_file, image_prompt, video_prompt, scene, subject, composition, action, camera, audio, note]`",
+  "- cut: `[row_type, id, parent_id, order, title, duration, status, image, audio_file, video_file, image_prompt, video_prompt, scene, subject, composition, action, camera, audio, note]`",
+  "",
+  "Copy every line of dialogue, monologue, and narration from the script into the `audio` field without omission, summarization, paraphrasing, or reordering unless the user explicitly requests rewriting.",
+  "Include the speaker and the complete spoken text. `note` must not be used as a substitute for dialogue storage.",
+  "Keep `action` strictly visual: visible movement, expression, blocking, and state changes only. Never put dialogue, monologue, narration, speaker labels, or quoted spoken text in `action`.",
+  "Use one speaker per cut. Store dialogue as `Speaker「exact text」`, monologue as `Speaker(M)「exact text」`, and narration as `N「exact text」` in `audio`.",
+  "When the speaker changes, create a new cut directly under the scene during the first pass. Treat acknowledgements, interruptions, and simultaneous speech as separate speaker cuts; describe overlap as an audio direction without combining speakers in one cut.",
+  "If a spoken passage is too long for one cut, split it across multiple consecutive cuts while preserving the exact original order and wording, then recalculate each cut's duration.",
+  "Before saving, extract all spoken passages from the source script in order and audit them against the cut `audio` fields. Abort the save if any passage is missing, partial, reordered, or unintentionally duplicated.",
+  "Serialize the TSV, parse it again, and verify the exact header, 19 cells per record, and value-for-value round-trip equality. If validation fails, do not replace the original `.lctproj`.",
   "",
   "## Initial Build Policy",
   "",
@@ -149,19 +167,56 @@ const PROJECT_AGENTS_MD = [
   "",
   "Leave `image`, `audio_file`, `image_prompt`, and `video_prompt` empty during the first pass.",
   "",
-  "## Cut Decomposition Rules",
+  "## Framing and Camera-Work Decision Guide",
   "",
-  "Read each scene's action lines and dialogue, then divide it into cuts.",
-  "Use this composition rhythm as a baseline:",
+  "カットの画角やカメラワークは、見栄えや技法の多様さではなく、その瞬間に観客へ伝える情報と感情から逆算して決定する。",
+  "各カットでは、次の順序で判断する。",
   "",
-  "1. Long shot: location, situation, and character placement",
-  "2. Medium shot: action, conversation, and relationships",
-  "3. Close shot: expression, hands, important objects, emotion",
-  "4. Repeat medium or close shots for dialogue and reactions",
-  "5. Return to a long shot when the situation changes",
+  "1. 脚本上の出来事だけでなく、登場人物の感情、観客へ提示すべき情報、感情や状況の転換点を特定する。",
+  "2. 観客と被写体の心理的距離に応じて、ロング、ミディアム、クローズを選択する。",
+  "3. 視線誘導と心理効果に応じて、三分割、中央、シンメトリー、一点透視、意図的な余白を選択する。",
+  "4. 被写体と観客の権力関係や心理状態に応じて、水平、ハイアングル、ローアングル、ダッチアングルを選択する。",
+  "5. カメラが動く演出的必然性がある場合のみ、FIX、PAN、TILT、DOLLY、TRACK、PUSH IN、PULL OUT、HANDHELD、CIRCLE を選択する。",
   "",
-  "For cuts with dialogue, calculate duration from `100 Japanese characters = 17 seconds` and include natural pauses.",
-  "For action-only cuts, choose a natural duration from the content.",
+  "### Cut timing and duration",
+  "",
+  "- 台詞のあるカットは `日本語100文字 = 17秒` を基準に読み上げ時間を計算し、台詞前後の間、リアクション、呼吸に必要な時間を加える。",
+  "- アクションのみのカットは、動作が読み取れる時間、カメラ移動の完了、感情の余韻を考慮して自然な秒数を設定する。",
+  "- duration は情報量と演出意図から決定し、画角やカメラワークを成立させるために必要な最短時間を下回らないようにする。",
+  "",
+  "### Shot size and composition",
+  "",
+  "- ロングショットは、場所、人物配置、環境との関係、孤立、無力感、状況変化を示すために使う。",
+  "- ミディアムショットは、行動、会話、人物同士の関係を読み取らせるために使う。",
+  "- クローズショットは、表情、視線、手元、重要物、隠された感情や緊張を強調するために使う。",
+  "- 三分割と進行方向側の余白は期待や移動先を示し、背後の余白は過去への未練、孤立、閉塞感を示せる。",
+  "- 中央構図は存在感や直接性、シンメトリーは秩序や不安定な均衡、一点透視は集中や逃げ場のない緊張を表現するために使う。",
+  "- `composition` には、画角、アングル、被写体配置、余白、視線方向を具体的に記述する。",
+  "",
+  "### Camera angle and movement",
+  "",
+  "- 水平アングルは親近感や対等性、ハイアングルは弱さ、無力感、客観性、ローアングルは力、威圧感、優位性を示す。",
+  "- ダッチアングルは混乱や危機を示す決定的な瞬間に限定し、常用しない。",
+  "- FIX は演技、構図、緊張の持続を観察させる場合に使う。PAN / TILT は新しい情報の発見や視線の移動、DOLLY / TRACK / PUSH IN / PULL OUT は心理的・空間的距離の変化を伴わせる場合に使う。",
+  "- HANDHELD は主観性や不安定さ、CIRCLE は被写体を中心化し関係や存在感を強調する必然性がある場合に限る。",
+  "- `camera` には、固定または移動方式、移動方向、速度、開始位置、終了位置、追従対象を具体的に記述する。",
+  "- 見栄えを良くすることだけを理由にカメラを動かさない。動きは感情の高揚、落胆、発見、関係変化、空間情報の提示のいずれかに結び付ける。",
+  "",
+  "### Cut transitions and continuity",
+  "",
+  "感情の転換点、重要なリアクション、行動の段階、空間や状況の変化をカット分割の根拠にする。",
+  "連続するカットでは、180度ルール、アイライン、スクリーン方向、被写体の動きの接続を維持する。意図的に破る場合は、その心理的・物語的理由を `note` に記録する。",
+  "同じ被写体へ切り替える場合は、ジャンプカットに見えない十分なショットサイズ差またはアングル差を設ける。",
+  "FIX から移動ショットへの変化、長回し、リアクションショット、ロングへの戻りは、シーン全体の感情曲線とテンポに合わせて設計する。",
+  "",
+  "### Framing and camera-work checklist",
+  "",
+  "- 演出意図: このカットで観客に何を知り、何を感じてほしいかが明確か。",
+  "- 心理的距離: ショットサイズは、その瞬間の感情の強さと観客との距離に合っているか。",
+  "- 構図: 配置、余白、視線方向が意図した場所へ観客の視線を導いているか。",
+  "- 権力関係: アングルが被写体の優位、弱さ、対等性を適切に示しているか。",
+  "- 動きの必然性: カメラ移動の方向、速度、始点、終点が感情や情報の変化と同期しているか。",
+  "- 連続性: 180度ルール、アイライン、スクリーン方向、ショットサイズ差、動きの接続に問題がないか。",
   "",
   "## Column Guidance",
   "",
@@ -169,9 +224,9 @@ const PROJECT_AGENTS_MD = [
   "- duration: seconds such as `3s` or `5.5s`",
   "- scene: location or scene name",
   "- subject: main character, object, or subject",
-  "- composition: long, medium, close, hands, eyes, etc.",
+  "- composition: shot size, angle, subject placement, negative space, eye direction, etc.",
   "- action: action extracted from script directions",
-  "- camera: fixed, pan, dolly, push in, pull out, handheld, etc.",
+  "- camera: fixed or movement type, direction, speed, start/end position, tracking subject, etc.",
   "- audio: sound direction, ambience, or dialogue-related audio note",
   "- note: rationale, direction intent, or unresolved points",
   "",
@@ -193,6 +248,11 @@ const PROJECT_AGENTS_MD = [
   "3. Location or situation change unit",
   "4. Camera-work unit",
   "",
+  "When the user selects dialogue grouping, group consecutive first-pass dialogue cuts into a multicut only when they share the same group-shot composition and camera position.",
+  "Write the shared location, framing, composition, camera position, and conversation situation on the multicut. Keep each child cut limited to one speaker and that speaker's visible delivery, or make a separate silent reaction cut for the listener.",
+  "Do not group cuts with a changed viewpoint, composition, or camera position into the same dialogue multicut.",
+  "After grouping, verify that dialogue wording, speaker order, and total duration are unchanged.",
+  "",
   "Also tell the user that after confirming the cut structure, you can build `image_prompt` and `video_prompt` as the next step.",
   "",
   "## Still Image Asset and Prompt Workflow",
@@ -205,6 +265,10 @@ const PROJECT_AGENTS_MD = [
   "画像生成する場合は、ユーザー環境で利用できる API や skill を調べ、どの手段で生成するかをユーザーに質問して決定する。",
   "API や skill で生成した画像は、作業フォルダに `assets/<project-file-name>/` を作成し、用途が分かるファイル名へリネームして保存またはコピーする。",
   "保存した画像ファイルのパスを、対応する assets 登録アイテムの `path` にフルパスで記録する。",
+  "未生成または未割当の `path`、`image`、`audio_file`、`video_file` には `-`、`null`、`undefined` などのプレースホルダーを書かず、空欄または空文字列を使う。",
+  "生成完了後は実在する保存先を確認し、cut 素材のフルパスを `cutlist.tsv` と対応する `generate.json` item の両方へ同期する。",
+  "`generate.json` の `isActive: true` は、有効なフルパスを持つ採用素材1件だけに設定する。生成前の候補やパス未確定の item は active にしない。",
+  "asset は実ファイルの保存先が確定するまで `assets.json` の `path` を空にし、生成完了とファイルの存在を確認してからフルパスを登録する。",
   "アプリ内で参照する外部ファイルはフルパス優先で管理する。`assets.json` の `assets[].path`、`generate.json` の `items[].path`、`cutlist.tsv` の `image` / `audio_file` / `video_file` にファイルパスを登録する場合は、可能な限り相対パスではなくフルパスを使う。",
   "例外として、`.lctproj` 内に同梱された `media/...` はZIP内部パスのまま扱う。",
   "複数枚を生成する場合はバッチスクリプトを作成し、バックグラウンドスクリプトとして実行する。LLM は生成完了のレスポンス待ちでブロックしない。",
@@ -231,32 +295,86 @@ const PROJECT_AGENTS_MD = [
   "`.lctproj` is a ZIP archive whose extension is `.lctproj`.",
   "In principle, edit `cutlist.tsv`, `prompts.json`, `generate.json`, and `assets.json` according to their roles. Do not delete or rename `manifest.json`, `timeline.json`, `settings.json`, `media_index.json`, or `AGENTS.md`.",
   "",
-  "Final packaging steps:",
+  "Archive editing rules:",
   "",
-  "1. Extract the original `.lctproj` as a ZIP archive.",
-  "2. Replace `cutlist.tsv` with the edited version.",
-  "3. ZIP only the contents of the extracted folder, not the folder itself.",
-  "4. Rename the resulting ZIP extension to `.lctproj`.",
+  "1. Read the original `.lctproj` as ZIP bytes and load its entries in memory. Do not extract it into a working directory.",
+  "2. Replace only the required entries in memory, preserving unchanged entry names and binary media bytes.",
+  "3. Build the complete edited ZIP in memory, preserving the existing ZIP root structure.",
+  "4. Save through a temporary sibling file and atomically replace the target `.lctproj`. Remove the temporary file on both success and failure.",
+  "5. Do not leave extracted folders, intermediate ZIP files, Base64 dumps, or other working files beside the project.",
   "",
   "At the ZIP root, at minimum `manifest.json` and `cutlist.tsv` must exist.",
   "Place `cutlist.tsv` at the ZIP root unless the existing `manifest.json` explicitly points to another path.",
   "",
-  "PowerShell example:",
-  "",
-  "```powershell",
-  "Compress-Archive -Path .\\ExtractedProject\\* -DestinationPath .\\EditedProject.zip -Force",
-  "Rename-Item .\\EditedProject.zip EditedProject.lctproj",
-  "```",
-  "",
-  "macOS/Linux example:",
-  "",
-  "```sh",
-  "cd ExtractedProject",
-  "zip -r ../EditedProject.lctproj .",
-  "```",
-  "",
   "If direct `.lctproj` attachment is unavailable, return the complete `cutlist.tsv` instead. Avoid returning the entire `.lctproj` as Base64 unless explicitly requested.",
 ].join("\n");
+
+const EDITABLE_AGENT_SECTION_RANGES = [
+  ["## Framing and Camera-Work Decision Guide", "## Column Guidance"],
+  ["## After First Pass", "## Still Image Asset and Prompt Workflow"],
+  ["## Still Image Asset and Prompt Workflow", "## Final Delivery for Chat AI Editing"],
+];
+
+function agentSectionSlice(text, startHeading, endHeading) {
+  const start = text.indexOf(startHeading);
+  if (start < 0) return "";
+  const end = text.indexOf(endHeading, start + startHeading.length);
+  return text.slice(start, end < 0 ? text.length : end).trim();
+}
+
+function removeAgentSectionRange(text, startHeading, endHeading) {
+  const start = text.indexOf(startHeading);
+  if (start < 0) return text;
+  const end = text.indexOf(endHeading, start + startHeading.length);
+  return `${text.slice(0, start)}${end < 0 ? "" : text.slice(end)}`;
+}
+
+const PROJECT_AGENTS_USER_DEFAULT_MD = EDITABLE_AGENT_SECTION_RANGES
+  .map(([start, end]) => agentSectionSlice(PROJECT_AGENTS_TEMPLATE_MD, start, end))
+  .filter(Boolean)
+  .join("\n\n");
+
+const PROJECT_AGENTS_MD = EDITABLE_AGENT_SECTION_RANGES
+  .reduce((text, [start, end]) => removeAgentSectionRange(text, start, end), PROJECT_AGENTS_TEMPLATE_MD)
+  .replace(/\n{3,}/g, "\n\n")
+  .trim();
+
+const AGENTS_USER_BEGIN = "<!-- PREPRO:USER-INSTRUCTIONS:BEGIN -->";
+const AGENTS_USER_END = "<!-- PREPRO:USER-INSTRUCTIONS:END -->";
+
+function composeAgentsMd(userText = PROJECT_AGENTS_USER_DEFAULT_MD) {
+  const normalized = String(userText ?? PROJECT_AGENTS_USER_DEFAULT_MD).trim();
+  return `${PROJECT_AGENTS_MD}\n\n${AGENTS_USER_BEGIN}\n${normalized}${normalized ? "\n" : ""}${AGENTS_USER_END}`;
+}
+
+function parseAgentsMd(text) {
+  const source = String(text || "");
+  if (!source) return { userText: "", warnings: [] };
+  const beginCount = source.split(AGENTS_USER_BEGIN).length - 1;
+  const endCount = source.split(AGENTS_USER_END).length - 1;
+  if (beginCount === 1 && endCount === 1 && source.indexOf(AGENTS_USER_BEGIN) < source.indexOf(AGENTS_USER_END)) {
+    const markedUserText = source.slice(source.indexOf(AGENTS_USER_BEGIN) + AGENTS_USER_BEGIN.length, source.indexOf(AGENTS_USER_END)).trim();
+    const legacyEditableText = EDITABLE_AGENT_SECTION_RANGES
+      .map(([start, end]) => agentSectionSlice(source.slice(0, source.indexOf(AGENTS_USER_BEGIN)), start, end))
+      .filter(Boolean)
+      .join("\n\n");
+    return { userText: [legacyEditableText, markedUserText].filter(Boolean).join("\n\n") || PROJECT_AGENTS_USER_DEFAULT_MD, warnings: legacyEditableText ? ["Editable AGENTS.md sections were migrated from the legacy system block."] : [] };
+  }
+  if (isLegacyManagedAgentsMd(source)) return { userText: PROJECT_AGENTS_USER_DEFAULT_MD, warnings: [] };
+  return {
+    userText: source.replaceAll(AGENTS_USER_BEGIN, "").replaceAll(AGENTS_USER_END, "").trim(),
+    warnings: beginCount || endCount ? ["AGENTS.md user instruction markers were malformed; legacy content was preserved as user instructions."] : [],
+  };
+}
+
+function isLegacyManagedAgentsMd(text) {
+  return text.trim() === PROJECT_AGENTS_MD.trim() || (
+    text.includes("# Prepro Enhancer Project Agent Instructions") &&
+    text.includes("## Source of Truth") &&
+    text.includes("## Final Delivery for Chat AI Editing") &&
+    (text.includes("Compress-Archive") || text.includes("Archive editing rules:"))
+  );
+}
 
 const SAMPLE_TSV = `row_type	id	parent_id	order	title	duration	status	image	audio_file	video_file	image_prompt	video_prompt	scene	subject	composition	action	camera	audio	note
 scene	sc001		1	Lab Anomaly		review				wide cinematic laboratory, tense atmosphere	establishing shot of a quiet research lab	Laboratory		Long shot	Establish the lab	Slow push		Opening scene
@@ -271,6 +389,30 @@ const DEFAULT_UI_SETTINGS = {
   autoBackupIntervalMinutes: 10,
 };
 const UI_SETTINGS_KEY = "preproEnhancer.uiSettings.v1";
+const AGENTS_NEW_PROJECT_DEFAULT_KEY = "preproEnhancer.agentsNewProjectDefault.v1";
+const AGENTS_NEW_PROJECT_DEFAULT_VERSION = 1;
+
+function loadAgentsNewProjectDefault() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(AGENTS_NEW_PROJECT_DEFAULT_KEY) || "null");
+    if (parsed?.version !== AGENTS_NEW_PROJECT_DEFAULT_VERSION || typeof parsed.userText !== "string") return { hasCustom: false, userText: PROJECT_AGENTS_USER_DEFAULT_MD };
+    return { hasCustom: true, userText: parsed.userText };
+  } catch {
+    return { hasCustom: false, userText: PROJECT_AGENTS_USER_DEFAULT_MD };
+  }
+}
+
+function saveAgentsNewProjectDefault(userText) {
+  localStorage.setItem(AGENTS_NEW_PROJECT_DEFAULT_KEY, JSON.stringify({
+    version: AGENTS_NEW_PROJECT_DEFAULT_VERSION,
+    userText: String(userText ?? ""),
+    updatedAt: new Date().toISOString(),
+  }));
+}
+
+function clearAgentsNewProjectDefault() {
+  localStorage.removeItem(AGENTS_NEW_PROJECT_DEFAULT_KEY);
+}
 
 const I18N = {
   en: {
@@ -332,10 +474,12 @@ const state = {
   mediaPathStatus: new Map(),
   mediaPathStatusRunId: 0,
   promptPreviewUrls: new Map(),
+  promptPreviewInFlight: new Map(),
+  mediaResolveGeneration: 0,
   assets: [],
   generatedMedia: [],
   prompts: [],
-  agentsText: PROJECT_AGENTS_MD,
+  agentsUserText: PROJECT_AGENTS_USER_DEFAULT_MD,
   assetSelectedIds: new Set(),
   assetSelectionAnchorId: "",
   assetModalId: "",
@@ -354,6 +498,7 @@ const state = {
   contextMenu: null,
   addOverlayAnchor: null,
   timelinePreviewCutId: "",
+  timelineMediaGeneration: 0,
   timelineScrubbing: false,
   timelineResizing: null,
   timelineScrollLeft: 0,
@@ -744,8 +889,9 @@ async function newProject() {
   const manifest = structuredClone(DEFAULT_MANIFEST);
   manifest.projectName = "Untitled Project";
   const rows = [];
+  const agentsUserText = loadAgentsNewProjectDefault().userText;
   const defaultName = `${safeName(manifest.projectName)}.lctproj`;
-  const bytes = await projectArchiveBytes({ manifest, rows, assets: [], generatedMedia: [], prompts: [], agentsText: PROJECT_AGENTS_MD, mediaBlobs: new Map(), collapsed: [], activeId: "", view: "table" });
+  const bytes = await projectArchiveBytes({ manifest, rows, assets: [], generatedMedia: [], prompts: [], agentsUserText, mediaBlobs: new Map(), collapsed: [], activeId: "", view: "table" });
   if (tauriInvoke) {
     const saved = await tauriInvoke("save_project_as", { defaultName, bytes: [...bytes] });
     if (!saved) return;
@@ -796,6 +942,7 @@ async function loadTsvBytes(bytes, name) {
 
 function loadTsv(text, name) {
   stopPlayback(0);
+  revokeMediaUrls();
   state.manifest = {
     ...structuredClone(DEFAULT_MANIFEST),
     projectName: name || "TSV Project",
@@ -804,7 +951,7 @@ function loadTsv(text, name) {
   state.assets = [];
   state.generatedMedia = generatedMediaFromRows(state.rows);
   state.prompts = promptsFromRows(state.rows);
-  state.agentsText = PROJECT_AGENTS_MD;
+  state.agentsUserText = PROJECT_AGENTS_USER_DEFAULT_MD;
   syncRowsFromJsonState();
   clearAssetSelection();
   state.mediaUrls = new Map();
@@ -870,9 +1017,12 @@ async function loadProjectFromBytes(bytes, fileName, path = "") {
   state.assets = loadAssetsFromEntries(entries, manifest);
   state.generatedMedia = loadGeneratedMediaFromEntries(entries, manifest);
   state.prompts = loadPromptsFromEntries(entries, manifest);
-  state.agentsText = loadAgentsFromEntries(entries);
+  const agents = loadAgentsFromEntries(entries);
+  state.agentsUserText = agents.userText;
+  state.importWarnings.push(...agents.warnings);
   if (!state.generatedMedia.length) state.generatedMedia = generatedMediaFromRows(state.rows);
   if (!state.prompts.length) state.prompts = promptsFromRows(state.rows);
+  state.importWarnings.push(...reconcileGeneratedMedia(state.rows, state.generatedMedia, { collectWarnings: true }));
   syncRowsFromJsonState();
   clearAssetSelection();
   state.mediaUrls = new Map();
@@ -938,7 +1088,7 @@ function loadPromptsFromEntries(entries, manifest) {
 
 function loadAgentsFromEntries(entries) {
   const match = findZipEntry(entries, "AGENTS.md");
-  return match?.entry ? decodeZipText(match.entry) : PROJECT_AGENTS_MD;
+  return parseAgentsMd(match?.entry ? decodeZipText(match.entry) : composeAgentsMd());
 }
 
 function normalizeAssets(assets = []) {
@@ -951,7 +1101,7 @@ function normalizeAssets(assets = []) {
 }
 
 function normalizeAsset(asset = {}) {
-  const path = String(asset.path || "").trim();
+  const path = normalizeMediaPath(asset.path);
   return {
     id: String(asset.id || nextAssetId()).trim(),
     type: "reference_image",
@@ -974,15 +1124,16 @@ function normalizeGeneratedMedia(items = []) {
 }
 
 function normalizeGeneratedMediaItem(item = {}) {
-  const type = ["image", "audio", "video"].includes(item.type) ? item.type : mediaTypeFromPath(item.path || "");
+  const path = normalizeMediaPath(item.path);
+  const type = ["image", "audio", "video"].includes(item.type) ? item.type : mediaTypeFromPath(path);
   return {
     id: String(item.id || "").trim(),
     cutId: String(item.cutId || item.cut_id || "").trim(),
     type,
-    path: String(item.path || "").trim(),
+    path,
     takeName: String(item.takeName || item.take_name || "").trim(),
     status: ["candidate", "ok", "ng", "hold"].includes(item.status) ? item.status : "candidate",
-    isActive: Boolean(item.isActive ?? item.is_active),
+    isActive: Boolean(path && (item.isActive ?? item.is_active)),
     note: String(item.note || "").trim(),
     createdAt: String(item.createdAt || item.created_at || new Date().toISOString()),
     sourcePromptId: String(item.sourcePromptId || item.source_prompt_id || "").trim(),
@@ -1024,6 +1175,7 @@ function generatedMediaFromRows(rows = state.rows) {
       ["audio", row.audio_file],
       ["video", row.video_file],
     ].forEach(([type, path]) => {
+      path = normalizeMediaPath(path);
       if (!path) return;
       items.push(normalizeGeneratedMediaItem({
         id: nextGeneratedMediaId(),
@@ -1060,11 +1212,11 @@ function promptsFromRows(rows = state.rows) {
   return normalizePrompts(prompts);
 }
 
-function syncRowsFromJsonState(rows = state.rows) {
+function syncRowsFromJsonState(rows = state.rows, generatedMedia = state.generatedMedia) {
   rows.forEach((row) => {
-    row.image = activeGeneratedPath(row.id, "image");
-    row.audio_file = activeGeneratedPath(row.id, "audio");
-    row.video_file = activeGeneratedPath(row.id, "video");
+    row.image = activeGeneratedPath(row.id, "image", generatedMedia) || normalizeMediaPath(row.image);
+    row.audio_file = activeGeneratedPath(row.id, "audio", generatedMedia) || normalizeMediaPath(row.audio_file);
+    row.video_file = activeGeneratedPath(row.id, "video", generatedMedia) || normalizeMediaPath(row.video_file);
     row.image_prompt = activePromptText(row.id, "image");
     row.video_prompt = activePromptText(row.id, "video");
   });
@@ -1081,8 +1233,46 @@ function rowWithJsonValues(row) {
   };
 }
 
-function activeGeneratedPath(cutId, type) {
-  return state.generatedMedia.find((item) => item.cutId === cutId && item.type === type && item.isActive)?.path || "";
+function activeGeneratedPath(cutId, type, generatedMedia = state.generatedMedia) {
+  return normalizeMediaPath(generatedMedia.find((item) => item.cutId === cutId && item.type === type && item.isActive)?.path);
+}
+
+function normalizeMediaPath(path) {
+  const normalized = String(path ?? "").trim();
+  if (!normalized) return "";
+  const sentinel = normalized.toLowerCase();
+  return ["-", "—", "null", "undefined"].includes(sentinel) ? "" : normalized;
+}
+
+function reconcileGeneratedMedia(rows, generatedMedia, { collectWarnings = false } = {}) {
+  const warnings = [];
+  const fieldTypes = [["image", "image"], ["audio_file", "audio"], ["video_file", "video"]];
+  rows.forEach((row) => {
+    if (row.row_type !== "cut") return;
+    fieldTypes.forEach(([field, type]) => {
+      const tsvPath = normalizeMediaPath(row[field]);
+      const items = generatedMedia.filter((item) => item.cutId === row.id && item.type === type);
+      items.forEach((item) => {
+        item.path = normalizeMediaPath(item.path);
+        if (!item.path) item.isActive = false;
+      });
+      const activeItems = items.filter((item) => item.isActive && item.path);
+      let selected = activeItems[0] || null;
+      if (!selected && tsvPath) {
+        selected = items.find((item) => item.path === tsvPath) || null;
+        if (!selected) {
+          selected = normalizeGeneratedMediaItem({ id: nextGeneratedMediaId(), cutId: row.id, type, path: tsvPath, status: "candidate", isActive: true });
+          generatedMedia.push(selected);
+        }
+        if (collectWarnings) warnings.push(`${row.id}: ${field} was restored from cutlist.tsv because generate.json had no valid active path.`);
+      }
+      items.forEach((item) => { item.isActive = item === selected; });
+      if (selected) selected.isActive = true;
+      row[field] = selected?.path || "";
+      if (collectWarnings && activeItems.length > 1) warnings.push(`${row.id}: multiple active ${type} items were reduced to one.`);
+    });
+  });
+  return warnings;
 }
 
 function activePromptText(ownerId, kind) {
@@ -1111,6 +1301,7 @@ function ensureActivePrompt(ownerId, ownerType, kind) {
 
 function setActiveGeneratedMedia(cutId, type, path) {
   if (!cutId || !type) return;
+  path = normalizeMediaPath(path);
   state.generatedMedia.forEach((item) => {
     if (item.cutId === cutId && item.type === type) item.isActive = false;
   });
@@ -1164,7 +1355,8 @@ async function refreshProjectFromDisk() {
   let assets;
   let generatedMedia;
   let prompts;
-  let agentsText;
+  let agentsUserText;
+  let agentsWarnings;
   try {
     const opened = normalizeTauriFile(await tauriInvoke("read_project_file", { path: state.projectPath }));
     const bytes = new Uint8Array(opened.bytes || []);
@@ -1188,7 +1380,9 @@ async function refreshProjectFromDisk() {
     assets = loadAssetsFromEntries(entries, diskManifest);
     generatedMedia = loadGeneratedMediaFromEntries(entries, diskManifest);
     prompts = loadPromptsFromEntries(entries, diskManifest);
-    agentsText = loadAgentsFromEntries(entries);
+    const agents = loadAgentsFromEntries(entries);
+    agentsUserText = agents.userText;
+    agentsWarnings = agents.warnings;
     if (!generatedMedia.length) generatedMedia = generatedMediaFromRows(rows);
     if (!prompts.length) prompts = promptsFromRows(rows);
   } catch (error) {
@@ -1196,12 +1390,16 @@ async function refreshProjectFromDisk() {
     return;
   }
   pushHistory();
+  stopPlayback(state.playOffset);
+  invalidateMediaResolveWork();
   state.manifest = diskManifest;
   state.rows = rows;
   state.assets = assets;
   state.generatedMedia = generatedMedia;
   state.prompts = prompts;
-  state.agentsText = agentsText;
+  state.agentsUserText = agentsUserText;
+  state.importWarnings.push(...(agentsWarnings || []));
+  state.importWarnings.push(...reconcileGeneratedMedia(state.rows, state.generatedMedia, { collectWarnings: true }));
   syncRowsFromJsonState();
   clearAssetSelection();
   preserveSelectionAfterRowsRefresh();
@@ -1290,7 +1488,7 @@ function normalizeZipPath(path) {
 function loadRowsFromTsv(text) {
   const parsed = parseTsv(text);
   const { rows, warnings } = normalizeImportedRows(parsed.rows);
-  state.importWarnings = warnings;
+  state.importWarnings = [...parsed.warnings, ...warnings];
   return rows;
 }
 
@@ -1360,13 +1558,16 @@ function uniqueRepairId(preferred, usedIds) {
 
 function parseTsv(text) {
   const records = parseDelimitedText(text.replace(/^\uFEFF/, ""), "\t").filter((record) => record.some((cell) => String(cell).trim()));
-  if (!records.length) return { headers: [], rowCount: 0, rows: [] };
+  if (!records.length) return { headers: [], rowCount: 0, rows: [], warnings: [] };
   const headers = records[0].map(normalizeTsvHeader);
   for (const column of ["row_type", "id"]) {
     if (!headers.includes(column)) throw new Error(`cutlist.tsv is missing required column ${column}.`);
   }
+  const warnings = [];
   const rows = records.slice(1).map((rawValues, index) => {
-    const values = normalizeTsvValuesForHeaders(headers, rawValues);
+    const normalized = normalizeTsvValuesForHeaders(headers, rawValues, index + 2);
+    const values = normalized.values;
+    warnings.push(...normalized.warnings);
     const row = {};
     COLUMNS.forEach((column) => {
       const headerIndex = headerIndexForColumn(headers, column);
@@ -1376,17 +1577,66 @@ function parseTsv(text) {
     row.id = String(row.id || nextId(row.row_type)).trim();
     row.parent_id = String(row.parent_id || "").trim();
     row.order = String(row.order || index + 1).trim();
+    if (normalized.moveDialogueNote && looksLikeDialogueText(row.note)) {
+      const dialogue = row.note.trim();
+      row.audio = [row.audio.trim(), dialogue].filter(Boolean).join(" / ");
+      row.note = "";
+      warnings.push(`Line ${index + 2} (${row.id}): dialogue-like note was moved into audio: ${dialogue.slice(0, 48)}`);
+    } else if (row.row_type === "cut" && !row.audio && looksLikeDialogueText(row.note)) {
+      warnings.push(`Line ${index + 2} (${row.id}): audio is empty but note contains dialogue-like text: ${row.note.slice(0, 48)}`);
+    }
     return row;
   });
-  return { headers, rowCount: records.length - 1, rows };
+  return { headers, rowCount: records.length - 1, rows, warnings };
 }
 
-function normalizeTsvValuesForHeaders(headers, values) {
+function normalizeTsvValuesForHeaders(headers, values, lineNumber = 0) {
+  const warnings = [];
   if (headers.join("\t") === COLUMNS.join("\t") && values.length === 17) {
     const [row_type, id, parent_id, order, title, duration, scene, subject, composition, action, camera, audio, image, audio_file, image_prompt, video_prompt, note] = values;
-    return [row_type, id, parent_id, order, title, duration, "", image, audio_file, "", image_prompt, video_prompt, scene, subject, composition, action, camera, audio, note];
+    return { values: [row_type, id, parent_id, order, title, duration, "", image, audio_file, "", image_prompt, video_prompt, scene, subject, composition, action, camera, audio, note], warnings };
   }
-  return values;
+  if (headers.join("\t") !== COLUMNS.join("\t")) return { values, warnings };
+  const rowType = normalizeRowType(values[0]);
+  const id = String(values[1] || "").trim() || "unknown";
+  if (["scene", "multicut"].includes(rowType) && values.length < COLUMNS.length) {
+    warnings.push(`Line ${lineNumber} (${id}): trailing empty cells were restored (${values.length} -> ${COLUMNS.length}).`);
+    return { values: [...values, ...Array(COLUMNS.length - values.length).fill("")], warnings };
+  }
+  if (rowType === "cut" && isKnownMissingVideoPromptPattern(values)) {
+    warnings.push(`Line ${lineNumber} (${id}): missing video_prompt cell was restored (18 -> 19); scene through note were shifted right.`);
+    return { values: [...values.slice(0, 11), "", ...values.slice(11)], warnings, moveDialogueNote: true };
+  }
+  if (values.length !== COLUMNS.length) {
+    throw new Error(`Line ${lineNumber} (${id}): ambiguous TSV column count ${values.length}; expected ${COLUMNS.length}. Automatic repair was not applied.`);
+  }
+  return { values, warnings };
+}
+
+function isKnownMissingVideoPromptPattern(values) {
+  if (values.length !== COLUMNS.length - 1 || normalizeRowType(values[0]) !== "cut") return false;
+  if (!values.slice(6, 11).every((value) => !String(value || "").trim())) return false;
+  if (!String(values[11] || "").trim() || !String(values[12] || "").trim()) return false;
+  return looksLikeCameraWork(values[15]) && Boolean(String(values[16] || "").trim());
+}
+
+function looksLikeCameraWork(value) {
+  return /(?:^|[（(\s→/])(FIX|PAN|TILT|DOLLY|TRACK|PUSH|PULL|HANDHELD|CIRCLE|固定|パン|ティルト|ドリー|トラック)/i.test(String(value || ""));
+}
+
+function looksLikeDialogueText(value) {
+  const text = String(value || "").trim();
+  return /「[^」]+」/.test(text) || /(?:^|[\s　])(?:[^\s　「」]{1,24})(?:\([MN]\))?[：:]\s*[「\"]/.test(text);
+}
+
+function dialogueSpeakers(value) {
+  const speakers = [];
+  const pattern = /(?:^|[\s　/])([\p{L}\p{N}_-]{1,24}(?:\(M\))?|N)\s*[：:]?\s*「/gu;
+  for (const match of String(value || "").matchAll(pattern)) {
+    const speaker = match[1].replace(/\(M\)$/i, "");
+    if (!speakers.includes(speaker)) speakers.push(speaker);
+  }
+  return speakers;
 }
 
 function normalizeTsvHeader(header) {
@@ -1566,6 +1816,21 @@ function serializeTsv(rows = state.rows) {
     const exported = rowWithJsonValues(row);
     return COLUMNS.map((column) => encodeCell(exported[column])).join("\t");
   })].join("\n");
+}
+
+function validateSerializedTsv(text, rows) {
+  const records = parseDelimitedText(String(text || "").replace(/^\uFEFF/, ""), "\t");
+  if (!records.length || records[0].join("\t") !== COLUMNS.join("\t")) throw new Error("Save aborted: cutlist.tsv header does not exactly match the 19-column schema.");
+  if (records.length !== rows.length + 1) throw new Error(`Save aborted: cutlist.tsv row count changed during serialization (${rows.length} -> ${records.length - 1}).`);
+  records.slice(1).forEach((record, index) => {
+    const row = rows[index];
+    if (record.length !== COLUMNS.length) throw new Error(`Save aborted: row ${index + 2} (${row?.id || "unknown"}) has ${record.length} cells; expected ${COLUMNS.length}.`);
+    const exported = rowWithJsonValues(row);
+    COLUMNS.forEach((column, columnIndex) => {
+      const expected = encodeCell(exported[column]);
+      if (record[columnIndex] !== expected) throw new Error(`Save aborted: row ${index + 2} (${row?.id || "unknown"}) failed round-trip validation at ${column}.`);
+    });
+  });
 }
 
 function emptyProjectTsv() {
@@ -2052,7 +2317,7 @@ function timelineRulerHtml(model) {
 }
 
 function timelinePreviewHtml(cut, offset) {
-  if (!cut) return `<div class="timeline-preview"><div class="timeline-text-preview"><strong>No cut</strong></div></div>`;
+  if (!cut) return `<div class="timeline-preview" data-media-key=""><div class="timeline-text-preview"><strong>No cut</strong></div></div>`;
   const image = promptMediaResolution(cut.image);
   const audio = promptMediaResolution(cut.audio_file);
   const textRows = ["title", "scene", "subject", "composition", "action", "camera", "audio"]
@@ -2071,7 +2336,7 @@ function timelinePreviewHtml(cut, offset) {
       ? `<div class="timeline-audio-state">${escapeHtml(audio?.status === "missing" ? "Missing audio" : "Loading audio...")}</div>`
       : "";
   return `
-    <div class="timeline-preview" data-cut-id="${escapeHtml(cut.id)}" data-cut-offset="${offset}">
+    <div class="timeline-preview" data-cut-id="${escapeHtml(cut.id)}" data-cut-offset="${offset}" data-media-key="${escapeAttr(timelineMediaKey(cut))}">
       ${imageHtml}
       ${audioHtml}
     </div>`;
@@ -2183,22 +2448,31 @@ function updateTimelinePlaybackUi({ forcePreview = false, model = timelineModel(
   const preview = root.querySelector(".timeline-preview");
   const cut = activeCut?.cut || null;
   const offset = activeCut?.offset || 0;
-  if (preview && (forcePreview || preview.dataset.cutId !== (cut?.id || ""))) {
+  const mediaKey = timelineMediaKey(cut);
+  const previewChanged = Boolean(preview && (forcePreview || preview.dataset.mediaKey !== mediaKey));
+  if (previewChanged) {
     preview.outerHTML = timelinePreviewHtml(cut, offset);
   } else if (preview) {
     preview.dataset.cutOffset = String(offset);
   }
-  resolveTimelinePreviewMedia(cut);
+  if (previewChanged) resolveTimelinePreviewMedia(cut, mediaKey);
   syncTimelineAudio(cut, offset);
 }
 
-async function resolveTimelinePreviewMedia(cut) {
+function timelineMediaKey(cut) {
+  return cut ? JSON.stringify([cut.id, cut.image || "", cut.audio_file || ""]) : "";
+}
+
+async function resolveTimelinePreviewMedia(cut, mediaKey = timelineMediaKey(cut)) {
   if (!cut) return;
-  const paths = [cut.image, cut.audio_file, cut.video_file].filter((path) => path && !promptMediaResolution(path));
+  const projectGeneration = state.mediaResolveGeneration;
+  const timelineGeneration = state.timelineMediaGeneration;
+  const paths = [cut.image, cut.audio_file].filter((path) => path && !promptMediaResolution(path));
   if (!paths.length) return;
   await Promise.all(paths.map(resolvePromptMediaPath));
+  if (projectGeneration !== state.mediaResolveGeneration || timelineGeneration !== state.timelineMediaGeneration) return;
   const active = activeCutAt(currentPlaybackTime(), timelineModel().cuts);
-  if (active?.cut?.id !== cut.id || state.view !== "timeline") return;
+  if (timelineMediaKey(active?.cut) !== mediaKey || state.view !== "timeline") return;
   updateTimelinePlaybackUi({ forcePreview: true, active });
 }
 
@@ -2645,36 +2919,65 @@ function renderAgents() {
       <header class="agents-header">
         <div>
           <strong>AGENTS.md</strong>
-          <span>Project agent instructions saved at the .lctproj root.</span>
+          <span>Project-specific user instructions saved inside AGENTS.md.</span>
         </div>
-        <button id="resetAgentsBtn" type="button">${iconHtml("restore")}<span class="icon-button-label">Reset</span></button>
+        <div class="agents-actions">
+          <button id="saveAgentsDefaultBtn" type="button">${iconHtml("bookmark_add")}<span class="icon-button-label">Save as New Project Default</span></button>
+          <button id="resetAgentsBtn" type="button">${iconHtml("restore")}<span class="icon-button-label">Restore Built-in Default</span></button>
+        </div>
       </header>
-      <textarea id="agentsEditor" spellcheck="false" aria-label="AGENTS.md">${escapeHtml(state.agentsText)}</textarea>
+      <div class="agents-content">
+        <section class="agents-user-panel">
+          <label for="agentsEditor">User instructions <span>Editable</span></label>
+          <textarea id="agentsEditor" spellcheck="false" aria-label="User instructions">${escapeHtml(state.agentsUserText)}</textarea>
+        </section>
+      </div>
     </div>`;
   const editor = el.agentsView.querySelector("#agentsEditor");
   editor?.addEventListener("input", () => {
-    if (state.agentsText === editor.value) return;
+    if (state.agentsUserText === editor.value) return;
     pushHistory();
-    state.agentsText = editor.value;
+    state.agentsUserText = editor.value;
     markDirty();
     renderStatus(validate());
   }, { once: true });
   editor?.addEventListener("input", () => {
-    state.agentsText = editor.value;
+    state.agentsUserText = editor.value;
     markDirty();
     renderStatus(validate());
   });
+  el.agentsView.querySelector("#saveAgentsDefaultBtn")?.addEventListener("click", saveCurrentAgentsAsDefault);
   el.agentsView.querySelector("#resetAgentsBtn")?.addEventListener("click", resetAgentsText);
 }
 
+function saveCurrentAgentsAsDefault() {
+  if (!confirm("Use the current User instructions for every new project on this device?")) return;
+  try {
+    saveAgentsNewProjectDefault(state.agentsUserText);
+    showToast("New-project AGENTS default saved.");
+  } catch (error) {
+    alert(`Could not save the new-project AGENTS default: ${error.message || error}`);
+  }
+}
+
 function resetAgentsText() {
-  if (state.agentsText === PROJECT_AGENTS_MD) return;
-  if (!confirm("Reset AGENTS.md to the default project instructions?")) return;
-  pushHistory();
-  state.agentsText = PROJECT_AGENTS_MD;
-  markDirty();
+  const customDefault = loadAgentsNewProjectDefault().hasCustom;
+  if (state.agentsUserText === PROJECT_AGENTS_USER_DEFAULT_MD && !customDefault) return;
+  if (!confirm("Restore the built-in User instructions and remove the saved new-project default?")) return;
+  try {
+    clearAgentsNewProjectDefault();
+  } catch (error) {
+    alert(`Could not clear the saved AGENTS default: ${error.message || error}`);
+    return;
+  }
+  if (state.agentsUserText !== PROJECT_AGENTS_USER_DEFAULT_MD) {
+    pushHistory();
+    state.agentsUserText = PROJECT_AGENTS_USER_DEFAULT_MD;
+    markDirty();
+  }
   renderAgents();
   renderStatus(validate());
+  showToast("Built-in AGENTS default restored.");
 }
 
 function assetCardHtml(asset, index) {
@@ -3747,21 +4050,49 @@ async function resolvePromptReferencePreviews(root = el.promptEdit) {
 
 async function resolvePromptMediaPath(path) {
   if (!path || state.promptPreviewUrls.has(path) || state.mediaUrls.has(path) || isBrowserSafeMediaPath(path)) return promptMediaResolution(path);
+  const existing = state.promptPreviewInFlight.get(path);
+  if (existing?.generation === state.mediaResolveGeneration) {
+    mediaResolveDebug("deduplicated", path);
+    return existing.promise;
+  }
   if (!tauriInvoke || !state.projectPath) {
     state.promptPreviewUrls.set(path, { status: "missing", url: "", kind: promptMediaKind(path) });
     return state.promptPreviewUrls.get(path);
   }
-  try {
-    const opened = normalizeTauriFile(await readPromptMediaFile(path));
-    const blob = new Blob([new Uint8Array(opened.bytes || [])], { type: mimeFromPath(path) });
-    const url = URL.createObjectURL(blob);
-    state.promptPreviewUrls.set(path, { status: "ready", url, kind: promptMediaKind(path) });
-    state.mediaPathStatus.set(path, "exists");
-  } catch {
-    state.promptPreviewUrls.set(path, { status: "missing", url: "", kind: promptMediaKind(path) });
-    state.mediaPathStatus.set(path, "missing");
-  }
-  return state.promptPreviewUrls.get(path);
+  const generation = state.mediaResolveGeneration;
+  const startedAt = performance.now();
+  mediaResolveDebug("started", path);
+  let promise;
+  promise = (async () => {
+    try {
+      const opened = normalizeTauriFile(await readPromptMediaFile(path));
+      const blob = new Blob([new Uint8Array(opened.bytes || [])], { type: mimeFromPath(path) });
+      const url = URL.createObjectURL(blob);
+      if (generation !== state.mediaResolveGeneration) {
+        URL.revokeObjectURL(url);
+        return null;
+      }
+      state.promptPreviewUrls.set(path, { status: "ready", url, kind: promptMediaKind(path) });
+      state.mediaPathStatus.set(path, "exists");
+      mediaResolveDebug("ready", path, performance.now() - startedAt);
+    } catch {
+      if (generation !== state.mediaResolveGeneration) return null;
+      state.promptPreviewUrls.set(path, { status: "missing", url: "", kind: promptMediaKind(path) });
+      state.mediaPathStatus.set(path, "missing");
+      mediaResolveDebug("missing", path, performance.now() - startedAt);
+    } finally {
+      const current = state.promptPreviewInFlight.get(path);
+      if (current?.promise === promise) state.promptPreviewInFlight.delete(path);
+    }
+    return state.promptPreviewUrls.get(path) || null;
+  })();
+  state.promptPreviewInFlight.set(path, { generation, promise });
+  return promise;
+}
+
+function mediaResolveDebug(event, path, durationMs = null) {
+  if (!window.__PREPRO_MEDIA_DEBUG__) return;
+  console.debug("[media-resolve]", event, { path, durationMs });
 }
 
 async function readPromptMediaFile(path) {
@@ -3942,6 +4273,7 @@ function toggleCollapse(id) {
 
 function setView(view) {
   const previousView = state.view;
+  if (previousView === "timeline" && view !== "timeline") stopPlayback(state.playOffset);
   state.view = view;
   if (previousView !== view) renderCurrentView();
   document.querySelectorAll(".view-btn").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
@@ -4659,6 +4991,11 @@ function validate() {
     if (row.row_type === "multicut" && (!parent || parent.row_type !== "scene")) issues.push(error(`${row.id}: multicut parent_id must reference scene.`));
     if (row.row_type === "cut" && (!parent || !["scene", "multicut"].includes(parent.row_type))) issues.push(error(`${row.id}: cut parent_id must reference scene or multicut.`));
     if (row.row_type === "cut" && durationSeconds(row.duration) <= 0) issues.push(warn(`${row.id}: invalid duration, default 3s will be used.`));
+    if (row.row_type === "cut" && looksLikeDialogueText(row.action)) issues.push(warn(`${row.id}: Dialogue in action. Move spoken text and its speaker label to audio.`));
+    if (row.row_type === "cut") {
+      const speakers = dialogueSpeakers(row.audio);
+      if (speakers.length > 1) issues.push(warn(`${row.id}: Multiple speakers in one cut (${speakers.join(", ")}). Split at each speaker change.`));
+    }
     if (row.row_type === "cut" && isMissingMediaPath(row.image)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: image may be missing (${row.image}).` });
     if (row.row_type === "cut" && isMissingMediaPath(row.audio_file)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: audio may be missing (${row.audio_file}).` });
     if (row.row_type === "cut" && isMissingMediaPath(row.video_file)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: video may be missing (${row.video_file}).` });
@@ -4878,7 +5215,7 @@ function historySnapshot() {
     assets: state.assets,
     generatedMedia: state.generatedMedia,
     prompts: state.prompts,
-    agentsText: state.agentsText,
+    agentsUserText: state.agentsUserText,
   };
 }
 
@@ -4892,7 +5229,7 @@ function restoreHistorySnapshot(snapshot) {
   state.assets = parsed.assets || state.assets;
   state.generatedMedia = parsed.generatedMedia || [];
   state.prompts = parsed.prompts || [];
-  state.agentsText = parsed.agentsText ?? state.agentsText;
+  state.agentsUserText = parsed.agentsUserText ?? parsed.agentsText ?? state.agentsUserText;
   syncRowsFromJsonState();
 }
 
@@ -5216,13 +5553,15 @@ async function projectArchiveBytes(options = {}) {
   const sourceAssets = options.assets || state.assets;
   const sourceGeneratedMedia = options.generatedMedia || state.generatedMedia;
   const sourcePrompts = options.prompts || state.prompts;
-  const sourceAgentsText = options.agentsText ?? state.agentsText ?? PROJECT_AGENTS_MD;
+  const sourceAgentsUserText = options.agentsUserText ?? state.agentsUserText ?? PROJECT_AGENTS_USER_DEFAULT_MD;
   const sourceMediaBlobs = options.mediaBlobs || state.mediaBlobs;
   const collapsed = options.collapsed || [...state.collapsed];
   const activeId = options.activeId ?? state.activeId;
   const view = options.view || state.view;
-  syncRowsFromJsonState(sourceRows);
+  reconcileGeneratedMedia(sourceRows, sourceGeneratedMedia);
+  syncRowsFromJsonState(sourceRows, sourceGeneratedMedia);
   const cutlist = sourceRows.length ? serializeTsv(sourceRows) : emptyProjectTsv();
+  validateSerializedTsv(cutlist, sourceRows);
   const manifest = {
     ...sourceManifest,
     projectName: sourceManifest.projectName || "Untitled Project",
@@ -5236,7 +5575,7 @@ async function projectArchiveBytes(options = {}) {
   const files = new Map([
     ["manifest.json", JSON.stringify(manifest, null, 2)],
     ["cutlist.tsv", cutlist],
-    ["AGENTS.md", sourceAgentsText],
+    ["AGENTS.md", composeAgentsMd(sourceAgentsUserText)],
     ["timeline.json", JSON.stringify({ collapsed, activeId }, null, 2)],
     ["settings.json", JSON.stringify({ view }, null, 2)],
     ["assets.json", JSON.stringify({ format: "LocalCutBoardAssets", formatVersion: "1.0.0", assets: normalizeAssets(sourceAssets) }, null, 2)],
@@ -5377,10 +5716,12 @@ function schedulePlaybackFrame() {
 }
 
 function stopPlayback(offset = state.playOffset) {
-  state.playOffset = Math.max(0, offset);
   state.playing = false;
   cancelAnimationFrame(state.raf);
+  state.raf = 0;
+  state.timelineMediaGeneration += 1;
   document.querySelector("#timelineAudio")?.pause();
+  state.playOffset = Math.max(0, offset);
 }
 
 function setPlaybackOffset(offset) {
@@ -5558,6 +5899,7 @@ function seedSampleMedia() {
 }
 
 function revokeMediaUrls() {
+  invalidateMediaResolveWork();
   state.mediaUrls.forEach((url) => {
     if (url.startsWith("blob:")) URL.revokeObjectURL(url);
   });
@@ -5565,6 +5907,12 @@ function revokeMediaUrls() {
     if (item?.url?.startsWith("blob:")) URL.revokeObjectURL(item.url);
   });
   state.promptPreviewUrls.clear();
+}
+
+function invalidateMediaResolveWork() {
+  state.mediaResolveGeneration += 1;
+  state.timelineMediaGeneration += 1;
+  state.promptPreviewInFlight.clear();
 }
 
 function sampleSvg(color, label) {

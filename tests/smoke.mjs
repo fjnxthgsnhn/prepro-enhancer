@@ -174,6 +174,83 @@ await expectText("#projectName", "Deflate Project");
 await expectText("#counts", "scene 1 / multicut 0 / cut 0");
 await page.reload();
 await expectText("#projectName", "Sample Project");
+const resilientMediaRow = Object.fromEntries(expectedHeaders().map((header) => [header, ""]));
+Object.assign(resilientMediaRow, {
+  row_type: "cut", id: "ct970", parent_id: "sc970", order: "1", title: "Resilient Media", duration: "3s",
+  image: "H:\\Media\\ct970.png", audio_file: "H:\\Media\\ct970.wav", video_file: "H:\\Media\\ct970.mp4",
+});
+const resilientMediaProject = makeStoredZip(new Map([
+  ["manifest.json", JSON.stringify({ projectName: "Resilient Media Project", mainCutlist: "cutlist.tsv", generate: "generate.json", assets: "assets.json" })],
+  ["cutlist.tsv", `${expectedHeaders().join("\t")}\n${expectedHeaders().map((header) => ({ row_type: "scene", id: "sc970", order: "1", title: "Media Scene" })[header] || "").join("\t")}\n${expectedHeaders().map((header) => resilientMediaRow[header]).join("\t")}`],
+  ["generate.json", JSON.stringify({ items: [
+    { id: "bad-image", cutId: "ct970", type: "image", path: "-", isActive: true },
+    { id: "bad-audio", cutId: "ct970", type: "audio", path: "null", isActive: true },
+    { id: "bad-video", cutId: "ct970", type: "video", path: "undefined", isActive: true },
+  ] })],
+  ["assets.json", JSON.stringify({ assets: [
+    { id: "asset-empty", path: "—", title: "Pending Reference", tags: ["character"], note: "Keep metadata" },
+    { id: "asset-missing", path: "H:\\Media\\missing-reference.png", title: "Missing Reference" },
+  ] })],
+]));
+await loadProjectFile("resilient-media.lctproj", resilientMediaProject);
+await expectText('tbody tr[data-id="ct970"] td[data-column="image"]', "H:\\Media\\ct970.png");
+await expectText('tbody tr[data-id="ct970"] td[data-column="audio_file"]', "H:\\Media\\ct970.wav");
+await expectText('tbody tr[data-id="ct970"] td[data-column="video_file"]', "H:\\Media\\ct970.mp4");
+const [resilientMediaDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
+const resilientEntries = readZipEntries(await readFile(await resilientMediaDownload.path()));
+const resilientSavedRows = parseTsvForTest(resilientEntries.get("cutlist.tsv") || "");
+const resilientSavedCut = resilientSavedRows.find((row) => row.id === "ct970");
+for (const [field, expected] of [["image", "H:\\Media\\ct970.png"], ["audio_file", "H:\\Media\\ct970.wav"], ["video_file", "H:\\Media\\ct970.mp4"]]) {
+  if (resilientSavedCut?.[field] !== expected) throw new Error(`${field} should survive invalid active generated media`);
+}
+const resilientSavedGenerate = JSON.parse(resilientEntries.get("generate.json") || "{}").items || [];
+for (const [type, expected] of [["image", "H:\\Media\\ct970.png"], ["audio", "H:\\Media\\ct970.wav"], ["video", "H:\\Media\\ct970.mp4"]]) {
+  const active = resilientSavedGenerate.filter((item) => item.cutId === "ct970" && item.type === type && item.isActive);
+  if (active.length !== 1 || active[0].path !== expected) throw new Error(`${type} should save exactly one valid active generated item`);
+}
+const resilientSavedAssets = JSON.parse(resilientEntries.get("assets.json") || "{}").assets || [];
+const emptyPathAsset = resilientSavedAssets.find((asset) => asset.id === "asset-empty");
+if (!emptyPathAsset || emptyPathAsset.path !== "" || emptyPathAsset.title !== "Pending Reference" || emptyPathAsset.note !== "Keep metadata") {
+  throw new Error("Invalid asset placeholders should be cleared without losing asset metadata");
+}
+if (resilientSavedAssets.find((asset) => asset.id === "asset-missing")?.path !== "H:\\Media\\missing-reference.png") {
+  throw new Error("Unavailable normal asset paths should be preserved");
+}
+await page.reload();
+await expectText("#projectName", "Sample Project");
+const shiftedTsvProject = makeStoredZip(new Map([
+  ["manifest.json", JSON.stringify({ projectName: "Shifted TSV Project", mainCutlist: "cutlist.tsv" })],
+  ["cutlist.tsv", `${expectedHeaders().join("\t")}\nscene\tsc980\t\t1\tShifted Scene\t8s\t\t\t\t\t\t\ncut\tct980\tsc980\t1\tShifted Cut\t4s\t\t\t\t\t\tClassroom\tHero\tMedium shot\tHero receives a page\tFIX\tPaper sound\tHero「全部の台詞を残す」`],
+]));
+await loadProjectFile("shifted-tsv.lctproj", shiftedTsvProject);
+await expectText('tbody tr[data-id="ct980"] td[data-column="scene"]', "Classroom");
+await expectText('tbody tr[data-id="ct980"] td[data-column="camera"]', "FIX");
+await expectText('tbody tr[data-id="ct980"] td[data-column="audio"]', "Paper sound / Hero「全部の台詞を残す」");
+if ((await page.locator('tbody tr[data-id="ct980"] td[data-column="note"]').textContent()).trim()) throw new Error("Dialogue-like shifted note should be moved into audio");
+await page.waitForFunction(() => document.querySelector("#validationPanel")?.textContent?.includes("missing video_prompt cell was restored"));
+const [shiftedDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
+const shiftedSavedTsv = readZipEntries(await readFile(await shiftedDownload.path())).get("cutlist.tsv") || "";
+for (const [index, line] of shiftedSavedTsv.split(/\r?\n/).entries()) {
+  if (line.split("\t").length !== 19) throw new Error(`Saved repaired TSV line ${index + 1} should contain exactly 19 cells`);
+}
+await page.reload();
+await expectText("#projectName", "Sample Project");
+const dialogueValidationRows = [
+  { row_type: "scene", id: "sc981", order: "1", title: "Dialogue Validation" },
+  { row_type: "cut", id: "ct981", parent_id: "sc981", order: "1", title: "Dialogue in Action", duration: "3s", action: "主人公「ここに混ぜない」", audio: "" },
+  { row_type: "cut", id: "ct982", parent_id: "sc981", order: "2", title: "Multiple Speakers", duration: "4s", action: "二人が向き合う", audio: "主人公「一人目」 / 美織「二人目」" },
+  { row_type: "cut", id: "ct983", parent_id: "sc981", order: "3", title: "Same Speaker", duration: "4s", action: "主人公が話し続ける", audio: "主人公「一つ目」 / 主人公「二つ目」" },
+];
+const dialogueValidationProject = makeStoredZip(new Map([
+  ["manifest.json", JSON.stringify({ projectName: "Dialogue Validation Project", mainCutlist: "cutlist.tsv" })],
+  ["cutlist.tsv", [expectedHeaders().join("\t"), ...dialogueValidationRows.map((row) => expectedHeaders().map((header) => row[header] || "").join("\t"))].join("\n")],
+]));
+await loadProjectFile("dialogue-validation.lctproj", dialogueValidationProject);
+await page.waitForFunction(() => document.querySelector("#validationPanel")?.textContent?.includes("ct981: Dialogue in action"));
+await page.waitForFunction(() => document.querySelector("#validationPanel")?.textContent?.includes("ct982: Multiple speakers in one cut"));
+if ((await page.locator("#validationPanel").textContent()).includes("ct983: Multiple speakers")) throw new Error("Repeated dialogue by the same speaker should be allowed in one cut");
+await page.reload();
+await expectText("#projectName", "Sample Project");
 const customAgentsText = "# Custom Agents\n\nEdit cutlist.tsv and project JSON carefully.";
 const agentsProject = makeStoredZip(
   new Map([
@@ -185,14 +262,29 @@ const agentsProject = makeStoredZip(
 await loadProjectFile("agents-project.lctproj", agentsProject);
 await page.keyboard.press("Alt+6");
 await page.waitForFunction((text) => document.querySelector("#agentsEditor")?.value === text, customAgentsText);
+if (await page.locator(".agents-system-panel").count()) throw new Error("System agent instructions should not be displayed in Agents view");
 await page.locator("#agentsEditor").fill(`${customAgentsText}\n\nUse prompts.json for active prompts.`);
 await expectText("#saveState", "Unsaved");
 const [agentsProjectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
 const editedAgentsEntries = readZipEntries(await readFile(await agentsProjectDownload.path()));
-if (!editedAgentsEntries.get("AGENTS.md")?.includes("Use prompts.json for active prompts.")) throw new Error("Edited AGENTS.md should be saved into project archive");
+const editedAgentsMd = editedAgentsEntries.get("AGENTS.md") || "";
+if (!editedAgentsMd.includes("Use prompts.json for active prompts.")) throw new Error("Edited user instructions should be saved into AGENTS.md");
+if (!editedAgentsMd.includes("<!-- PREPRO:USER-INSTRUCTIONS:BEGIN -->") || !editedAgentsMd.includes("<!-- PREPRO:USER-INSTRUCTIONS:END -->")) throw new Error("AGENTS.md should delimit user instructions");
+if (!editedAgentsMd.includes("Archive editing rules:")) throw new Error("Saving legacy custom instructions should restore fixed system instructions");
+await expectText("#saveState", "Saved");
+page.once("dialog", (dialog) => dialog.accept());
+await page.click("#saveAgentsDefaultBtn");
+await page.waitForFunction(() => JSON.parse(localStorage.getItem("preproEnhancer.agentsNewProjectDefault.v1") || "null")?.userText?.includes("Use prompts.json for active prompts."));
+await expectText("#saveState", "Saved");
+const [customDefaultProjectDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("new")]);
+const customDefaultAgents = readZipEntries(await readFile(await customDefaultProjectDownload.path())).get("AGENTS.md") || "";
+if (!customDefaultAgents.includes("Use prompts.json for active prompts.")) throw new Error("New projects should use the saved AGENTS user default");
 page.once("dialog", (dialog) => dialog.accept());
 await page.click("#resetAgentsBtn");
-await page.waitForFunction(() => document.querySelector("#agentsEditor")?.value.includes("# Prepro Enhancer Project Agent Instructions"));
+await page.waitForFunction(() => document.querySelector("#agentsEditor")?.value.includes("## Framing and Camera-Work Decision Guide"));
+if ((await page.locator("#agentsEditor").inputValue()).includes("## Cut Decomposition Rules")) throw new Error("Cut Decomposition Rules should be removed from editable defaults");
+await page.waitForFunction(() => document.querySelector("#agentsEditor")?.value.includes("## Still Image Asset and Prompt Workflow"));
+await page.waitForFunction(() => !localStorage.getItem("preproEnhancer.agentsNewProjectDefault.v1"));
 const [resetAgentsDownload] = await Promise.all([page.waitForEvent("download"), clickFileAction("save")]);
 expectAgentsMd(readZipEntries(await readFile(await resetAgentsDownload.path())).get("AGENTS.md"), "Agents Reset");
 await page.reload();
@@ -1028,9 +1120,20 @@ function expectAgentsMd(content, label) {
   if (!content.includes(expectedHeaders().join("\t"))) throw new Error(`${label} AGENTS.md should document current cutlist columns`);
   if (!content.includes("scene > cut")) throw new Error(`${label} AGENTS.md should document direct cut hierarchy rules`);
   if (!content.includes("multicut` is optional")) throw new Error(`${label} AGENTS.md should document optional multicut rules`);
-  if (!content.includes("100 Japanese characters = 17 seconds")) throw new Error(`${label} AGENTS.md should document dialogue duration rule`);
+  if (!content.includes("### Cut timing and duration")) throw new Error(`${label} AGENTS.md should include timing guidance under framing and camera work`);
+  if (!content.includes("日本語100文字 = 17秒")) throw new Error(`${label} AGENTS.md should document dialogue duration rule`);
+  if (content.includes("## Cut Decomposition Rules")) throw new Error(`${label} AGENTS.md should not include the removed cut decomposition section`);
+  if (!content.includes("## Framing and Camera-Work Decision Guide")) throw new Error(`${label} AGENTS.md should include framing and camera-work guidance`);
+  if (!content.includes("心理的距離に応じて、ロング、ミディアム、クローズ")) throw new Error(`${label} AGENTS.md should document shot-size decisions`);
+  if (!content.includes("見栄えを良くすることだけを理由にカメラを動かさない")) throw new Error(`${label} AGENTS.md should require motivated camera movement`);
+  if (!content.includes("180度ルール、アイライン、スクリーン方向")) throw new Error(`${label} AGENTS.md should document continuity guidance`);
+  if (!content.includes("固定または移動方式、移動方向、速度、開始位置、終了位置、追従対象")) throw new Error(`${label} AGENTS.md should document detailed camera fields`);
+  if (!content.includes("### Framing and camera-work checklist")) throw new Error(`${label} AGENTS.md should include a framing checklist`);
   if (!content.includes("## Still Image Asset and Prompt Workflow")) throw new Error(`${label} AGENTS.md should document still image workflow`);
   if (!content.includes("人物、環境、小物、乗り物")) throw new Error(`${label} AGENTS.md should document asset extraction categories`);
+  if (!content.includes("プレースホルダーを書かず、空欄または空文字列")) throw new Error(`${label} AGENTS.md should forbid placeholder media paths`);
+  if (!content.includes("`cutlist.tsv` と対応する `generate.json` item の両方へ同期")) throw new Error(`${label} AGENTS.md should require cutlist and generated media synchronization`);
+  if (!content.includes("有効なフルパスを持つ採用素材1件だけ")) throw new Error(`${label} AGENTS.md should restrict active generated media`);
   if (!content.includes("assets/<project-file-name>/")) throw new Error(`${label} AGENTS.md should document generated asset folder policy`);
   if (!content.includes("グループ元の multicut に `image_prompt`")) throw new Error(`${label} AGENTS.md should document multicut image prompt policy`);
   if (!content.includes("gpt-image-2")) throw new Error(`${label} AGENTS.md should document gpt-image-2 reference handling`);
@@ -1040,8 +1143,22 @@ function expectAgentsMd(content, label) {
   if (!content.includes("`linkedAssetIds` から `assets.json` のフルパスを解決")) throw new Error(`${label} AGENTS.md should document linkedAssetIds reference resolution`);
   if (!content.includes("`.lctproj` is a ZIP archive")) throw new Error(`${label} AGENTS.md should document lctproj zip archive format`);
   if (!content.includes("At the ZIP root, at minimum `manifest.json` and `cutlist.tsv`")) throw new Error(`${label} AGENTS.md should document required zip root files`);
-  if (!content.includes("Compress-Archive")) throw new Error(`${label} AGENTS.md should include a PowerShell rearchive example`);
-  if (!content.includes("zip -r ../EditedProject.lctproj .")) throw new Error(`${label} AGENTS.md should include a macOS/Linux rearchive example`);
+  if (!content.includes("array of exactly 19 cells")) throw new Error(`${label} AGENTS.md should require structured 19-cell TSV rows`);
+  if (!content.includes("without omission, summarization, paraphrasing, or reordering")) throw new Error(`${label} AGENTS.md should require complete dialogue transcription`);
+  if (!content.includes("audit them against the cut `audio` fields")) throw new Error(`${label} AGENTS.md should require dialogue coverage auditing`);
+  if (!content.includes("Keep `action` strictly visual")) throw new Error(`${label} AGENTS.md should prohibit dialogue in action`);
+  if (!content.includes("Use one speaker per cut")) throw new Error(`${label} AGENTS.md should require one speaker per cut`);
+  if (!content.includes("group consecutive first-pass dialogue cuts into a multicut")) throw new Error(`${label} AGENTS.md should defer dialogue multicut grouping until after the first pass`);
+  if (!content.includes("If validation fails, do not replace the original `.lctproj`")) throw new Error(`${label} AGENTS.md should prohibit saving invalid TSV`);
+  if (!content.includes("Do not extract it into a working directory")) throw new Error(`${label} AGENTS.md should require in-memory ZIP editing`);
+  if (!content.includes("atomically replace the target `.lctproj`")) throw new Error(`${label} AGENTS.md should require atomic project replacement`);
+  if (!content.includes("<!-- PREPRO:USER-INSTRUCTIONS:BEGIN -->") || !content.includes("<!-- PREPRO:USER-INSTRUCTIONS:END -->")) throw new Error(`${label} AGENTS.md should delimit user instructions`);
+}
+
+function parseTsvForTest(text) {
+  const [headerLine = "", ...lines] = String(text).replace(/^\uFEFF/, "").trimEnd().split(/\r?\n/);
+  const headers = headerLine.split("\t");
+  return lines.map((line) => Object.fromEntries(headers.map((header, index) => [header, line.split("\t")[index] || ""])));
 }
 async function expectTableHeaders() {
   const headers = await page.$$eval(".data-table th", (nodes) => nodes.map((node) => node.textContent));
@@ -1100,6 +1217,7 @@ async function runTauriWelcomeSmoke(browser) {
       ["generate.json", JSON.stringify({ format: "LocalCutBoardGeneratedMedia", formatVersion: "1.0.0", items: [
         { id: "gen_refresh_image", cutId: "ct778", type: "image", path: "C:/Missing/refresh-cut.png", status: "candidate", isActive: true },
         { id: "gen_refresh_audio", cutId: "ct778", type: "audio", path: "C:/Missing/refresh-cut.wav", status: "candidate", isActive: true },
+        { id: "gen_refresh_video", cutId: "ct778", type: "video", path: "C:/Projects/media/relative-preview.svg", status: "candidate", isActive: true },
       ] })],
       ["prompts.json", JSON.stringify({ format: "LocalCutBoardPrompts", formatVersion: "1.0.0", prompts: [
         { id: "prompt_refresh_image", ownerId: "ct778", ownerType: "cut", kind: "image", text: "Refreshed image prompt from JSON", status: "active", isActive: true },
@@ -1134,6 +1252,21 @@ async function runTauriWelcomeSmoke(browser) {
   await expectPageText(tauriPage, 'tbody tr[data-id="ct778"] td[data-column="audio_file"]', "C:/RepairRoot/found/refresh-cut.wav");
   await tauriPage.waitForFunction(() => !document.querySelector("#validationPanel")?.textContent?.includes("audio may be missing"));
   await tauriPage.waitForFunction(() => !document.querySelector("#validationPanel")?.textContent?.includes("image may be missing"));
+  await tauriPage.evaluate(() => {
+    window.__tauriMockMediaReadCounts.clear();
+    window.__tauriMockMediaReadDelayMs = 400;
+  });
+  await tauriPage.click('[data-view="timeline"]');
+  await tauriPage.click("#playBtn");
+  await tauriPage.waitForTimeout(150);
+  await tauriPage.click("#playBtn");
+  await tauriPage.waitForFunction(() => document.querySelector("#playBtn")?.title === "Play");
+  const playbackReadCounts = await tauriPage.evaluate(() => Object.fromEntries(window.__tauriMockMediaReadCounts));
+  if ((playbackReadCounts["C:\\RepairRoot\\found\\refresh-cut.png"] || 0) !== 1) throw new Error("Timeline should deduplicate in-flight image reads");
+  if ((playbackReadCounts["C:\\RepairRoot\\found\\refresh-cut.wav"] || 0) !== 1) throw new Error("Timeline should deduplicate in-flight audio reads");
+  if ((playbackReadCounts["C:\\Projects\\media\\relative-preview.svg"] || 0) !== 0) throw new Error("Timeline should not read video media");
+  await tauriPage.evaluate(() => { window.__tauriMockMediaReadDelayMs = 0; });
+  await tauriPage.click('[data-view="table"]');
   await tauriPage.click('tbody tr[data-id="ct778"] td[data-column="title"]');
   await tauriPage.waitForFunction(() => document.querySelector("#mediaPanel audio")?.src?.startsWith("blob:"));
   await tauriPage.waitForFunction(() => document.querySelector("#mediaPanel .image-preview img")?.src?.startsWith("blob:"));
@@ -1567,6 +1700,8 @@ async function installTauriMock(targetPage, options = {}) {
     const mediaFiles = new Map((config.mediaFiles || []).map(([path, bytes]) => [path, bytes]));
     window.__tauriMockFiles = files;
     window.__tauriMockMediaFiles = mediaFiles;
+    window.__tauriMockMediaReadCounts = new Map();
+    window.__tauriMockMediaReadDelayMs = 0;
     const eventHandlers = new Map();
     const standardDragDropHandlers = [];
     window.__emitTauriAssetDrop = (payload) => {
@@ -1634,6 +1769,8 @@ async function installTauriMock(targetPage, options = {}) {
             ]].flat();
             const resolved = candidates.find((path) => mediaFiles.has(path));
             if (!resolved) throw new Error("media not found");
+            window.__tauriMockMediaReadCounts.set(resolved, (window.__tauriMockMediaReadCounts.get(resolved) || 0) + 1);
+            if (window.__tauriMockMediaReadDelayMs) await new Promise((resolve) => setTimeout(resolve, window.__tauriMockMediaReadDelayMs));
             const bytes = mediaFiles.get(resolved);
             return { path: resolved, file_name: resolved.split(/[\\/]/).pop(), bytes };
           }

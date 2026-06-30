@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::{collections::{HashMap, HashSet}, fs, path::{Path, PathBuf}};
+use std::{collections::{HashMap, HashSet}, fs, io::Write, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
 use tauri::{DragDropEvent, Emitter, Manager, RunEvent, WindowEvent};
 
 #[derive(Serialize)]
@@ -60,7 +60,7 @@ fn open_project() -> Result<Option<OpenedFile>, String> {
 #[tauri::command]
 fn save_project(path: String, bytes: Vec<u8>) -> Result<Option<SavedFile>, String> {
     let path = PathBuf::from(path);
-    fs::write(&path, bytes).map_err(|error| error.to_string())?;
+    atomic_write(&path, &bytes)?;
     Ok(Some(saved_file(path)))
 }
 
@@ -74,8 +74,46 @@ fn save_project_as(default_name: String, bytes: Vec<u8>) -> Result<Option<SavedF
         return Ok(None);
     };
     let path = ensure_extension(path, "lctproj");
-    fs::write(&path, bytes).map_err(|error| error.to_string())?;
+    atomic_write(&path, &bytes)?;
     Ok(Some(saved_file(path)))
+}
+
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path.parent().ok_or_else(|| "Save path has no parent directory.".to_string())?;
+    let stem = path.file_name().and_then(|name| name.to_str()).unwrap_or("project.lctproj");
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_nanos();
+    let temp_path = parent.join(format!(".{stem}.{}.{}.tmp", std::process::id(), nonce));
+    let result = (|| -> Result<(), String> {
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temp_path).map_err(|error| error.to_string())?;
+        file.write_all(bytes).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        drop(file);
+        replace_file(&temp_path, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+    result
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
+    fs::rename(source, target).map_err(|error| error.to_string())
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, target: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+    #[link(name = "Kernel32")]
+    extern "system" {
+        fn MoveFileExW(existing_file_name: *const u16, new_file_name: *const u16, flags: u32) -> i32;
+    }
+    let source_wide: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let target_wide: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+    let moved = unsafe { MoveFileExW(source_wide.as_ptr(), target_wide.as_ptr(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) };
+    if moved == 0 { Err(std::io::Error::last_os_error().to_string()) } else { Ok(()) }
 }
 
 #[tauri::command]
