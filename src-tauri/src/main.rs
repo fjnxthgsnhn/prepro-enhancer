@@ -30,8 +30,10 @@ struct FileSearchResult {
 
 #[derive(Clone, Serialize)]
 struct AssetDropPayload {
+    #[serde(rename = "type")]
+    event_type: String,
     paths: Vec<String>,
-    position: AssetDropPosition,
+    position: Option<AssetDropPosition>,
     scale_factor: f64,
 }
 
@@ -409,17 +411,30 @@ fn prune_project_backups(dir: &Path, max_backups: usize) -> Result<(), String> {
     Ok(())
 }
 
-fn emit_asset_file_drop(app: &tauri::AppHandle, label: &str, paths: &[PathBuf], position: &tauri::PhysicalPosition<f64>) {
+fn emit_asset_file_drop(app: &tauri::AppHandle, label: &str, event_type: &str, paths: &[PathBuf], position: Option<&tauri::PhysicalPosition<f64>>) {
     let scale_factor = app
         .get_webview_window(label)
         .and_then(|window| window.scale_factor().ok())
         .unwrap_or(1.0);
     let payload = AssetDropPayload {
+        event_type: event_type.to_string(),
         paths: paths.iter().map(|path| path.to_string_lossy().to_string()).collect(),
-        position: AssetDropPosition { x: position.x, y: position.y },
+        position: position.map(|point| AssetDropPosition { x: point.x, y: point.y }),
         scale_factor,
     };
-    let _ = app.emit_to(label, "asset-file-drop", payload);
+    if let Some(window) = app.get_webview_window(label) {
+        match serde_json::to_string(&payload) {
+            Ok(json) => {
+                if let Err(error) = window.eval(format!("window.__PREPRO_NATIVE_DROP__?.({json});")) {
+                    eprintln!("[assets-dnd] direct WebView delivery failed: {error}");
+                }
+            }
+            Err(error) => eprintln!("[assets-dnd] payload serialization failed: {error}"),
+        }
+    }
+    if let Err(error) = app.emit_to(label, "asset-file-drop", payload) {
+        eprintln!("[assets-dnd] event delivery failed: {error}");
+    }
 }
 
 fn main() {
@@ -447,8 +462,14 @@ fn main() {
 
     app.run(|app_handle, event| {
         if let RunEvent::WindowEvent { label, event, .. } = event {
-            if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, position }) = event {
-                emit_asset_file_drop(app_handle, &label, &paths, &position);
+            if let WindowEvent::DragDrop(drop_event) = event {
+                match drop_event {
+                    DragDropEvent::Enter { paths, position } => emit_asset_file_drop(app_handle, &label, "enter", &paths, Some(&position)),
+                    DragDropEvent::Over { position } => emit_asset_file_drop(app_handle, &label, "over", &[], Some(&position)),
+                    DragDropEvent::Drop { paths, position } => emit_asset_file_drop(app_handle, &label, "drop", &paths, Some(&position)),
+                    DragDropEvent::Leave => emit_asset_file_drop(app_handle, &label, "leave", &[], None),
+                    _ => {}
+                }
             }
         }
     });

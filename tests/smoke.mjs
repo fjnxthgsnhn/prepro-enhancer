@@ -8,6 +8,8 @@ import { deflateRawSync } from "node:zlib";
 const REAL_TAURI_DND_ASSET_PATH = "H:\\AICreation\\project\\narushisuto-DK\\assets\\episode_001\\BG_教室.png";
 const REAL_TAURI_DND_PROJECT_PATH = "H:\\AICreation\\project\\narushisuto-DK\\episode_001_03.lctproj";
 const REAL_TAURI_DND_REGISTERED_PATH = REAL_TAURI_DND_ASSET_PATH.replace(/\\/g, "/");
+const tauriConfig = JSON.parse(await readFile(resolve("src-tauri/tauri.conf.json"), "utf8"));
+if (tauriConfig.app?.windows?.[0]?.dragDropEnabled !== true) throw new Error("Tauri native drag/drop must stay enabled so OS drops provide full file paths");
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ acceptDownloads: true, viewport: { width: 1440, height: 920 } });
@@ -411,10 +413,7 @@ await ctrlSelectRows(["ct001", "ct002"]);
 await page.click('tbody tr[data-id="ct001"]', { button: "right" });
 await page.locator(".table-context-menu button", { hasText: "Copy ID" }).click();
 await page.waitForFunction(async () => (await navigator.clipboard.readText()) === "ct001\nct002");
-await page.locator('tbody tr[data-id="ct001"]').dragTo(page.locator('tbody tr[data-id="mc002"]'), {
-  sourcePosition: { x: 24, y: 12 },
-  targetPosition: { x: 24, y: 12 },
-});
+await pointerDrag('tbody tr[data-id="ct001"]', 'tbody tr[data-id="mc002"]', { targetPosition: { x: 24, y: 12 } });
 await page.waitForFunction(() => {
   const rows = [...document.querySelectorAll(".data-table tbody tr[data-id]")].map((row) => row.dataset.id);
   return rows.indexOf("ct001") > rows.indexOf("mc002") && rows.indexOf("ct002") > rows.indexOf("mc002");
@@ -441,7 +440,7 @@ await page.click('[data-view="storyboard"]');
 await expectCount(".cut-card", 3);
 await expectText(".scene-header", "8s");
 await expectText(".multicut-header", "6s");
-await page.dragAndDrop('.cut-card[data-id="ct001"]', '.multicut-section[data-id="mc002"]');
+await pointerDrag('.cut-card[data-id="ct001"]', '.multicut-section[data-id="mc002"]', { sourcePosition: { x: 100, y: 60 }, targetPosition: { x: 20, y: 15 } });
 await page.click('[data-view="table"]');
 await page.waitForFunction(() => {
   const rows = [...document.querySelectorAll(".data-table tbody tr")].map((row) => row.dataset.id);
@@ -455,10 +454,7 @@ await page.waitForFunction(() => {
   const fields = [...document.querySelectorAll("#detailPanel .field")];
   return fields.find((field) => field.querySelector("label")?.textContent === "duration")?.querySelector("input")?.value === "8s";
 });
-await page.locator('.multicut-section[data-id="mc002"]').dragTo(page.locator('.multicut-section[data-id="mc001"]'), {
-  sourcePosition: { x: 20, y: 15 },
-  targetPosition: { x: 20, y: 15 },
-});
+await pointerDrag('.multicut-section[data-id="mc002"]', '.multicut-section[data-id="mc001"]', { sourcePosition: { x: 160, y: 18 }, targetPosition: { x: 20, y: 15 } });
 await page.waitForFunction(() => document.querySelector('.multicut-section[data-id="mc002"]')?.classList.contains("selected"));
 await expectText(".storyboard", "Microscope Close");
 
@@ -544,10 +540,7 @@ await page.click('[data-view="table"]');
 await page.waitForFunction(() => parseFloat(document.querySelector('tbody tr[data-id="ct002"] td[data-column="duration"]')?.textContent || "0") > 3);
 await page.waitForFunction(() => parseFloat(document.querySelector('tbody tr[data-id="sc001"] td[data-column="duration"]')?.textContent || "0") > 8);
 await page.click('[data-view="timeline"]');
-await page.locator('.timeline-clip.cut[data-id="ct001"]').dragTo(page.locator('.timeline-clip.multicut[data-id="mc001"]'), {
-  sourcePosition: { x: 20, y: 20 },
-  targetPosition: { x: 20, y: 20 },
-});
+await pointerDrag('.timeline-clip.cut[data-id="ct001"]', '.timeline-clip.multicut[data-id="mc001"]', { targetPosition: { x: 20, y: 20 } });
 await page.waitForFunction(() => {
   const clip = document.querySelector('.timeline-clip.cut[data-id="ct001"]');
   return clip?.classList.contains("selected") && (clip.classList.contains("moved") || clip.classList.contains("flip-animating"));
@@ -776,9 +769,9 @@ await page.keyboard.press("Enter");
 await expectText('tbody tr[data-id="ct001"] td[data-column="title"]', "Edited Smoke Cut");
 await expectText("#saveState", "Unsaved");
 await dropFiles('tbody tr[data-id="ct001"]', [{ name: "table-drop.png", type: "image/png" }]);
-await expectText('tbody tr[data-id="ct001"] td[data-column="image"]', "table-drop.png");
+await expectText('tbody tr[data-id="ct001"] td[data-column="image"]', "media/images/ct001_table-drop.png");
 await dropFiles('tbody tr[data-id="ct001"]', [{ name: "table-drop.wav", type: "audio/wav" }]);
-await expectText('tbody tr[data-id="ct001"] td[data-column="audio_file"]', "table-drop.wav");
+await expectText('tbody tr[data-id="ct001"] td[data-column="audio_file"]', "media/audio/ct001_table-drop.wav");
 await page.click('[data-view="storyboard"]');
 await dropFiles('.scene-section[data-id="sc001"]', [{ name: "ignored-scene.png", type: "image/png" }]);
 await dropFiles('.cut-card[data-id="ct002"]', [
@@ -786,8 +779,8 @@ await dropFiles('.cut-card[data-id="ct002"]', [
   { name: "story-drop.mp3", type: "audio/mpeg" },
 ]);
 await page.click('[data-view="table"]');
-await expectText('tbody tr[data-id="ct002"] td[data-column="image"]', "story-drop.jpg");
-await expectText('tbody tr[data-id="ct002"] td[data-column="audio_file"]', "story-drop.mp3");
+await expectText('tbody tr[data-id="ct002"] td[data-column="image"]', "media/images/ct002_story-drop.jpg");
+await expectText('tbody tr[data-id="ct002"] td[data-column="audio_file"]', "media/audio/ct002_story-drop.mp3");
 if ((await page.locator('tbody tr[data-id="sc001"] td[data-column="image"]').textContent()).includes("ignored-scene.png")) {
   throw new Error("scene file drop should be ignored");
 }
@@ -834,7 +827,7 @@ await page.click('tbody tr[data-id="mc002"] td[data-column="title"]', { modifier
 await page.keyboard.press("Control+G");
 await page.waitForFunction(() => document.querySelector('tbody tr[data-id="sc002"]')?.classList.contains("selected"));
 
-await page.dragAndDrop('tbody tr[data-id="ct001"]', 'tbody tr[data-id="mc002"]');
+await pointerDrag('tbody tr[data-id="ct001"]', 'tbody tr[data-id="mc002"]');
 await page.waitForFunction(() => {
   const rows = [...document.querySelectorAll(".data-table tbody tr")].map((row) => row.dataset.id);
   return rows.indexOf("ct001") > rows.indexOf("mc002");
@@ -856,7 +849,7 @@ await loadProjectFile("drag-behavior.lctproj", makeStoredZip(new Map([
 ])));
 await expectText("#projectName", "Drag Behavior");
 await page.click('[data-view="table"]');
-await page.dragAndDrop('tbody tr[data-id="ct704"]', 'tbody tr[data-id="mc701"]');
+await pointerDrag('tbody tr[data-id="ct704"]', 'tbody tr[data-id="mc701"]');
 await page.waitForFunction(() => {
   const rows = [...document.querySelectorAll(".data-table tbody tr")].map((row) => row.dataset.id);
   return rows.indexOf("ct704") === rows.indexOf("ct701") + 1;
@@ -867,10 +860,7 @@ await page.waitForFunction(() => {
   return rows.indexOf("ct704") === rows.indexOf("mc702") - 1 &&
     document.querySelector('tbody tr[data-id="ct704"]')?.classList.contains("direct-cut");
 });
-await page.locator('tbody tr[data-id="mc702"]').dragTo(page.locator('tbody tr[data-id="ct704"]'), {
-  sourcePosition: { x: 20, y: 12 },
-  targetPosition: { x: 20, y: 22 },
-});
+await pointerDrag('tbody tr[data-id="mc702"]', 'tbody tr[data-id="ct704"]', { targetPosition: { x: 20, y: 22 } });
 await page.waitForFunction(() => {
   const rows = [...document.querySelectorAll(".data-table tbody tr")].map((row) => row.dataset.id);
   return rows.indexOf("mc702") === rows.indexOf("ct704") + 1;
@@ -890,10 +880,7 @@ await page.waitForFunction(() => (
   document.querySelector('.cut-card[data-id="ct703"]')?.classList.contains("selected") &&
   document.querySelector('.cut-card[data-id="ct704"]')?.classList.contains("selected")
 ));
-await page.locator('.cut-card[data-id="ct704"]').dragTo(page.locator('.cut-card[data-id="ct701"]'), {
-  sourcePosition: { x: 20, y: 20 },
-  targetPosition: { x: 20, y: 8 },
-});
+await pointerDrag('.cut-card[data-id="ct704"]', '.cut-card[data-id="ct701"]', { sourcePosition: { x: 100, y: 60 }, targetPosition: { x: 20, y: 8 } });
 await page.waitForFunction(() => {
   const card = document.querySelector('.cut-card[data-id="ct704"]');
   return card?.classList.contains("moved") || card?.classList.contains("flip-animating");
@@ -1270,6 +1257,8 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.click('tbody tr[data-id="ct778"] td[data-column="title"]');
   await tauriPage.waitForFunction(() => document.querySelector("#mediaPanel audio")?.src?.startsWith("blob:"));
   await tauriPage.waitForFunction(() => document.querySelector("#mediaPanel .image-preview img")?.src?.startsWith("blob:"));
+  await tauriPage.click('[data-view="storyboard"]');
+  await tauriPage.waitForFunction(() => document.querySelector('.cut-card[data-id="ct778"] .thumb img')?.src?.startsWith("blob:"));
   await tauriPage.click('[data-view="timeline"]');
   await tauriPage.waitForFunction(() => document.querySelector("#timelineAudio")?.src?.startsWith("blob:"));
   await tauriPage.waitForFunction(() => document.querySelector(".timeline-preview img")?.src?.startsWith("blob:"));
@@ -1321,7 +1310,7 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.evaluate(() => {
     const target = document.querySelector('.cut-card[data-id="ct778"]');
     const rect = target.getBoundingClientRect();
-    window.__emitTauriStandardAssetDrop({
+    window.__emitTauriAssetDrop({
       type: "drop",
       paths: ["C:\\Projects\\media\\native-story.mp3"],
       position: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
@@ -1334,7 +1323,7 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.evaluate(() => {
     const target = document.querySelector('.timeline-clip.cut[data-id="ct778"]');
     const rect = target.getBoundingClientRect();
-    window.__emitTauriStandardAssetDrop({
+    window.__emitTauriAssetDrop({
       type: "drop",
       paths: ["C:\\Projects\\media\\native-timeline.mov"],
       position: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
@@ -1361,13 +1350,13 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.waitForFunction(() => document.querySelectorAll(".asset-card").length >= 4);
   const assetCountAfterFileDrops = await tauriPage.locator(".asset-card").count();
   const tauriAssetPaths = await tauriPage.$$eval(".asset-card .prompt-media-card[data-path]", (cards) => cards.map((card) => card.dataset.path));
-  for (const expectedPath of ["C:/Projects/assets/local-rui.png", "D:/External/external-rui.png", "assets/fallback-rui.png"]) {
+  for (const expectedPath of ["C:/Projects/assets/local-rui.png", "D:/External/external-rui.png", "media/references/asset_fallback-rui.png"]) {
     if (!tauriAssetPaths.includes(expectedPath)) throw new Error(`Dropped asset path should preserve full-path policy: ${expectedPath}`);
   }
   await tauriPage.evaluate(() => {
     const target = document.querySelector(".assets-drop-zone");
     const rect = target.getBoundingClientRect();
-    window.__emitTauriStandardAssetDrop({
+    window.__emitTauriAssetDrop({
       type: "drop",
       paths: [
         "C:\\Projects\\assets\\episode_001\\BG_恒一_ルイ.png",
@@ -1393,7 +1382,7 @@ async function runTauriWelcomeSmoke(browser) {
     const target = [...document.querySelectorAll(".asset-card")]
       .find((card) => card.querySelector('[data-asset-field="title"]')?.value === "local-rui");
     const rect = target.getBoundingClientRect();
-    window.__emitTauriStandardAssetDrop({
+    window.__emitTauriAssetDrop({
       type: "drop",
       paths: ["C:\\Projects\\assets\\episode_001\\updated-native-rui.png", "C:\\Projects\\assets\\episode_001\\ignored-extra.png"],
       position: { x: rect.left + 16, y: rect.top + 16 },
@@ -1405,7 +1394,7 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriPage.waitForFunction(() => [...document.querySelectorAll('.asset-card [data-asset-field="title"]')].some((input) => input.value === "local-rui"));
   await tauriPage.waitForFunction(() => document.querySelector(".app-toast.visible")?.textContent?.includes("Save the project"));
   await tauriPage.evaluate(() => {
-    window.__emitTauriStandardAssetDrop({
+    window.__emitTauriAssetDrop({
       type: "drop",
       paths: ["C:\\Projects\\assets\\ignored.png"],
       position: { x: 2, y: 2 },
@@ -1424,6 +1413,33 @@ async function runTauriWelcomeSmoke(browser) {
   });
   await tauriPage.waitForFunction((count) => document.querySelectorAll(".asset-card").length === count + 1, assetCountAfterNativeDrop);
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/assets/asset-file-drop-fallback.png"]'));
+  await tauriPage.evaluate(() => {
+    const target = document.querySelector(".assets-drop-zone");
+    const rect = target.getBoundingClientRect();
+    window.__emitTauriDragDropEvent({
+      type: "drop",
+      paths: ["C:\\Projects\\assets\\tauri-global-event.png"],
+      position: { x: rect.right - 48, y: rect.bottom - 48 },
+      scaleFactor: 1,
+    });
+  });
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/assets/tauri-global-event.png"]'));
+  const assetCountBeforeDuplicate = await tauriPage.locator(".asset-card").count();
+  await tauriPage.evaluate(() => {
+    const target = document.querySelector(".assets-drop-zone");
+    const rect = target.getBoundingClientRect();
+    const payload = {
+      type: "drop",
+      paths: ["C:\\Projects\\assets\\deduplicated-dpi.png"],
+      position: { x: (rect.left + 40) * 1.5, y: (rect.top + 40) * 1.5 },
+      scaleFactor: 1.5,
+    };
+    window.__emitTauriStandardAssetDrop(payload);
+    window.__emitTauriAssetDrop(payload);
+  });
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/assets/deduplicated-dpi.png"]'));
+  await tauriPage.waitForTimeout(120);
+  if ((await tauriPage.locator(".asset-card").count()) !== assetCountBeforeDuplicate + 1) throw new Error("Duplicate native Drop events should be applied once");
   await tauriPage.locator('.asset-card [data-asset-action="browse"]').first().click();
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/media/picked-asset.png"]'));
   await tauriPage.evaluate(() => {
@@ -1456,7 +1472,7 @@ async function runTauriWelcomeSmoke(browser) {
   await tauriEventFallbackPage.evaluate(() => {
     const target = document.querySelector(".assets-drop-zone");
     const rect = target.getBoundingClientRect();
-    window.__emitTauriDragDropEvent({
+    window.__emitTauriAssetDrop({
       type: "drop",
       paths: ["C:\\Projects\\assets\\tauri-event-fallback.png"],
       position: { x: rect.left + 24, y: rect.top + 24 },
@@ -1570,7 +1586,7 @@ async function runRealTauriAssetDropSmoke(browser) {
   await realPage.evaluate((assetPath) => {
     const target = document.querySelector(".asset-card");
     const rect = target.getBoundingClientRect();
-    window.__emitTauriStandardAssetDrop({
+    window.__emitTauriAssetDrop({
       type: "drop",
       paths: [assetPath],
       position: { x: rect.left + 20, y: rect.top + 20 },
@@ -1928,6 +1944,23 @@ async function loadProjectFile(name, bytes) {
     mimeType: "application/zip",
     buffer: bytes,
   });
+}
+
+async function pointerDrag(sourceSelector, targetSelector, options = {}) {
+  const source = page.locator(sourceSelector).first();
+  const target = page.locator(targetSelector).first();
+  const sourceBox = await source.boundingBox();
+  const targetBox = await target.boundingBox();
+  if (!sourceBox || !targetBox) throw new Error(`Pointer drag target missing: ${sourceSelector} -> ${targetSelector}`);
+  const sourcePosition = options.sourcePosition || { x: Math.min(20, sourceBox.width / 2), y: Math.min(12, sourceBox.height / 2) };
+  const targetPosition = options.targetPosition || { x: targetBox.width / 2, y: targetBox.height / 2 };
+  if (options.shiftKey) await page.keyboard.down("Shift");
+  await page.mouse.move(sourceBox.x + sourcePosition.x, sourceBox.y + sourcePosition.y);
+  await page.mouse.down();
+  await page.mouse.move(sourceBox.x + sourcePosition.x + 10, sourceBox.y + sourcePosition.y + 10, { steps: 3 });
+  await page.mouse.move(targetBox.x + targetPosition.x, targetBox.y + targetPosition.y, { steps: 8 });
+  await page.mouse.up();
+  if (options.shiftKey) await page.keyboard.up("Shift");
 }
 
 async function expectCount(selector, count) {

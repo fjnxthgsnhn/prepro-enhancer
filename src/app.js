@@ -502,6 +502,7 @@ const state = {
   timelineScrubbing: false,
   timelineResizing: null,
   timelineScrollLeft: 0,
+  pointerDrag: null,
   shiftDown: false,
   isWelcomeVisible: false,
   recentProjects: [],
@@ -2056,7 +2057,7 @@ function renderTable() {
     const tr = document.createElement("tr");
     const visualSelected = tableVisualSelectedIds();
     tr.className = [row.row_type, cutPlacementClass(row), visualSelected.has(row.id) ? "selected" : "", tableSelectionClass(row)].filter(Boolean).join(" ");
-    tr.draggable = true;
+    tr.draggable = false;
     tr.dataset.id = row.id;
     tr.dataset.type = row.row_type;
     tr.addEventListener("click", (event) => selectRow(row.id, event));
@@ -2066,6 +2067,7 @@ function renderTable() {
     tr.addEventListener("drop", (event) => handleDrop(event, row));
     tr.addEventListener("dragend", clearDragState);
     tr.addEventListener("contextmenu", (event) => showRowContextMenu(event, row));
+    attachPointerRowDrag(tr, row);
     DISPLAY_COLUMNS.forEach((column) => {
       const td = document.createElement("td");
       td.dataset.column = column;
@@ -2219,10 +2221,31 @@ function renderStoryboard() {
     root.appendChild(sceneEl);
   });
   el.storyboard.replaceChildren(root);
+  resolveStoryboardImages(root);
+}
+
+async function resolveStoryboardImages(root = el.storyboard) {
+  const cards = [...(root?.querySelectorAll?.(".cut-card[data-image-path]") || [])];
+  const paths = [...new Set(cards.map((card) => card.dataset.imagePath || "").filter((path) => path && !promptMediaResolution(path)))];
+  if (paths.length) await Promise.all(paths.map(resolvePromptMediaPath));
+  if (state.view !== "storyboard" || !root.isConnected) return;
+  cards.forEach((card) => {
+    const path = card.dataset.imagePath || "";
+    const thumb = card.querySelector(".thumb");
+    if (thumb) thumb.innerHTML = storyboardThumbHtml(path);
+  });
+}
+
+function storyboardThumbHtml(path) {
+  if (!path) return "<span>No image</span>";
+  const resolved = promptMediaResolution(path);
+  if (resolved?.status === "ready") return `<img src="${escapeAttr(resolved.url)}" alt="">`;
+  if (resolved?.status === "missing") return "<span>Missing image</span>";
+  return "<span>Loading image...</span>";
 }
 
 function attachStoryboardDrag(element, row) {
-  element.draggable = true;
+  element.draggable = false;
   element.dataset.id = row.id;
   element.dataset.type = row.row_type;
   element.addEventListener("dragstart", (event) => {
@@ -2245,6 +2268,7 @@ function attachStoryboardDrag(element, row) {
     event.stopPropagation();
     clearDragState();
   });
+  attachPointerRowDrag(element, row);
 }
 
 function cutCard(cut) {
@@ -2253,9 +2277,9 @@ function cutCard(cut) {
   attachStoryboardDrag(card, cut);
   card.addEventListener("click", (event) => selectRow(cut.id, event));
   card.addEventListener("contextmenu", (event) => showRowContextMenu(event, cut));
-  const media = displayMediaUrl(cut.image);
+  card.dataset.imagePath = cut.image || "";
   card.innerHTML = `
-      <div class="thumb">${media ? `<img src="${media}" alt="">` : `<span>${cut.image ? "Missing image" : "No image"}</span>`}</div>
+      <div class="thumb">${storyboardThumbHtml(cut.image)}</div>
     <div class="card-body">
       <div class="card-title">${iconHtml("content_cut", "small-icon")}<span>${escapeHtml(rowLabel(cut))}</span></div>
       <div class="card-meta"><span>${escapeHtml(displayDuration(cut))}</span><span>${escapeHtml(cut.id)}</span></div>
@@ -2346,7 +2370,7 @@ function renderTimelineLane(lane, items, type) {
   items.forEach((item) => {
     const clip = document.createElement("div");
     clip.className = `clip timeline-clip ${type} ${cutPlacementClass(item.row)}${state.selectedIds.has(item.row.id) ? " selected" : ""}`;
-    clip.draggable = true;
+    clip.draggable = false;
     clip.dataset.id = item.row.id;
     clip.dataset.type = type;
     clip.style.left = `${item.start}px`;
@@ -2370,6 +2394,7 @@ function renderTimelineLane(lane, items, type) {
     clip.addEventListener("drop", (event) => handleDrop(event, item.row));
     clip.addEventListener("dragend", clearDragState);
     clip.addEventListener("contextmenu", (event) => showRowContextMenu(event, item.row));
+    attachPointerRowDrag(clip, item.row);
     lane.appendChild(clip);
   });
 }
@@ -2700,8 +2725,31 @@ function renderMedia() {
       <div>${escapeHtml(row.image || "No image path")}</div>
       ${mediaPreviewAudioHtml(row.audio_file)}
       ${row.video_file ? `<div>${escapeHtml(row.video_file)}</div>` : ""}
+      ${tauriInvoke ? `<button id="browseCutMediaBtn" type="button">${iconHtml("folder_open")}<span class="icon-button-label">Browse Media</span></button>` : ""}
     </div>`;
+  el.media.querySelector("#browseCutMediaBtn")?.addEventListener("click", () => browseCutMedia(row.id));
   resolveMediaPanelPaths(row.id, [row.image, row.audio_file, row.video_file].filter(Boolean));
+}
+
+async function browseCutMedia(cutId) {
+  if (!tauriInvoke) return;
+  try {
+    const picked = await tauriInvoke("pick_asset_file", { projectPath: state.projectPath, project_path: state.projectPath });
+    if (!picked) return;
+    const opened = normalizeTauriFile(picked);
+    const path = normalizeAssetPathSeparators(opened.path || "");
+    const type = mediaTypeFromPath(path);
+    const field = type === "audio" ? "audio_file" : type === "video" ? "video_file" : "image";
+    const bytes = new Uint8Array(opened.bytes || []);
+    if (bytes.length) {
+      const blob = new Blob([bytes], { type: mimeFromPath(path) });
+      setSessionMediaUrl(path, blob);
+    }
+    updateRow(cutId, { [field]: path });
+    showToast("Media full path registered. Save the project to persist it.");
+  } catch (error) {
+    alert(error.message || "Media file could not be selected.");
+  }
 }
 
 function mediaPreviewImageHtml(path) {
@@ -3060,44 +3108,45 @@ function handleAssetDrop(event) {
 function setupTauriAssetDrop() {
   const listen = window.__TAURI__?.event?.listen;
   const registered = [];
-  const hasStandardListener = setupTauriStandardAssetDrop(() => {
-    if (listen) registerTauriAssetDropEventListen("tauri://drag-drop", "tauri-event", registered);
-  }, registered);
-  if (!hasStandardListener && listen) registerTauriAssetDropEventListen("tauri://drag-drop", "tauri-event", registered);
+  window.__PREPRO_NATIVE_DROP__ = (payload) => handleTauriAssetDropEvent(payload, "rust-direct");
+  registered.push("rust-direct");
+  const hasStandardListener = setupTauriStandardAssetDrop(registered);
+  // Tauri's global bundle has shipped both the Webview callback API and the
+  // legacy/global event channel across v2 releases. Register the channel even
+  // when onDragDropEvent exists: listener availability does not guarantee that
+  // WebView2 will deliver drops through that callback on every Windows build.
+  if (listen) registerTauriAssetDropEventListen("tauri://drag-drop", "tauri-event", registered);
   if (listen) registerTauriAssetDropEventListen("asset-file-drop", "asset-file-drop", registered);
   console.info(`[assets-dnd] registered listeners: ${registered.length ? registered.join(", ") : "none"}`);
   debugAssetDrop("available tauri namespaces", {
     hasEventListen: typeof listen === "function",
-    hasWebview: Boolean(window.__TAURI__?.webview),
-    hasWebviewWindow: Boolean(window.__TAURI__?.webviewWindow),
+    hasStandardListener,
+    canonicalSource: hasStandardListener ? "tauri-standard" : "asset-file-drop",
   });
+  if (tauriInvoke && !hasStandardListener && !listen) console.warn("[assets-dnd] No native drag/drop event source is available.");
 }
 
-function setupTauriStandardAssetDrop(onFailure, registered = []) {
-  const webviewWindow = window.__TAURI__?.webviewWindow;
+function setupTauriStandardAssetDrop(registered = []) {
   const webview = window.__TAURI__?.webview;
+  const webviewWindow = window.__TAURI__?.webviewWindow;
   const candidates = [
-    { label: "webview.getCurrentWebview", owner: webview, method: "getCurrentWebview" },
-    { label: "webview.getCurrent", owner: webview, method: "getCurrent" },
-    { label: "webviewWindow.getCurrentWebviewWindow", owner: webviewWindow, method: "getCurrentWebviewWindow" },
-    { label: "webviewWindow.getCurrent", owner: webviewWindow, method: "getCurrent" },
+    [webview, "getCurrentWebview", "webview.getCurrentWebview"],
+    [webview, "getCurrent", "webview.getCurrent"],
+    [webviewWindow, "getCurrentWebviewWindow", "webviewWindow.getCurrentWebviewWindow"],
+    [webviewWindow, "getCurrent", "webviewWindow.getCurrent"],
   ];
-  for (const candidate of candidates) {
+  for (const [owner, method, label] of candidates) {
     try {
-      const getCurrent = candidate.owner?.[candidate.method];
+      const getCurrent = owner?.[method];
       if (typeof getCurrent !== "function") continue;
-      const current = getCurrent.call(candidate.owner);
-      const onDragDropEvent = current?.onDragDropEvent;
-      if (typeof onDragDropEvent !== "function") continue;
-      Promise.resolve(onDragDropEvent((event) => handleTauriAssetDropEvent(event, "tauri-standard")))
-        .catch((error) => {
-          console.warn("Tauri standard drag/drop listener could not be registered", error);
-          onFailure?.();
-        });
-      registered.push(candidate.label);
+      const current = getCurrent.call(owner);
+      if (typeof current?.onDragDropEvent !== "function") continue;
+      Promise.resolve(current.onDragDropEvent((event) => handleTauriAssetDropEvent(event, "tauri-standard")))
+        .catch((error) => console.warn(`[assets-dnd] ${label} registration failed`, error));
+      registered.push(label);
       return true;
     } catch (error) {
-      console.warn(`Tauri standard drag/drop listener could not be initialized via ${candidate.label}`, error);
+      console.warn(`[assets-dnd] ${label} initialization failed`, error);
     }
   }
   return false;
@@ -3114,17 +3163,30 @@ function registerTauriAssetDropEventListen(eventName, source, registered = []) {
 function handleTauriAssetDropEvent(event, source = "tauri") {
   const drop = normalizeTauriAssetDropEvent(event, source);
   debugAssetDrop("received native drop event", drop);
-  if (drop.type && drop.type !== "drop") {
-    debugAssetDrop("ignored non-drop event", drop);
+  if (drop.type === "leave") {
+    clearNativeDropHighlight();
     return;
   }
+  if (drop.type === "enter" || drop.type === "over") {
+    updateNativeDropHighlight(drop);
+    return;
+  }
+  if (drop.type && drop.type !== "drop") {
+    return;
+  }
+  clearNativeDropHighlight();
   if (!drop.paths.length) {
-    debugAssetDrop("ignored empty drop", drop);
+    console.warn("[assets-dnd] Native drop contained no file paths.", drop);
+    return;
+  }
+  if (isDuplicateNativeDrop(drop)) {
+    debugAssetDrop("suppressed duplicate native drop", drop);
     return;
   }
   const target = nativeDropTargetFromPosition(drop.position, drop.scaleFactor);
   if (!target) {
-    debugAssetDrop("ignored drop outside supported views", drop);
+    console.warn("[assets-dnd] Native drop target could not be resolved.", { ...drop, view: state.view });
+    showToast("The dropped file could not be assigned here. Drop it directly on a cut or the Assets area.");
     return;
   }
   if (state.view === "assets" && target.closest?.("#assetsView")) {
@@ -3143,7 +3205,42 @@ function handleTauriAssetDropEvent(event, source = "tauri") {
     applyNativeMediaDropToCut(row, drop.paths);
     return;
   }
-  debugAssetDrop("ignored native drop target", { target: describeAssetDropElement(target), currentView: state.view });
+  console.warn("[assets-dnd] Native drop landed outside a supported target.", { drop, target: describeAssetDropElement(target), currentView: state.view });
+  showToast("Drop the file directly on a cut or the Assets area.");
+}
+
+function clearNativeDropHighlight() {
+  document.querySelectorAll(".native-media-drop-target").forEach((element) => element.classList.remove("native-media-drop-target"));
+  el.assetsView?.querySelector(".assets-view")?.classList.remove("native-drag-over");
+}
+
+function updateNativeDropHighlight(drop) {
+  clearNativeDropHighlight();
+  const target = nativeDropTargetFromPosition(drop.position, drop.scaleFactor);
+  if (!target) return;
+  if (state.view === "assets" && target.closest?.("#assetsView")) {
+    el.assetsView?.querySelector(".assets-view")?.classList.add("native-drag-over");
+    target.closest?.(".asset-card")?.classList.add("native-media-drop-target");
+    return;
+  }
+  const node = target.closest?.("tbody tr[data-id], .cut-card[data-id], .timeline-clip.cut[data-id]");
+  if (cutRowFromNativeDropTarget(node)) node.classList.add("native-media-drop-target");
+}
+
+const recentNativeDrops = new Map();
+
+function isDuplicateNativeDrop(drop) {
+  const now = performance.now();
+  for (const [key, timestamp] of recentNativeDrops) if (now - timestamp > 1500) recentNativeDrops.delete(key);
+  const position = drop.position || {};
+  const key = [
+    drop.paths.map(normalizeAssetPathSeparators).sort().join("\u0000"),
+    Math.round(Number(position.x) || 0),
+    Math.round(Number(position.y) || 0),
+  ].join("|");
+  const previous = recentNativeDrops.get(key);
+  recentNativeDrops.set(key, now);
+  return previous != null && now - previous < 750;
 }
 
 function normalizeTauriAssetDropEvent(event, source = "tauri") {
@@ -3173,18 +3270,20 @@ function assetDropTargetFromPosition(position, scaleFactor = 1) {
     debugAssetDrop("drop has no position; using assets view as target", { target: describeAssetDropElement(view) });
     return view;
   }
-  const scale = Number(scaleFactor) || window.devicePixelRatio || 1;
-  const point = { x: position.x / scale, y: position.y / scale };
   const rect = view.getBoundingClientRect();
-  if (point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) {
-    debugAssetDrop("drop point outside assets view", { position, scaleFactor: scale, cssPoint: point, assetsViewRect: domRectToObject(rect) });
+  const resolved = resolveNativeDropPoint(position, scaleFactor, (element, point) => (
+    point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom && element?.closest?.("#assetsView")
+  ));
+  if (!resolved) {
+    debugAssetDrop("drop point outside assets view", { position, scaleFactor, candidates: nativeDropPointCandidates(position, scaleFactor), assetsViewRect: domRectToObject(rect) });
     return null;
   }
-  const element = document.elementFromPoint(point.x, point.y) || view;
+  const { element, point, mode } = resolved;
   debugAssetDrop("resolved drop target", {
     position,
-    scaleFactor: scale,
+    scaleFactor,
     cssPoint: point,
+    coordinateMode: mode,
     assetsViewRect: domRectToObject(rect),
     element: describeAssetDropElement(element),
     targetAssetId: assetDropCardIdFromElement(element),
@@ -3195,8 +3294,34 @@ function assetDropTargetFromPosition(position, scaleFactor = 1) {
 function nativeDropTargetFromPosition(position, scaleFactor = 1) {
   if (state.view === "assets") return assetDropTargetFromPosition(position, scaleFactor);
   if (!position || position.x == null || position.y == null) return null;
+  const resolved = resolveNativeDropPoint(position, scaleFactor, (element) => Boolean(cutRowFromNativeDropTarget(element)));
+  debugAssetDrop("resolved cut drop target", {
+    position,
+    scaleFactor,
+    candidates: nativeDropPointCandidates(position, scaleFactor),
+    coordinateMode: resolved?.mode || "none",
+    target: describeAssetDropElement(resolved?.element),
+  });
+  return resolved?.element || null;
+}
+
+function nativeDropPointCandidates(position, scaleFactor = 1) {
+  if (!position || position.x == null || position.y == null) return [];
   const scale = Number(scaleFactor) || window.devicePixelRatio || 1;
-  return document.elementFromPoint(position.x / scale, position.y / scale);
+  const points = [
+    { x: Number(position.x), y: Number(position.y), mode: "css" },
+    { x: Number(position.x) / scale, y: Number(position.y) / scale, mode: "physical" },
+  ];
+  return points.filter((point, index) => Number.isFinite(point.x) && Number.isFinite(point.y)
+    && points.findIndex((candidate) => Math.abs(candidate.x - point.x) < 0.01 && Math.abs(candidate.y - point.y) < 0.01) === index);
+}
+
+function resolveNativeDropPoint(position, scaleFactor, accepts) {
+  for (const point of nativeDropPointCandidates(position, scaleFactor)) {
+    const element = document.elementFromPoint(point.x, point.y);
+    if (element && accepts(element, point)) return { element, point: { x: point.x, y: point.y }, mode: point.mode };
+  }
+  return null;
 }
 
 function cutRowFromNativeDropTarget(element) {
@@ -3321,9 +3446,7 @@ function assetFromDroppedPath(droppedPath) {
 function assetPathFromDroppedFile(file) {
   const rawPath = normalizeAssetPathSeparators(file.path || "");
   if (tauriInvoke && rawPath && isAbsoluteAssetPath(rawPath)) return rawPath;
-  const webkitPath = normalizeAssetPathSeparators(file.webkitRelativePath || "");
-  if (webkitPath) return webkitPath;
-  return `assets/${normalizeAssetPathSeparators(file.name || "asset")}`;
+  return uniqueInternalMediaPath("references", "asset", file.name || "asset");
 }
 
 function assetPathFromDroppedPath(path) {
@@ -4714,6 +4837,96 @@ function handleDragStart(event, row) {
   }
 }
 
+function attachPointerRowDrag(element, row) {
+  element.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest("input, textarea, select, button, audio, .clip-resize-handle")) return;
+    event.stopPropagation();
+    const origin = { x: event.clientX, y: event.clientY };
+    let started = false;
+    let targetInfo = null;
+    const move = (moveEvent) => {
+      if (!started && Math.hypot(moveEvent.clientX - origin.x, moveEvent.clientY - origin.y) < 6) return;
+      if (!started) {
+        started = true;
+        state.draggingId = row.id;
+        element.classList.add("dragging", "pointer-dragging");
+        document.body.classList.add("internal-pointer-dragging");
+      }
+      moveEvent.preventDefault();
+      const hit = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+      const targetElement = hit?.closest?.("tbody tr[data-id], .scene-section[data-id], .multicut-section[data-id], .cut-card[data-id], .timeline-clip[data-id]");
+      const target = getRow(targetElement?.dataset?.id || "");
+      clearDropClasses();
+      if (!target || target.id === row.id) {
+        targetInfo = null;
+        return;
+      }
+      const mode = dropModeFromPointer(moveEvent, row, target, targetElement);
+      if (!mode) {
+        targetInfo = null;
+        return;
+      }
+      targetElement.classList.add(`drop-${mode}`);
+      targetInfo = { target, mode, targetElement };
+    };
+    const end = (upEvent) => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", end);
+      document.removeEventListener("pointercancel", cancel);
+      element.classList.remove("dragging", "pointer-dragging");
+      document.body.classList.remove("internal-pointer-dragging");
+      clearDropClasses();
+      if (started && targetInfo) performInternalRowDrop(row, targetInfo.target, targetInfo.mode, targetInfo.targetElement);
+      state.draggingId = "";
+      if (started) upEvent.preventDefault();
+    };
+    const cancel = (cancelEvent) => {
+      targetInfo = null;
+      end(cancelEvent);
+    };
+    document.addEventListener("pointermove", move, { passive: false });
+    document.addEventListener("pointerup", end, { once: true });
+    document.addEventListener("pointercancel", cancel, { once: true });
+  });
+}
+
+function dropModeFromPointer(event, dragged, target, targetElement) {
+  const rect = targetElement.getBoundingClientRect();
+  const beforeAfter = targetElement.classList.contains("timeline-clip")
+    ? event.clientX < rect.left + rect.width / 2
+    : event.clientY < rect.top + rect.height / 2;
+  const shiftDrop = event.shiftKey || state.shiftDown;
+  if (dragged.row_type === "scene" && target.row_type === "scene") return beforeAfter ? "before" : "after";
+  if (dragged.row_type === "multicut") {
+    if (target.row_type === "scene") return "into";
+    if (["multicut", "cut"].includes(target.row_type)) return beforeAfter ? "before" : "after";
+  }
+  if (dragged.row_type === "cut") {
+    if (target.row_type === "scene") return "into";
+    if (target.row_type === "multicut") return shiftDrop ? (beforeAfter ? "before" : "after") : "into";
+    if (target.row_type === "cut") return beforeAfter ? "before" : "after";
+  }
+  return "";
+}
+
+function performInternalRowDrop(dragged, target, mode, targetElement) {
+  const timelineFlip = targetElement?.classList?.contains("timeline-clip") ? captureTimelineFlip() : null;
+  const storyboardFlip = targetElement?.closest?.(".storyboard") ? captureStoryboardFlip() : null;
+  const draggedRows = dragRowsForDrop(dragged, target);
+  if (!draggedRows.length || !mode || dragged.id === target.id) return;
+  pushHistory();
+  if (draggedRows.length > 1) moveRows(draggedRows, target, mode);
+  else moveRow(dragged, target, mode);
+  normalizeOrders();
+  state.activeId = draggedRows[0].id;
+  state.selectedIds = new Set(draggedRows.map((item) => item.id));
+  state.selectionAnchorId = dragged.id;
+  markDirty();
+  render();
+  if (timelineFlip) requestAnimationFrame(() => animateTimelineFlip(timelineFlip, dragged.id));
+  if (storyboardFlip) requestAnimationFrame(() => animateStoryboardFlip(storyboardFlip, dragged.id));
+}
+
 function handleDragOver(event, target) {
   if (hasFilePayload(event.dataTransfer)) {
     clearDropClasses();
@@ -4781,15 +4994,20 @@ function handleMediaDrop(event, target) {
   const files = [...(event.dataTransfer?.files || [])];
   const image = files.find(isImageFile);
   const audio = files.find(isAudioFile);
-  if (!image && !audio) return;
+  const video = files.find(isVideoFile);
+  if (!image && !audio && !video) return;
   const patch = {};
   if (image) {
-    patch.image = mediaPathFromDroppedFile(image);
+    patch.image = mediaPathFromDroppedFile(image, target.id);
     setSessionMediaUrl(patch.image, image);
   }
   if (audio) {
-    patch.audio_file = mediaPathFromDroppedFile(audio);
+    patch.audio_file = mediaPathFromDroppedFile(audio, target.id);
     setSessionMediaUrl(patch.audio_file, audio);
+  }
+  if (video) {
+    patch.video_file = mediaPathFromDroppedFile(video, target.id);
+    setSessionMediaUrl(patch.video_file, video);
   }
   updateRow(target.id, patch);
   state.activeId = target.id;
@@ -4798,16 +5016,33 @@ function handleMediaDrop(event, target) {
   render();
 }
 
-function mediaPathFromDroppedFile(file) {
+function mediaPathFromDroppedFile(file, ownerId = state.activeId) {
   const rawPath = normalizeAssetPathSeparators(file.path || "");
-  return tauriInvoke && rawPath && isAbsoluteAssetPath(rawPath) ? rawPath : file.name;
+  if (tauriInvoke && rawPath && isAbsoluteAssetPath(rawPath)) return rawPath;
+  const type = isImageFile(file) ? "images" : isAudioFile(file) ? "audio" : "video";
+  return uniqueInternalMediaPath(type, ownerId || "cut", file.name || `media.${type}`);
 }
 
 function setSessionMediaUrl(path, file) {
   const previous = state.mediaUrls.get(path);
   if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
   state.mediaUrls.set(path, URL.createObjectURL(file));
+  if (isInternalProjectMediaPath(path)) state.mediaBlobs.set(path, file);
   state.mediaPathStatus.set(path, "exists");
+}
+
+function uniqueInternalMediaPath(folder, ownerId, fileName) {
+  const safeOwner = String(ownerId || "item").replace(/[^a-z0-9_-]+/gi, "_");
+  const safeName = String(fileName || "media").replace(/[\\/]+/g, "_").replace(/[^\p{L}\p{N}._-]+/gu, "_");
+  const stem = safeName.replace(/(\.[^.]+)?$/, "");
+  const extension = safeName.match(/\.[^.]+$/)?.[0] || "";
+  let index = 0;
+  let path;
+  do {
+    path = `media/${folder}/${safeOwner}_${stem}${index ? `_${index}` : ""}${extension}`;
+    index += 1;
+  } while (state.mediaBlobs.has(path));
+  return path;
 }
 
 function isImageFile(file) {
@@ -4816,6 +5051,10 @@ function isImageFile(file) {
 
 function isAudioFile(file) {
   return file.type.startsWith("audio/") || isAudioPath(file.name);
+}
+
+function isVideoFile(file) {
+  return file.type.startsWith("video/") || isVideoPath(file.name);
 }
 
 function isImagePath(path) {
@@ -4999,6 +5238,11 @@ function validate() {
     if (row.row_type === "cut" && isMissingMediaPath(row.image)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: image may be missing (${row.image}).` });
     if (row.row_type === "cut" && isMissingMediaPath(row.audio_file)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: audio may be missing (${row.audio_file}).` });
     if (row.row_type === "cut" && isMissingMediaPath(row.video_file)) issues.push({ level: "warning", kind: "missing-media", message: `${row.id}: video may be missing (${row.video_file}).` });
+    if (row.row_type === "cut") {
+      [["image", row.image], ["audio", row.audio_file], ["video", row.video_file]].forEach(([type, path]) => {
+        if (isIncompleteMediaReference(path)) issues.push(warn(`${row.id}: ${type} uses a non-persistent filename-only reference (${path}). Re-link it or import it into media/.`));
+      });
+    }
   });
   const assetIds = new Set();
   state.assets.forEach((asset, index) => {
@@ -5120,6 +5364,10 @@ function pathExistsWithoutCheck(path) {
   return isBrowserSafeMediaPath(path) || isInternalProjectMediaPath(path) || state.mediaUrls.has(path) || state.mediaBlobs.has(path);
 }
 
+function isIncompleteMediaReference(path) {
+  return Boolean(path && !isBrowserSafeMediaPath(path) && !isInternalProjectMediaPath(path) && !isAbsoluteAssetPath(path));
+}
+
 function shouldCheckMediaPath(path) {
   return Boolean(tauriInvoke && path && !pathExistsWithoutCheck(path));
 }
@@ -5191,12 +5439,6 @@ function mediaUrl(path) {
   if (!path) return "";
   if (/^(https?:|blob:|data:)/.test(path)) return path;
   return state.mediaUrls.get(path) || "";
-}
-
-function displayMediaUrl(path) {
-  if (!path) return "";
-  if (/^(https?:|blob:|data:)/.test(path)) return path;
-  return state.mediaUrls.get(path) || encodeURI(path);
 }
 
 function markDirty() {

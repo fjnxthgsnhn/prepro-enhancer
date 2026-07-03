@@ -1084,6 +1084,34 @@ button.active {
   pointer-events: none;
 }
 
+body.internal-pointer-dragging {
+  user-select: none;
+  cursor: grabbing;
+}
+
+.data-table tr.native-media-drop-target td {
+  background: color-mix(in srgb, var(--accent) 24%, var(--panel));
+  box-shadow: inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent);
+}
+
+.cut-card.native-media-drop-target,
+.timeline-clip.native-media-drop-target,
+.asset-card.native-media-drop-target {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.assets-view.native-drag-over {
+  outline: 3px dashed var(--accent);
+  outline-offset: -8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.pointer-dragging {
+  opacity: 0.58;
+}
+
 .thumb {
   aspect-ratio: 16 / 9;
   border: 0;
