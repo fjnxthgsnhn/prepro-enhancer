@@ -82,7 +82,7 @@
   - 内容: プロジェクト内外の画像・音声アセットを一覧し、カード選択、パス補完、PromptEditとの連携を行う。
 - PE-052 Tauri D&D診断と復旧
   - 優先度: P1
-  - 内容: Tauri環境のHTML5 / native drag and dropを検証し、失敗時の診断情報と復旧手順を提供する。
+  - 内容: Tauri native file dropとPointer Eventsによる内部並べ替えを分離し、フルパス登録、永続化、診断を提供する。現行仕様は[media-dnd.md](./media-dnd.md)を正本とする。
 - PE-053 起動時ウェルカム画面
   - 優先度: P2
   - 内容: Tauri起動時に最近のプロジェクト、サンプル、初期導線を提示する。

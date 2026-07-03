@@ -31,7 +31,7 @@ Steady state:
 - No release-blocking resilience issue was found in the tested blast radius.
 - Timeline scroll/scrub behavior is now covered by both smoke and chaos checks.
 - `.lctproj` import remains resilient for common malformed or externally produced ZIP/TSV patterns.
-- Media file D&D correctly stores path/name references without embedding dropped file payloads.
+- Tauri native media D&D stores external full paths; browser fallback embeds dropped bytes under `media/...` instead of saving bare file names. See [media-dnd.md](./media-dnd.md).
 
 ## Follow-up Candidates
 
