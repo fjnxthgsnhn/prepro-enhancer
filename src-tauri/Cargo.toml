@@ -1,6 +1,6 @@
 [package]
 name = "prepro-enhancer"
-version = "1.0.0"
+version = "1.0.1"
 description = "Prepro Enhancer desktop app"
 authors = ["Prepro Enhancer"]
 edition = "2021"

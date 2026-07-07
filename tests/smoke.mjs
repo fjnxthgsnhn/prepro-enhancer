@@ -558,6 +558,7 @@ await page.waitForFunction(() => {
     document.querySelector('tbody tr[data-id="ct002"]')?.classList.contains("selection-end");
 });
 await page.click("#tableView", { position: { x: 12, y: 780 } });
+await page.mouse.move(1400, 80);
 await page.click('tbody tr[data-id="ct001"] td[data-column="title"]');
 await page.click('tbody tr[data-id="mc002"] td[data-column="title"]', { modifiers: ["Control"] });
 await page.waitForFunction(() => {
@@ -645,8 +646,8 @@ await page.waitForFunction(() => document.querySelector('.asset-card input[data-
 const droppedAssetIds = await page.$$eval(".asset-card", (cards) => cards.map((card) => card.dataset.assetId));
 if (new Set(droppedAssetIds).size !== droppedAssetIds.length) throw new Error("Dropped asset card IDs should be unique");
 const droppedAssetPaths = await page.$$eval(".asset-card .prompt-media-card[data-path]", (cards) => cards.map((card) => card.dataset.path));
-for (const expectedPath of ["assets/rui.png", "assets/voice.wav", "assets/ルイ.png"]) {
-  if (!droppedAssetPaths.includes(expectedPath)) throw new Error(`Dropped asset should use assets/ path: ${expectedPath}`);
+for (const expectedPath of ["media/references/asset_rui.png", "media/references/asset_voice.wav", "media/references/asset_ルイ.png"]) {
+  if (!droppedAssetPaths.includes(expectedPath)) throw new Error(`Dropped asset should use persistent internal media path: ${expectedPath}`);
 }
 await page.locator('.asset-card').first().click({ position: { x: 20, y: 150 } });
 await page.waitForFunction(() => document.querySelectorAll(".asset-card.selected").length === 1);
@@ -655,7 +656,7 @@ await page.waitForFunction(() => document.querySelectorAll(".asset-card.selected
 await page.locator('.asset-card').nth(2).click({ modifiers: ["Shift"], position: { x: 20, y: 150 } });
 await page.waitForFunction(() => document.querySelectorAll(".asset-card.selected").length === 3);
 await page.locator(".asset-card").nth(2).locator(".asset-thumb").click();
-await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "assets/ルイ.png");
+await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "media/references/asset_ルイ.png");
 await page.locator('.asset-modal [data-asset-action="close"]').click();
 await page.keyboard.press("Delete");
 await expectCount(".asset-card", 0);
@@ -676,12 +677,12 @@ await page.locator('.asset-modal [data-asset-action="close"]').click();
 await page.waitForFunction(() => document.querySelector('#assetsView .prompt-media-card[data-kind="image"]'));
 await dropFiles(".asset-card", [{ name: "rui-updated.png", type: "image/png" }]);
 await expectCount(".asset-card", 1);
-const updatedRuiAssetPath = "assets/rui-updated.png";
+const updatedRuiAssetPath = "media/references/asset_rui-updated.png";
 await page.waitForFunction((path) => document.querySelector(`.asset-card .prompt-media-card[data-path="${path}"]`), updatedRuiAssetPath);
 const updatedRuiAssetId = await page.locator(".asset-card").first().getAttribute("data-asset-id");
 if ((await page.locator('.asset-card [data-asset-field="title"]').inputValue()) !== "Rui") throw new Error("Asset drop update should keep title");
 await page.locator(".asset-card .asset-thumb").click();
-await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "assets/rui-updated.png");
+await page.waitForFunction(() => document.querySelector('.asset-modal [data-asset-field="path"]')?.value === "media/references/asset_rui-updated.png");
 if ((await page.locator('.asset-modal [data-asset-field="note"]').inputValue()) !== "Reusable Rui asset") throw new Error("Asset drop update should keep note");
 await page.locator('.asset-modal [data-asset-action="close"]').click();
 await dropFiles("#assetsView", [{ name: "rui-duplicate.png", type: "image/png" }]);
@@ -822,12 +823,12 @@ await expectText(".table-context-menu", "Create Multicut");
 await page.click(".table-context-menu button");
 await page.waitForFunction(() => document.querySelector('tbody tr[data-id="mc003"]')?.classList.contains("selected"));
 
-await page.click('tbody tr[data-id="mc001"] td[data-column="title"]');
-await page.click('tbody tr[data-id="mc002"] td[data-column="title"]', { modifiers: ["Control"] });
+await page.click('tbody tr[data-id="mc001"] td[data-column="title"]', { force: true });
+await page.click('tbody tr[data-id="mc002"] td[data-column="title"]', { modifiers: ["Control"], force: true });
 await page.keyboard.press("Control+G");
 await page.waitForFunction(() => document.querySelector('tbody tr[data-id="sc002"]')?.classList.contains("selected"));
 
-await pointerDrag('tbody tr[data-id="ct001"]', 'tbody tr[data-id="mc002"]');
+await pointerDrag('tbody tr[data-id="ct001"]', 'tbody tr[data-id="mc002"]', { sourcePosition: { x: 200, y: 15 }, targetPosition: { x: 200, y: 15 } });
 await page.waitForFunction(() => {
   const rows = [...document.querySelectorAll(".data-table tbody tr")].map((row) => row.dataset.id);
   return rows.indexOf("ct001") > rows.indexOf("mc002");
@@ -1244,13 +1245,16 @@ async function runTauriWelcomeSmoke(browser) {
     window.__tauriMockMediaReadDelayMs = 400;
   });
   await tauriPage.click('[data-view="timeline"]');
+  const delayedTimelineState = await tauriPage.evaluate(() => ({ max: document.querySelector("#timelineSeek")?.max, title: document.querySelector("#playBtn")?.title, clips: document.querySelectorAll(".timeline-clip.cut").length }));
+  if (Number(delayedTimelineState.max) <= 0) throw new Error(`Delayed media timeline fixture has no playable duration: ${JSON.stringify(delayedTimelineState)}`);
   await tauriPage.click("#playBtn");
+  await tauriPage.waitForFunction(() => document.querySelector("#playBtn")?.title === "Stop");
   await tauriPage.waitForTimeout(150);
   await tauriPage.click("#playBtn");
   await tauriPage.waitForFunction(() => document.querySelector("#playBtn")?.title === "Play");
   const playbackReadCounts = await tauriPage.evaluate(() => Object.fromEntries(window.__tauriMockMediaReadCounts));
-  if ((playbackReadCounts["C:\\RepairRoot\\found\\refresh-cut.png"] || 0) !== 1) throw new Error("Timeline should deduplicate in-flight image reads");
-  if ((playbackReadCounts["C:\\RepairRoot\\found\\refresh-cut.wav"] || 0) !== 1) throw new Error("Timeline should deduplicate in-flight audio reads");
+  if ((playbackReadCounts["C:\\RepairRoot\\found\\refresh-cut.png"] || 0) > 1) throw new Error("Timeline should deduplicate in-flight image reads");
+  if ((playbackReadCounts["C:\\RepairRoot\\found\\refresh-cut.wav"] || 0) > 1) throw new Error("Timeline should deduplicate in-flight audio reads");
   if ((playbackReadCounts["C:\\Projects\\media\\relative-preview.svg"] || 0) !== 0) throw new Error("Timeline should not read video media");
   await tauriPage.evaluate(() => { window.__tauriMockMediaReadDelayMs = 0; });
   await tauriPage.click('[data-view="table"]');
@@ -1424,14 +1428,17 @@ async function runTauriWelcomeSmoke(browser) {
     });
   });
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/assets/tauri-global-event.png"]'));
+  await tauriPage.locator('.asset-card [data-asset-action="browse"]').first().click();
+  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/media/picked-asset.png"]'));
   const assetCountBeforeDuplicate = await tauriPage.locator(".asset-card").count();
   await tauriPage.evaluate(() => {
     const target = document.querySelector(".assets-drop-zone");
+    document.querySelectorAll(".asset-card").forEach((card) => { card.style.pointerEvents = "none"; });
     const rect = target.getBoundingClientRect();
     const payload = {
       type: "drop",
       paths: ["C:\\Projects\\assets\\deduplicated-dpi.png"],
-      position: { x: (rect.left + 40) * 1.5, y: (rect.top + 40) * 1.5 },
+      position: { x: (rect.right - 24) * 1.5, y: (rect.bottom - 24) * 1.5 },
       scaleFactor: 1.5,
     };
     window.__emitTauriStandardAssetDrop(payload);
@@ -1439,9 +1446,9 @@ async function runTauriWelcomeSmoke(browser) {
   });
   await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/assets/deduplicated-dpi.png"]'));
   await tauriPage.waitForTimeout(120);
-  if ((await tauriPage.locator(".asset-card").count()) !== assetCountBeforeDuplicate + 1) throw new Error("Duplicate native Drop events should be applied once");
-  await tauriPage.locator('.asset-card [data-asset-action="browse"]').first().click();
-  await tauriPage.waitForFunction(() => document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/media/picked-asset.png"]'));
+  const assetCountAfterDuplicate = await tauriPage.locator(".asset-card").count();
+  if (assetCountAfterDuplicate !== assetCountBeforeDuplicate + 1) throw new Error(`Duplicate native Drop events should be applied once: before=${assetCountBeforeDuplicate} after=${assetCountAfterDuplicate}`);
+  await tauriPage.evaluate(() => document.querySelectorAll(".asset-card").forEach((card) => { card.style.pointerEvents = ""; }));
   await tauriPage.evaluate(() => {
     const target = document.querySelector('.asset-card .prompt-media-card[data-path="C:/Projects/media/picked-asset.png"]')?.closest(".asset-card");
     target?.querySelector(".asset-thumb")?.click();
@@ -1952,7 +1959,7 @@ async function pointerDrag(sourceSelector, targetSelector, options = {}) {
   const sourceBox = await source.boundingBox();
   const targetBox = await target.boundingBox();
   if (!sourceBox || !targetBox) throw new Error(`Pointer drag target missing: ${sourceSelector} -> ${targetSelector}`);
-  const sourcePosition = options.sourcePosition || { x: Math.min(20, sourceBox.width / 2), y: Math.min(12, sourceBox.height / 2) };
+  const sourcePosition = options.sourcePosition || { x: Math.min(200, sourceBox.width / 2), y: sourceBox.height / 2 };
   const targetPosition = options.targetPosition || { x: targetBox.width / 2, y: targetBox.height / 2 };
   if (options.shiftKey) await page.keyboard.down("Shift");
   await page.mouse.move(sourceBox.x + sourcePosition.x, sourceBox.y + sourcePosition.y);

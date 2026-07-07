@@ -2516,7 +2516,10 @@ function centerTimelineOnPlayhead() {
 
 function renderPlayButton(playBtn) {
   if (!playBtn) return;
-  setIconText(playBtn, state.playing ? "stop" : "play_arrow", state.playing ? "Stop" : "Play");
+  const label = state.playing ? "Stop" : "Play";
+  setIconText(playBtn, state.playing ? "stop" : "play_arrow", label);
+  playBtn.title = label;
+  playBtn.setAttribute("aria-label", label);
 }
 
 function attachTimelineScrub(stage) {
@@ -3294,7 +3297,16 @@ function assetDropTargetFromPosition(position, scaleFactor = 1) {
 function nativeDropTargetFromPosition(position, scaleFactor = 1) {
   if (state.view === "assets") return assetDropTargetFromPosition(position, scaleFactor);
   if (!position || position.x == null || position.y == null) return null;
-  const resolved = resolveNativeDropPoint(position, scaleFactor, (element) => Boolean(cutRowFromNativeDropTarget(element)));
+  let resolved = resolveNativeDropPoint(position, scaleFactor, (element) => Boolean(cutRowFromNativeDropTarget(element)));
+  if (!resolved) {
+    for (const point of nativeDropPointCandidates(position, scaleFactor)) {
+      const element = cutDropElementAtPoint(point.x, point.y);
+      if (element) {
+        resolved = { element, point: { x: point.x, y: point.y }, mode: `${point.mode}-geometry` };
+        break;
+      }
+    }
+  }
   debugAssetDrop("resolved cut drop target", {
     position,
     scaleFactor,
@@ -3305,12 +3317,22 @@ function nativeDropTargetFromPosition(position, scaleFactor = 1) {
   return resolved?.element || null;
 }
 
+function cutDropElementAtPoint(x, y) {
+  const candidates = document.querySelectorAll("tbody tr[data-id], .cut-card[data-id], .timeline-clip.cut[data-id]");
+  for (const element of candidates) {
+    const rect = element.getBoundingClientRect();
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue;
+    if (cutRowFromNativeDropTarget(element)) return element;
+  }
+  return null;
+}
+
 function nativeDropPointCandidates(position, scaleFactor = 1) {
   if (!position || position.x == null || position.y == null) return [];
   const scale = Number(scaleFactor) || window.devicePixelRatio || 1;
   const points = [
-    { x: Number(position.x), y: Number(position.y), mode: "css" },
     { x: Number(position.x) / scale, y: Number(position.y) / scale, mode: "physical" },
+    { x: Number(position.x), y: Number(position.y), mode: "css" },
   ];
   return points.filter((point, index) => Number.isFinite(point.x) && Number.isFinite(point.y)
     && points.findIndex((candidate) => Math.abs(candidate.x - point.x) < 0.01 && Math.abs(candidate.y - point.y) < 0.01) === index);
@@ -3421,7 +3443,7 @@ function applyDroppedAssetToExistingAsset(assetId, droppedAsset) {
 function assetFromDroppedFile(file) {
   const path = assetPathFromDroppedFile(file);
   setSessionMediaUrl(path, file);
-  const title = fileStem(path);
+  const title = fileStem(file.name || path);
   return normalizeAsset({
     id: nextAssetId(),
     path,
@@ -4841,6 +4863,7 @@ function attachPointerRowDrag(element, row) {
   element.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || event.target.closest("input, textarea, select, button, audio, .clip-resize-handle")) return;
     event.stopPropagation();
+    event.preventDefault();
     const origin = { x: event.clientX, y: event.clientY };
     let started = false;
     let targetInfo = null;
