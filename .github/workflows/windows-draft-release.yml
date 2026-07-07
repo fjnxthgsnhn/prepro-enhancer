@@ -1,0 +1,59 @@
+name: Windows Draft Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create or update
+        required: true
+        default: v1.0.1
+      release_name:
+        description: Draft release title
+        required: true
+        default: Prepro Enhancer v1.0.1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-draft-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    name: Build Windows draft release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Check JavaScript
+        run: npm run check
+
+      - name: Check Tauri
+        run: npm run tauri:check
+
+      - name: Build and publish draft release
+        uses: tauri-apps/tauri-action@v0.6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tauriScript: npm run tauri
+          tagName: ${{ inputs.tag }}
+          releaseName: ${{ inputs.release_name }}
+          releaseDraft: true
+          prerelease: false
