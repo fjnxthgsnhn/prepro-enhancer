@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use serde::Serialize;
 use std::{collections::{HashMap, HashSet}, fs, io::Write, path::{Path, PathBuf}, time::{SystemTime, UNIX_EPOCH}};
 use tauri::{DragDropEvent, Emitter, Manager, RunEvent, WindowEvent};
